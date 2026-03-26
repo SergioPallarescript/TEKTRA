@@ -15,13 +15,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
-interface Notification {
+interface NotificationItem {
   id: string;
   title: string;
   message: string;
   type: string;
   is_read: boolean;
   created_at: string;
+  project_id: string | null;
 }
 
 const NotificationPanel = ({ onClose }: { onClose: () => void }) => {
