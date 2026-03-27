@@ -35,6 +35,7 @@ import {
   Share2,
   Copy,
   MessageCircle,
+  FolderOpen,
 } from "lucide-react";
 
 type AppRole = "DO" | "DEO" | "CON" | "PRO" | "CSS";
@@ -48,13 +49,14 @@ const roleLabels: Record<AppRole, string> = {
 };
 
 const modules = [
+  { key: "docs", label: "Documentación de Proyecto", icon: FolderOpen, desc: "Base de conocimiento" },
   { key: "plans", label: "Planos Últimos", icon: FileText, desc: "Repositorio de planos" },
-  { key: "brain", label: "Cerebro de Obra", icon: Brain, desc: "Consultas RAG" },
+  { key: "brain", label: "Cerebro de Obra", icon: Brain, desc: "IA basada en documentos" },
   { key: "orders", label: "Libro de Órdenes", icon: BookOpen, desc: "Solo DEO" },
   { key: "incidents", label: "Libro de Incidencias", icon: AlertTriangle, desc: "Solo CSS" },
   { key: "costs", label: "Validación de Costes", icon: DollarSign, desc: "Flujo financiero" },
-  { key: "dwg", label: "Visor DWG", icon: Ruler, desc: "Mediciones CAD" },
-  { key: "cfo", label: "Docs Finales (CFO)", icon: ClipboardCheck, desc: "Checklist inteligente" },
+  { key: "dwg", label: "Visor DWG", icon: Ruler, desc: "Solo archivos .dwg" },
+  { key: "cfo", label: "Docs Finales (CFO)", icon: ClipboardCheck, desc: "16 puntos de control" },
 ];
 
 const ProjectDetail = () => {
