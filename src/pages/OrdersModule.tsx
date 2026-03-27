@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Plus, BookOpen, AlertTriangle, CheckCircle2, Clock, Mic, MicOff, Camera, Paperclip, X,
+  ArrowLeft, Plus, BookOpen, AlertTriangle, CheckCircle2, Clock, Mic, MicOff, Camera, Image, Paperclip, X,
 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const CHANGE_KEYWORDS = ["modificar", "mover", "cambiar", "sustituir", "demoler", "ampliar", "reducir", "eliminar", "añadir", "reemplazar"];
 
@@ -43,7 +44,9 @@ const OrdersModule = () => {
   const canWrite = isDEM || isDO || hasDualCSS;
   const canValidate = profile?.role === "CON" || profile?.role === "PRO";
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
 
   // Check dual role
   useEffect(() => {
@@ -207,14 +210,31 @@ const OrdersModule = () => {
                   <div className="space-y-2">
                     <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Adjuntar fotos / documentos</Label>
                     <div className="flex gap-2">
-                      <input ref={cameraInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files) { setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ""; } }} />
-                      <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx" multiple className="hidden" onChange={(e) => { if (e.target.files) { setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ""; } }} />
-                      <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => cameraInputRef.current?.click()}>
-                        <Camera className="h-3.5 w-3.5" /> Foto
-                      </Button>
-                      <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => fileInputRef.current?.click()}>
-                        <Paperclip className="h-3.5 w-3.5" /> Archivo
-                      </Button>
+                      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files) { setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ""; } }} />
+                      <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { if (e.target.files) { setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ""; } }} />
+                      <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple className="hidden" onChange={(e) => { if (e.target.files) { setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ""; } }} />
+                      {isMobile ? (
+                        <>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => cameraInputRef.current?.click()}>
+                            <Camera className="h-3.5 w-3.5" /> Foto
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => galleryInputRef.current?.click()}>
+                            <Image className="h-3.5 w-3.5" /> Galería
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => fileInputRef.current?.click()}>
+                            <Paperclip className="h-3.5 w-3.5" /> Archivo
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => galleryInputRef.current?.click()}>
+                            <Camera className="h-3.5 w-3.5" /> Foto
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => fileInputRef.current?.click()}>
+                            <Paperclip className="h-3.5 w-3.5" /> Archivo
+                          </Button>
+                        </>
+                      )}
                     </div>
                     {photos.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-1">
