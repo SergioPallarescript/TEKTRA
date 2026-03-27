@@ -307,6 +307,21 @@ const ProjectDetail = () => {
               <p className="text-xs text-muted-foreground mt-1">{mod.desc}</p>
             </button>
           ))}
+
+          {/* Admin Panel - only for DO/DEM */}
+          {(profile?.role === "DO" || profile?.role === "DEM") && (
+            <button
+              onClick={() => navigate(`/project/${id}/admin`)}
+              className="bg-card border border-primary/20 rounded-lg p-5 text-left hover:border-primary/40 transition-all group animate-fade-in"
+              style={{ animationDelay: `${modules.length * 60}ms` }}
+            >
+              <Shield className="h-5 w-5 text-primary group-hover:text-primary transition-colors mb-3" />
+              <h3 className="font-display text-sm font-semibold tracking-tight">
+                ADMIN
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">Gestión de roles y permisos</p>
+            </button>
+          )}
         </div>
       </div>
     </AppLayout>
