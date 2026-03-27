@@ -34,9 +34,9 @@ const OrdersModule = () => {
   const [recording, setRecording] = useState(false);
   const [confirmValidate, setConfirmValidate] = useState<string | null>(null);
 
-  const isDEO = profile?.role === "DEO";
+  const isDEM = profile?.role === "DEM";
   const isDO = profile?.role === "DO";
-  const canWrite = isDEO;
+  const canWrite = isDEM;
   const canValidate = profile?.role === "CON" || profile?.role === "PRO";
 
   const fetchOrders = useCallback(async () => {
@@ -48,7 +48,6 @@ const OrdersModule = () => {
       .order("created_at", { ascending: false });
     if (data) {
       setOrders(data);
-      // Fetch validations for flagged orders
       const flagged = data.filter((o: any) => o.requires_validation);
       if (flagged.length > 0) {
         const { data: vals } = await supabase
@@ -70,57 +69,36 @@ const OrdersModule = () => {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  // AI keyword detection
   const detectChanges = (text: string) => {
     const lower = text.toLowerCase();
-    const found = CHANGE_KEYWORDS.filter((kw) => lower.includes(kw));
-    return found;
+    return CHANGE_KEYWORDS.filter((kw) => lower.includes(kw));
   };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectId || !user) return;
     setSubmitting(true);
-
     const flags = detectChanges(content);
     const requiresValidation = flags.length > 0;
-
     const { error } = await supabase.from("orders").insert({
-      project_id: projectId,
-      content,
-      created_by: user.id,
-      requires_validation: requiresValidation,
-      ai_flags: { keywords: flags },
+      project_id: projectId, content, created_by: user.id,
+      requires_validation: requiresValidation, ai_flags: { keywords: flags },
     });
-
-    if (error) {
-      toast.error("Error al crear la orden");
-      setSubmitting(false);
-      return;
-    }
-
+    if (error) { toast.error("Error al crear la orden"); setSubmitting(false); return; }
     await supabase.from("audit_logs").insert({
-      user_id: user.id,
-      project_id: projectId,
-      action: "order_created",
-      details: { requires_validation: requiresValidation, ai_flags: flags },
+      user_id: user.id, project_id: projectId,
+      action: "order_created", details: { requires_validation: requiresValidation, ai_flags: flags },
     });
-
     if (requiresValidation) {
       toast.warning(`⚠️ Orden marcada para validación — palabras clave detectadas: ${flags.join(", ")}`);
     } else {
       toast.success("Orden registrada");
     }
-
-    setContent("");
-    setCreateOpen(false);
-    setSubmitting(false);
-    fetchOrders();
+    setContent(""); setCreateOpen(false); setSubmitting(false); fetchOrders();
   };
 
   const handleValidate = async (orderId: string) => {
     if (!user || !profile) return;
-
     let geoString = "unavailable";
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
@@ -128,62 +106,37 @@ const OrdersModule = () => {
       );
       geoString = `${pos.coords.latitude},${pos.coords.longitude}`;
     } catch {}
-
     const { error } = await supabase.from("order_validations").insert({
-      order_id: orderId,
-      user_id: user.id,
-      role: profile.role || "CON",
-      geo_location: geoString,
+      order_id: orderId, user_id: user.id, role: profile.role || "CON", geo_location: geoString,
     });
-
     if (error) {
       toast.info(error.message.includes("duplicate") ? "Ya has validado esta orden" : "Error al validar");
     } else {
       toast.success("Validación registrada");
       await supabase.from("audit_logs").insert({
-        user_id: user.id,
-        project_id: projectId!,
-        action: "order_validated",
-        details: { order_id: orderId, role: profile.role },
+        user_id: user.id, project_id: projectId!,
+        action: "order_validated", details: { order_id: orderId, role: profile.role },
       });
     }
-    setConfirmValidate(null);
-    fetchOrders();
+    setConfirmValidate(null); fetchOrders();
   };
 
-  // Voice-to-text
   const toggleRecording = () => {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
-      toast.error("Tu navegador no soporta reconocimiento de voz");
-      return;
+      toast.error("Tu navegador no soporta reconocimiento de voz"); return;
     }
-    if (recording) {
-      setRecording(false);
-      return;
-    }
-
+    if (recording) { setRecording(false); return; }
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
-    recognition.lang = "es-ES";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-
+    recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
     recognition.onresult = (event: any) => {
       let transcript = "";
-      for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
-      }
+      for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
       setContent(transcript);
     };
-
-    recognition.onerror = () => {
-      setRecording(false);
-      toast.error("Error en reconocimiento de voz");
-    };
-
+    recognition.onerror = () => { setRecording(false); toast.error("Error en reconocimiento de voz"); };
     recognition.onend = () => setRecording(false);
-    recognition.start();
-    setRecording(true);
+    recognition.start(); setRecording(true);
   };
 
   return (
@@ -193,49 +146,27 @@ const OrdersModule = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
-            Libro de Órdenes
-          </p>
+          <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">Libro de Órdenes</p>
         </div>
-
         <div className="flex items-end justify-between mb-8">
           <h1 className="font-display text-3xl font-bold tracking-tighter">Órdenes</h1>
           {canWrite && (
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>
-                <Button className="font-display text-xs uppercase tracking-wider gap-2">
-                  <Plus className="h-4 w-4" />
-                  Nueva Orden
-                </Button>
+                <Button className="font-display text-xs uppercase tracking-wider gap-2"><Plus className="h-4 w-4" />Nueva Orden</Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader>
-                  <DialogTitle className="font-display">Registrar Orden</DialogTitle>
-                </DialogHeader>
+                <DialogHeader><DialogTitle className="font-display">Registrar Orden</DialogTitle></DialogHeader>
                 <form onSubmit={handleCreate} className="space-y-4 mt-4">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
-                        Contenido
-                      </Label>
-                      <Button
-                        type="button"
-                        variant={recording ? "destructive" : "outline"}
-                        size="sm"
-                        onClick={toggleRecording}
-                        className="gap-1 text-xs"
-                      >
+                      <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Contenido</Label>
+                      <Button type="button" variant={recording ? "destructive" : "outline"} size="sm" onClick={toggleRecording} className="gap-1 text-xs">
                         {recording ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
                         {recording ? "Parar" : "Dictar"}
                       </Button>
                     </div>
-                    <Textarea
-                      value={content}
-                      onChange={(e) => setContent(e.target.value)}
-                      placeholder="Describa la orden de obra..."
-                      rows={6}
-                      required
-                    />
+                    <Textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Describa la orden de obra..." rows={6} required />
                     {content && detectChanges(content).length > 0 && (
                       <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 px-3 py-2 rounded">
                         <AlertTriangle className="h-3.5 w-3.5" />
@@ -253,11 +184,7 @@ const OrdersModule = () => {
         </div>
 
         {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 bg-card border border-border rounded-lg animate-pulse" />
-            ))}
-          </div>
+          <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-24 bg-card border border-border rounded-lg animate-pulse" />)}</div>
         ) : orders.length === 0 ? (
           <div className="text-center py-20">
             <BookOpen className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
@@ -269,50 +196,30 @@ const OrdersModule = () => {
               const orderVals = validations[order.id] || [];
               const userValidated = orderVals.some((v: any) => v.user_id === user?.id);
               return (
-                <div
-                  key={order.id}
-                  className={`bg-card border rounded-lg p-5 animate-fade-in ${
-                    order.requires_validation ? "border-warning/40" : "border-border"
-                  }`}
-                  style={{ animationDelay: `${i * 60}ms` }}
-                >
+                <div key={order.id} className={`bg-card border rounded-lg p-5 animate-fade-in ${order.requires_validation ? "border-warning/40" : "border-border"}`} style={{ animationDelay: `${i * 60}ms` }}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs font-display font-bold text-muted-foreground">
-                          #{order.order_number}
-                        </span>
+                        <span className="text-xs font-display font-bold text-muted-foreground">#{order.order_number}</span>
                         {order.requires_validation && (
-                          <span className="px-2 py-0.5 text-[10px] font-display uppercase tracking-widest bg-warning/10 text-warning rounded">
-                            Requiere validación
-                          </span>
+                          <span className="px-2 py-0.5 text-[10px] font-display uppercase tracking-widest bg-warning/10 text-warning rounded">Requiere validación</span>
                         )}
                       </div>
                       <p className="text-sm whitespace-pre-wrap">{order.content}</p>
                       <p className="text-xs text-muted-foreground mt-2">
-                        {new Date(order.created_at).toLocaleDateString("es-ES", {
-                          day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-                        })}
+                        {new Date(order.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </p>
                       {order.requires_validation && orderVals.length > 0 && (
                         <div className="flex gap-2 mt-2">
                           {orderVals.map((v: any) => (
-                            <span key={v.id} className="flex items-center gap-1 text-xs text-success">
-                              <CheckCircle2 className="h-3 w-3" /> {v.role}
-                            </span>
+                            <span key={v.id} className="flex items-center gap-1 text-xs text-success"><CheckCircle2 className="h-3 w-3" /> {v.role}</span>
                           ))}
                         </div>
                       )}
                     </div>
                     {order.requires_validation && canValidate && !userValidated && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setConfirmValidate(order.id)}
-                        className="font-display text-xs uppercase tracking-wider gap-1 shrink-0"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Validar
+                      <Button size="sm" variant="outline" onClick={() => setConfirmValidate(order.id)} className="font-display text-xs uppercase tracking-wider gap-1 shrink-0">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Validar
                       </Button>
                     )}
                   </div>
@@ -327,15 +234,11 @@ const OrdersModule = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display">Confirmar Validación</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción quedará registrada legalmente con su firma digital, geolocalización y marca temporal.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Esta acción quedará registrada legalmente con su firma digital, geolocalización y marca temporal.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => confirmValidate && handleValidate(confirmValidate)}>
-              Validar Orden
-            </AlertDialogAction>
+            <AlertDialogAction onClick={() => confirmValidate && handleValidate(confirmValidate)}>Validar Orden</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -36,13 +36,14 @@ import {
   Copy,
   MessageCircle,
   FolderOpen,
+  BarChart3,
 } from "lucide-react";
 
-type AppRole = "DO" | "DEO" | "CON" | "PRO" | "CSS";
+type AppRole = "DO" | "DEM" | "CON" | "PRO" | "CSS";
 
 const roleLabels: Record<AppRole, string> = {
-  DO: "Director de Obra",
-  DEO: "Director de Ejecución",
+  DO: "Director de Obra (Arquitecto)",
+  DEM: "Dir. Ejecución Material (Arq. Técnico)",
   CON: "Contratista",
   PRO: "Promotor",
   CSS: "Coord. Seguridad y Salud",
@@ -52,11 +53,12 @@ const modules = [
   { key: "docs", label: "Documentación de Proyecto", icon: FolderOpen, desc: "Base de conocimiento" },
   { key: "plans", label: "Planos Últimos", icon: FileText, desc: "Repositorio de planos" },
   { key: "brain", label: "Cerebro de Obra", icon: Brain, desc: "IA basada en documentos" },
-  { key: "orders", label: "Libro de Órdenes", icon: BookOpen, desc: "Solo DEO" },
+  { key: "orders", label: "Libro de Órdenes", icon: BookOpen, desc: "Solo DEM" },
   { key: "incidents", label: "Libro de Incidencias", icon: AlertTriangle, desc: "Solo CSS" },
   { key: "costs", label: "Validación de Costes", icon: DollarSign, desc: "Flujo financiero" },
   { key: "dwg", label: "Metro Digital", icon: Ruler, desc: "Toma de medidas" },
   { key: "cfo", label: "Docs Finales (CFO)", icon: ClipboardCheck, desc: "16 puntos de control" },
+  { key: "gantt", label: "Diagrama Gantt", icon: BarChart3, desc: "Cronología de obra" },
 ];
 
 const ProjectDetail = () => {
@@ -112,13 +114,19 @@ const ProjectDetail = () => {
     setInviteEmail("");
     setInviteOpen(false);
 
-    // Refresh members
     const { data: mems } = await supabase
       .from("project_members")
       .select("*, profiles(full_name, role)")
       .eq("project_id", id);
     setMembers(mems || []);
   };
+
+  // Sort members: accepted first, then pending
+  const sortedMembers = [...members].sort((a, b) => {
+    if (a.status === "accepted" && b.status !== "accepted") return -1;
+    if (a.status !== "accepted" && b.status === "accepted") return 1;
+    return 0;
+  });
 
   if (!project) {
     return (
@@ -262,7 +270,7 @@ const ProjectDetail = () => {
             Equipo del Proyecto
           </h2>
           <div className="flex flex-wrap gap-2">
-            {members.map((m) => (
+            {sortedMembers.map((m) => (
               <div
                 key={m.id}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded border text-xs font-display uppercase tracking-wider ${

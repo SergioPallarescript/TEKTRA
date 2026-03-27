@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 const ROLES = [
   { value: "DO", label: "Director de Obra", desc: "Arquitecto — Administrador" },
-  { value: "DEO", label: "Director de Ejecución", desc: "Arquitecto Técnico — Administrador" },
+  { value: "DEM", label: "Dir. Ejecución Material", desc: "Arquitecto Técnico — Administrador" },
   { value: "CON", label: "Contratista", desc: "Empresa constructora" },
   { value: "PRO", label: "Promotor", desc: "Desarrollador / Inversor" },
   { value: "CSS", label: "Coord. Seguridad y Salud", desc: "Coordinador CSS" },
@@ -48,7 +48,6 @@ const Auth = () => {
         });
         if (error) throw error;
 
-        // Update profile with selected role
         if (data.user) {
           await supabase
             .from("profiles")
@@ -87,9 +86,7 @@ const Auth = () => {
             <button
               onClick={() => setIsLogin(true)}
               className={`flex-1 pb-3 text-sm font-display uppercase tracking-wider transition-colors ${
-                isLogin
-                  ? "text-foreground border-b-2 border-foreground"
-                  : "text-muted-foreground"
+                isLogin ? "text-foreground border-b-2 border-foreground" : "text-muted-foreground"
               }`}
             >
               Iniciar Sesión
@@ -97,9 +94,7 @@ const Auth = () => {
             <button
               onClick={() => setIsLogin(false)}
               className={`flex-1 pb-3 text-sm font-display uppercase tracking-wider transition-colors ${
-                !isLogin
-                  ? "text-foreground border-b-2 border-foreground"
-                  : "text-muted-foreground"
+                !isLogin ? "text-foreground border-b-2 border-foreground" : "text-muted-foreground"
               }`}
             >
               Registrarse
@@ -194,11 +189,7 @@ const Auth = () => {
               disabled={loading}
               className="w-full font-display uppercase tracking-wider"
             >
-              {loading
-                ? "Procesando..."
-                : isLogin
-                ? "Acceder"
-                : "Crear Cuenta"}
+              {loading ? "Procesando..." : isLogin ? "Acceder" : "Crear Cuenta"}
             </Button>
           </form>
         </div>

@@ -33,7 +33,7 @@ const Dashboard = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const navigate = useNavigate();
 
-  const isAdmin = profile?.role === "DO" || profile?.role === "DEO";
+  const isAdmin = profile?.role === "DO" || profile?.role === "DEM";
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -67,7 +67,6 @@ const Dashboard = () => {
       return;
     }
 
-    // Add creator as project member
     await supabase.from("project_members").insert({
       project_id: data.id,
       user_id: user.id,
