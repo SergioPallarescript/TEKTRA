@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
+import AttachmentThumbnails from "@/components/AttachmentThumbnails";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -278,6 +279,9 @@ const IncidentsModule = () => {
                         )}
                       </div>
                       <p className="text-sm whitespace-pre-wrap">{inc.content}</p>
+                      {inc.photos && inc.photos.length > 0 && (
+                        <AttachmentThumbnails paths={inc.photos} />
+                      )}
                       {inc.remedial_actions && (
                         <p className="text-xs text-muted-foreground mt-2 border-l-2 border-border pl-3">
                           <strong>Correctoras:</strong> {inc.remedial_actions}

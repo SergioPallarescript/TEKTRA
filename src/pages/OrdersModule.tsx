@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
+import AttachmentThumbnails from "@/components/AttachmentThumbnails";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -256,6 +257,9 @@ const OrdersModule = () => {
                         )}
                       </div>
                       <p className="text-sm whitespace-pre-wrap">{order.content}</p>
+                      {order.photos && order.photos.length > 0 && (
+                        <AttachmentThumbnails paths={order.photos} />
+                      )}
                       <p className="text-xs text-muted-foreground mt-2">
                         {new Date(order.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </p>
