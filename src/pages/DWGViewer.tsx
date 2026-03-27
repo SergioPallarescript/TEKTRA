@@ -608,8 +608,6 @@ const DWGViewer = () => {
   /* ─── RENDER ─── */
   return (
     <AppLayout>
-      {/* Hidden container for DWG viewer rendering */}
-      <div ref={dwgContainerRef} style={{ position: "absolute", left: "-9999px", top: "-9999px", overflow: "hidden" }} />
       <div className="max-w-full mx-auto px-4 py-4">
         <div className="flex items-center gap-3 mb-4">
           <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
