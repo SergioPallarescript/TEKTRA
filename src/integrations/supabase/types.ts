@@ -660,6 +660,7 @@ export type Database = {
           invited_email: string | null
           project_id: string
           role: Database["public"]["Enums"]["app_role"]
+          secondary_role: Database["public"]["Enums"]["app_role"] | null
           status: string
           user_id: string | null
         }
@@ -670,6 +671,7 @@ export type Database = {
           invited_email?: string | null
           project_id: string
           role: Database["public"]["Enums"]["app_role"]
+          secondary_role?: Database["public"]["Enums"]["app_role"] | null
           status?: string
           user_id?: string | null
         }
@@ -680,6 +682,7 @@ export type Database = {
           invited_email?: string | null
           project_id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          secondary_role?: Database["public"]["Enums"]["app_role"] | null
           status?: string
           user_id?: string | null
         }

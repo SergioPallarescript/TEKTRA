@@ -1,0 +1,390 @@
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import AppLayout from "@/components/AppLayout";
+import { Button } from "@/components/ui/button";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+import { ArrowLeft, Shield, Trash2, History } from "lucide-react";
+
+type AppRole = "DO" | "DEM" | "CON" | "PRO" | "CSS";
+
+const roleLabels: Record<AppRole, string> = {
+  DO: "Director de Obra (Arquitecto)",
+  DEM: "Dir. Ejecución Material (Arq. Técnico)",
+  CON: "Contratista",
+  PRO: "Promotor",
+  CSS: "Coord. Seguridad y Salud",
+};
+
+const roleColors: Record<AppRole, string> = {
+  DO: "bg-primary/10 text-primary",
+  DEM: "bg-accent/20 text-accent-foreground",
+  CON: "bg-secondary text-secondary-foreground",
+  PRO: "bg-muted text-muted-foreground",
+  CSS: "bg-destructive/10 text-destructive",
+};
+
+const AdminPanel = () => {
+  const { id: projectId } = useParams<{ id: string }>();
+  const { user, profile } = useAuth();
+  const navigate = useNavigate();
+
+  const [members, setMembers] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const isAdmin = profile?.role === "DO" || profile?.role === "DEM";
+
+  const fetchMembers = useCallback(async () => {
+    if (!projectId) return;
+    const { data } = await supabase
+      .from("project_members")
+      .select("*, profiles(full_name, email, role)")
+      .eq("project_id", projectId);
+    setMembers(data || []);
+    setLoading(false);
+  }, [projectId]);
+
+  const fetchAuditLogs = useCallback(async () => {
+    if (!projectId) return;
+    const { data } = await supabase
+      .from("audit_logs")
+      .select("*")
+      .eq("project_id", projectId)
+      .in("action", ["role_changed", "secondary_role_changed", "member_removed", "member_invited"])
+      .order("created_at", { ascending: false })
+      .limit(50);
+    setAuditLogs(data || []);
+  }, [projectId]);
+
+  useEffect(() => {
+    fetchMembers();
+    fetchAuditLogs();
+  }, [fetchMembers, fetchAuditLogs]);
+
+  const handleRoleChange = async (memberId: string, newRole: AppRole, memberEmail: string, oldRole: string) => {
+    if (!user || !projectId) return;
+
+    const { error } = await supabase
+      .from("project_members")
+      .update({ role: newRole })
+      .eq("id", memberId);
+
+    if (error) {
+      toast.error("Error al cambiar el rol");
+      return;
+    }
+
+    await supabase.from("audit_logs").insert({
+      user_id: user.id,
+      project_id: projectId,
+      action: "role_changed",
+      details: { member_email: memberEmail, old_role: oldRole, new_role: newRole, changed_by: profile?.email },
+    });
+
+    toast.success(`Rol actualizado a ${roleLabels[newRole]}`);
+    fetchMembers();
+    fetchAuditLogs();
+  };
+
+  const handleSecondaryRoleToggle = async (memberId: string, memberEmail: string, currentSecondary: string | null) => {
+    if (!user || !projectId) return;
+
+    const newSecondary = currentSecondary === "CSS" ? null : "CSS";
+
+    const { error } = await supabase
+      .from("project_members")
+      .update({ secondary_role: newSecondary })
+      .eq("id", memberId);
+
+    if (error) {
+      toast.error("Error al cambiar rol secundario");
+      return;
+    }
+
+    await supabase.from("audit_logs").insert({
+      user_id: user.id,
+      project_id: projectId,
+      action: "secondary_role_changed",
+      details: {
+        member_email: memberEmail,
+        old_secondary: currentSecondary,
+        new_secondary: newSecondary,
+        changed_by: profile?.email,
+      },
+    });
+
+    toast.success(newSecondary ? "Rol CSS activado como rol dual" : "Rol CSS desactivado");
+    fetchMembers();
+    fetchAuditLogs();
+  };
+
+  const handleDeleteMember = async () => {
+    if (!deleteTarget || !user || !projectId) return;
+
+    const { error } = await supabase
+      .from("project_members")
+      .delete()
+      .eq("id", deleteTarget.id);
+
+    if (error) {
+      toast.error("Error al eliminar agente");
+      return;
+    }
+
+    await supabase.from("audit_logs").insert({
+      user_id: user.id,
+      project_id: projectId,
+      action: "member_removed",
+      details: {
+        member_email: deleteTarget.invited_email || deleteTarget.profiles?.email,
+        role: deleteTarget.role,
+        removed_by: profile?.email,
+      },
+    });
+
+    toast.success("Agente eliminado del proyecto");
+    setDeleteTarget(null);
+    fetchMembers();
+    fetchAuditLogs();
+  };
+
+  if (!isAdmin) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center py-20">
+          <p className="text-muted-foreground">No tienes permisos de administración.</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  return (
+    <AppLayout>
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-2">
+          <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
+            Administración
+          </p>
+        </div>
+
+        <div className="flex items-end justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <Shield className="h-7 w-7 text-primary" />
+            <h1 className="font-display text-3xl font-bold tracking-tighter">Panel Admin</h1>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-display text-xs uppercase tracking-wider gap-2"
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            <History className="h-4 w-4" />
+            {showHistory ? "Agentes" : "Historial"}
+          </Button>
+        </div>
+
+        {!showHistory ? (
+          /* Members Table */
+          <div className="rounded-lg border border-border bg-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="font-display text-xs uppercase tracking-wider">Agente</TableHead>
+                  <TableHead className="font-display text-xs uppercase tracking-wider">Estado</TableHead>
+                  <TableHead className="font-display text-xs uppercase tracking-wider">Rol Principal</TableHead>
+                  <TableHead className="font-display text-xs uppercase tracking-wider">Rol Dual (CSS)</TableHead>
+                  <TableHead className="font-display text-xs uppercase tracking-wider text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8">
+                      <div className="h-6 w-6 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin mx-auto" />
+                    </TableCell>
+                  </TableRow>
+                ) : members.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                      No hay agentes en este proyecto
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  members.map((member) => {
+                    const email = member.invited_email || member.profiles?.email || "—";
+                    const name = member.profiles?.full_name || email;
+                    const currentRole = member.role as AppRole;
+                    const secondaryRole = member.secondary_role as string | null;
+
+                    return (
+                      <TableRow key={member.id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium text-foreground text-sm">{name}</p>
+                            <p className="text-xs text-muted-foreground">{email}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={
+                              member.status === "accepted"
+                                ? "border-green-500/30 text-green-600 bg-green-500/10"
+                                : "border-yellow-500/30 text-yellow-600 bg-yellow-500/10"
+                            }
+                          >
+                            {member.status === "accepted" ? "Activo" : "Pendiente"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={currentRole}
+                            onValueChange={(val) =>
+                              handleRoleChange(member.id, val as AppRole, email, currentRole)
+                            }
+                          >
+                            <SelectTrigger className="w-[220px] h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(Object.keys(roleLabels) as AppRole[]).map((role) => (
+                                <SelectItem key={role} value={role} className="text-xs">
+                                  {roleLabels[role]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          {currentRole === "DEM" ? (
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={secondaryRole === "CSS"}
+                                onCheckedChange={() =>
+                                  handleSecondaryRoleToggle(member.id, email, secondaryRole)
+                                }
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                {secondaryRole === "CSS" ? "CSS Activo" : "Desactivado"}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteTarget(member)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          /* Audit History */
+          <div className="space-y-3">
+            <h2 className="font-display text-lg font-semibold tracking-tight mb-4">Historial de Cambios</h2>
+            {auditLogs.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">Sin registros</p>
+            ) : (
+              auditLogs.map((log) => {
+                const details = log.details as any;
+                let description = "";
+                if (log.action === "role_changed") {
+                  description = `${details.changed_by} cambió el rol de ${details.member_email}: ${details.old_role} → ${details.new_role}`;
+                } else if (log.action === "secondary_role_changed") {
+                  description = `${details.changed_by} ${details.new_secondary ? "activó" : "desactivó"} rol dual CSS para ${details.member_email}`;
+                } else if (log.action === "member_removed") {
+                  description = `${details.removed_by} eliminó a ${details.member_email} (${details.role})`;
+                } else if (log.action === "member_invited") {
+                  description = `Se invitó a ${details.email} como ${details.role}`;
+                }
+
+                return (
+                  <div
+                    key={log.id}
+                    className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card/50"
+                  >
+                    <History className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-foreground">{description}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(log.created_at).toLocaleString("es-ES")}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* Dual Role Info */}
+        <div className="mt-6 p-4 rounded-lg border border-border bg-muted/20">
+          <h3 className="font-display text-xs uppercase tracking-wider text-muted-foreground mb-2">
+            ℹ️ Rol Dual DEM + CSS
+          </h3>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Al activar el rol dual, el Arquitecto Técnico (DEM) obtiene acceso de escritura tanto en el
+            Libro de Órdenes como en el Libro de Incidencias, manteniendo una sesión única.
+            Todos los cambios quedan registrados en el historial de auditoría.
+          </p>
+        </div>
+
+        {/* Delete Confirmation */}
+        <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="font-display">Eliminar Agente</AlertDialogTitle>
+              <AlertDialogDescription>
+                ¿Estás seguro de que deseas revocar el acceso de{" "}
+                <strong>{deleteTarget?.invited_email || deleteTarget?.profiles?.email}</strong> a este proyecto?
+                Esta acción es irreversible.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteMember}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </AppLayout>
+  );
+};
+
+export default AdminPanel;
