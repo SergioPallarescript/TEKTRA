@@ -201,8 +201,32 @@ const OrdersModule = () => {
                       </div>
                     )}
                   </div>
+                  <div className="space-y-2">
+                    <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Adjuntar fotos / documentos</Label>
+                    <div className="flex gap-2">
+                      <label className="flex items-center gap-1 px-3 py-2 text-xs border border-border rounded-md cursor-pointer hover:bg-accent transition-colors">
+                        <Camera className="h-3.5 w-3.5" /> Foto
+                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files && setPhotos(prev => [...prev, ...Array.from(e.target.files!)])} />
+                      </label>
+                      <label className="flex items-center gap-1 px-3 py-2 text-xs border border-border rounded-md cursor-pointer hover:bg-accent transition-colors">
+                        <Paperclip className="h-3.5 w-3.5" /> Archivo
+                        <input type="file" accept="image/*,.pdf,.doc,.docx" multiple className="hidden" onChange={(e) => e.target.files && setPhotos(prev => [...prev, ...Array.from(e.target.files!)])} />
+                      </label>
+                    </div>
+                    {photos.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {photos.map((f, i) => (
+                          <span key={i} className="flex items-center gap-1 px-2 py-1 text-xs bg-muted rounded">
+                            {f.name.length > 20 ? f.name.slice(0, 17) + "..." : f.name}
+                            <button type="button" onClick={() => setPhotos(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <Button type="submit" disabled={submitting} className="w-full font-display text-xs uppercase tracking-wider">
                     {submitting ? "Registrando..." : "Registrar Orden"}
+                  </Button>
                   </Button>
                 </form>
               </DialogContent>
