@@ -123,9 +123,8 @@ const ProjectDetail = () => {
       details: { email: inviteEmail, role: inviteRole },
     });
 
-    toast.success(`Invitación enviada a ${inviteEmail}`);
+    setInviteSuccess({ email: inviteEmail, role: inviteRole });
     setInviteEmail("");
-    setInviteOpen(false);
 
     const { data: mems } = await supabase
       .from("project_members")
