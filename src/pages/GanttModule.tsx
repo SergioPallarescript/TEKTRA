@@ -128,6 +128,17 @@ const GanttModule = () => {
       });
 
       await saveItems(milestones);
+
+      if (user) {
+        await notifyProjectMembers({
+          projectId,
+          actorId: user.id,
+          title: "Diagrama Gantt actualizado",
+          message: "Se ha regenerado el diagrama Gantt del proyecto",
+          type: "info",
+        });
+      }
+
       toast.success(`Diagrama generado con ${milestones.length} hitos`);
     } catch {
       toast.error("Error al generar el diagrama");

@@ -127,6 +127,13 @@ const OrdersModule = () => {
     } else {
       toast.success("Orden registrada");
     }
+    await notifyProjectMembers({
+      projectId,
+      actorId: user.id,
+      title: "Nueva orden registrada",
+      message: `Se ha registrado una nueva orden en el Libro de Órdenes`,
+      type: requiresValidation ? "warning" : "info",
+    });
     setContent(""); setPhotos([]); setCreateOpen(false); setSubmitting(false); fetchOrders();
   };
 
@@ -146,6 +153,13 @@ const OrdersModule = () => {
       user_id: user.id, project_id: projectId!,
       action: "order_edited", details: { order_id: editOrder.id },
     });
+    await notifyProjectMembers({
+      projectId: projectId!,
+      actorId: user.id,
+      title: "Orden editada",
+      message: `La orden #${editOrder.order_number} ha sido modificada`,
+      type: "info",
+    });
     toast.success("Orden actualizada");
     setEditOrder(null); setEditContent(""); setEditSubmitting(false); fetchOrders();
   };
@@ -157,6 +171,13 @@ const OrdersModule = () => {
     await supabase.from("audit_logs").insert({
       user_id: user.id, project_id: projectId!,
       action: "order_deleted", details: { order_id: deleteOrderId },
+    });
+    await notifyProjectMembers({
+      projectId: projectId!,
+      actorId: user.id,
+      title: "Orden eliminada",
+      message: `Se ha eliminado una orden del Libro de Órdenes`,
+      type: "warning",
     });
     toast.success("Orden eliminada");
     setDeleteOrderId(null); fetchOrders();

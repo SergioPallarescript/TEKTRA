@@ -164,6 +164,18 @@ const AdminPanel = () => {
       details: { member_email: memberEmail, old_role: oldRole, new_role: newRole, changed_by: profile?.email },
     });
 
+    // Notify affected user
+    const memberUserId = members.find((m: any) => m.id === memberId)?.user_id;
+    if (memberUserId) {
+      await notifyUser({
+        userId: memberUserId,
+        projectId,
+        title: "Tu rol ha sido actualizado",
+        message: `Tu rol ha cambiado de ${oldRole} a ${newRole}`,
+        type: "info",
+      });
+    }
+
     toast.success(`Rol actualizado a ${roleLabels[newRole]}`);
     fetchMembers();
     fetchAuditLogs();
@@ -196,6 +208,20 @@ const AdminPanel = () => {
       },
     });
 
+    // Notify affected user
+    const memberUserId = members.find((m: any) => m.id === memberId)?.user_id;
+    if (memberUserId) {
+      await notifyUser({
+        userId: memberUserId,
+        projectId,
+        title: newSecondary ? "Rol dual CSS activado" : "Rol dual CSS desactivado",
+        message: newSecondary
+          ? "Se te ha asignado el rol dual CSS, ahora tienes acceso al Libro de Incidencias"
+          : "Se ha desactivado tu rol dual CSS",
+        type: "info",
+      });
+    }
+
     toast.success(newSecondary ? "Rol CSS activado como rol dual" : "Rol CSS desactivado");
     fetchMembers();
     fetchAuditLogs();
@@ -224,6 +250,17 @@ const AdminPanel = () => {
         removed_by: profile?.email,
       },
     });
+
+    // Notify removed user
+    if (deleteTarget.user_id) {
+      await notifyUser({
+        userId: deleteTarget.user_id,
+        projectId,
+        title: "Acceso revocado",
+        message: "Se ha revocado tu acceso a este proyecto",
+        type: "warning",
+      });
+    }
 
     toast.success("Agente eliminado del proyecto");
     setDeleteTarget(null);
