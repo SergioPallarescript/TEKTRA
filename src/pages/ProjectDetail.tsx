@@ -193,6 +193,61 @@ const ProjectDetail = () => {
                     Enviar Invitación
                   </Button>
                 </form>
+
+                {/* Share invite link */}
+                <div className="border-t border-border pt-4 mt-2">
+                  <p className="font-display text-xs uppercase tracking-wider text-muted-foreground mb-3">
+                    O comparte enlace de registro
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 gap-2 text-xs"
+                      onClick={() => {
+                        const signupUrl = `${window.location.origin}/auth`;
+                        const msg = `Te invito al proyecto "${project?.name}" en GESCON. Regístrate aquí: ${signupUrl}`;
+                        const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                        window.open(waUrl, "_blank");
+                      }}
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" />
+                      WhatsApp
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 gap-2 text-xs"
+                      onClick={() => {
+                        const signupUrl = `${window.location.origin}/auth`;
+                        const msg = `Te invito al proyecto "${project?.name}" en GESCON. Regístrate aquí: ${signupUrl}`;
+                        if (navigator.share) {
+                          navigator.share({ title: "Invitación GESCON", text: msg, url: signupUrl });
+                        } else {
+                          navigator.clipboard.writeText(msg);
+                          toast.success("Enlace copiado al portapapeles");
+                        }
+                      }}
+                    >
+                      <Share2 className="h-3.5 w-3.5" />
+                      Compartir
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 text-xs"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/auth`);
+                        toast.success("Enlace copiado");
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
               </DialogContent>
             </Dialog>
           )}
