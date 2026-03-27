@@ -193,7 +193,7 @@ const GanttModule = () => {
       {/* Forced landscape wrapper */}
       {forcedLandscape ? (
         <div
-          className="fixed inset-0 z-[100] bg-background overflow-auto"
+          className="fixed inset-0 z-[200] bg-background overflow-auto"
           style={{
             transform: "rotate(90deg)",
             transformOrigin: "top left",
@@ -203,10 +203,10 @@ const GanttModule = () => {
             left: `${window.innerWidth}px`,
           }}
         >
-          <div className="p-4">
+          <div className="p-4 pb-16">
             <div className="flex items-center gap-3 mb-2">
-              <Button variant="ghost" size="icon" onClick={() => setForcedLandscape(false)}>
-                <RotateCcw className="h-4 w-4" />
+              <Button variant="outline" size="sm" onClick={() => setForcedLandscape(false)} className="gap-2 font-display text-xs uppercase tracking-wider">
+                <RotateCcw className="h-4 w-4" /> Volver a vertical
               </Button>
               <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
                 Diagrama Gantt — Cronología de obra
@@ -236,35 +236,71 @@ const GanttModule = () => {
                 <p className="font-display text-muted-foreground text-sm">No hay hitos definidos</p>
               </div>
             ) : (
-              <div className="bg-card border border-border rounded-lg overflow-hidden">
-                <div className="relative h-7 border-b border-border bg-secondary/30 overflow-hidden">
-                  {months.map((m, i) => (
-                    <span key={i} className="absolute top-1 text-[9px] font-display uppercase tracking-wider text-muted-foreground" style={{ left: m.left }}>
-                      {m.label}
-                    </span>
-                  ))}
+              <>
+                <div className="bg-card border border-border rounded-lg overflow-hidden mb-4">
+                  <div className="relative h-7 border-b border-border bg-secondary/30 overflow-hidden">
+                    {months.map((m, i) => (
+                      <span key={i} className="absolute top-1 text-[9px] font-display uppercase tracking-wider text-muted-foreground" style={{ left: m.left }}>
+                        {m.label}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="divide-y divide-border">
+                    {sortedItems.map((item, idx) => (
+                      <div key={item.id} className="flex items-center h-9">
+                        <div className="w-40 shrink-0 px-2 flex items-center border-r border-border">
+                          <span className="text-[10px] truncate">{item.title}</span>
+                        </div>
+                        <div className="flex-1 relative h-full px-1">
+                          <div
+                            className="absolute top-1.5 h-5 rounded"
+                            style={{
+                              ...getBarStyle(item),
+                              backgroundColor: COLORS[idx % COLORS.length],
+                              opacity: 0.8,
+                              minWidth: "4px",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="divide-y divide-border">
-                  {sortedItems.map((item, idx) => (
-                    <div key={item.id} className="flex items-center h-9">
-                      <div className="w-40 shrink-0 px-2 flex items-center border-r border-border">
-                        <span className="text-[10px] truncate">{item.title}</span>
-                      </div>
-                      <div className="flex-1 relative h-full px-1">
-                        <div
-                          className="absolute top-1.5 h-5 rounded"
-                          style={{
-                            ...getBarStyle(item),
-                            backgroundColor: COLORS[idx % COLORS.length],
-                            opacity: 0.8,
-                            minWidth: "4px",
-                          }}
-                        />
-                      </div>
+
+                {canEdit && (
+                  <>
+                    <h2 className="font-display text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Editar hitos</h2>
+                    <div className="space-y-2">
+                      {sortedItems.map((item) => (
+                        <div key={item.id} className="flex items-center gap-2 bg-card border border-border rounded-lg p-2">
+                          <GripVertical className="h-3 w-3 text-muted-foreground/30 shrink-0" />
+                          <Input
+                            value={item.title}
+                            onChange={(e) => updateItem(item.id, { title: e.target.value })}
+                            className="flex-1 h-7 text-xs text-foreground"
+                          />
+                          <Input
+                            type="date"
+                            value={item.start}
+                            onChange={(e) => updateItem(item.id, { start: e.target.value })}
+                            className="w-32 h-7 text-xs text-foreground"
+                          />
+                          <span className="text-xs text-muted-foreground">→</span>
+                          <Input
+                            type="date"
+                            value={item.end}
+                            onChange={(e) => updateItem(item.id, { end: e.target.value })}
+                            className="w-32 h-7 text-xs text-foreground"
+                          />
+                          <Button variant="ghost" size="icon" onClick={() => deleteItem(item.id)} className="text-destructive/60 hover:text-destructive shrink-0 h-7 w-7">
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
