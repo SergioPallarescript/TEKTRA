@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Plus, AlertTriangle, ShieldAlert, CheckCircle2, Mic, MicOff, Camera,
+  ArrowLeft, Plus, AlertTriangle, ShieldAlert, CheckCircle2, Mic, MicOff, Camera, Image, Paperclip,
 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const severityLabels: Record<string, { label: string; color: string }> = {
   low: { label: "Baja", color: "text-success bg-success/10" },
@@ -38,7 +39,10 @@ const IncidentsModule = () => {
   const [severity, setSeverity] = useState("medium");
   const [remedial, setRemedial] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
   const [submitting, setSubmitting] = useState(false);
   const [recording, setRecording] = useState(false);
 
@@ -224,10 +228,33 @@ const IncidentsModule = () => {
                       <Camera className="h-3.5 w-3.5" />
                       Fotografías
                     </Label>
-                    <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { setPhotos(Array.from(e.target.files || [])); if (e.target) e.target.value = ""; }} />
-                    <Button type="button" variant="outline" size="sm" className="gap-1 text-xs w-full" onClick={() => photoInputRef.current?.click()}>
-                      <Camera className="h-3.5 w-3.5" /> Seleccionar fotos
-                    </Button>
+                    <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files) setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); if (e.target) e.target.value = ""; }} />
+                    <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { if (e.target.files) setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); if (e.target) e.target.value = ""; }} />
+                    <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple className="hidden" onChange={(e) => { if (e.target.files) setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); if (e.target) e.target.value = ""; }} />
+                    <div className="flex gap-2">
+                      {isMobile ? (
+                        <>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => cameraInputRef.current?.click()}>
+                            <Camera className="h-3.5 w-3.5" /> Foto
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => galleryInputRef.current?.click()}>
+                            <Image className="h-3.5 w-3.5" /> Galería
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => fileInputRef.current?.click()}>
+                            <Paperclip className="h-3.5 w-3.5" /> Archivo
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => galleryInputRef.current?.click()}>
+                            <Camera className="h-3.5 w-3.5" /> Foto
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => fileInputRef.current?.click()}>
+                            <Paperclip className="h-3.5 w-3.5" /> Archivo
+                          </Button>
+                        </>
+                      )}
+                    </div>
                     {photos.length > 0 && (
                       <p className="text-xs text-muted-foreground">{photos.length} archivo(s) seleccionado(s)</p>
                     )}
