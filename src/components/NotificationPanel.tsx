@@ -102,8 +102,14 @@ const NotificationPanel = ({ onClose }: { onClose: () => void }) => {
       prev.map((n) => (n.id === selectedNotif.id ? { ...n, is_read: true } : n))
     );
     setShowAckDialog(false);
-    setSelectedNotif(null);
     toast.success("Lectura registrada legalmente");
+
+    const route = getNotificationRoute(selectedNotif);
+    setSelectedNotif(null);
+    if (route) {
+      onClose();
+      navigate(route);
+    }
   };
 
   return (
