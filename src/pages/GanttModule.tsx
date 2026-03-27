@@ -6,7 +6,7 @@ import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, GripVertical, BarChart3, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, GripVertical, BarChart3, Loader2, RotateCcw } from "lucide-react";
 
 interface GanttItem {
   id: string;
