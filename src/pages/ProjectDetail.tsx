@@ -32,6 +32,9 @@ import {
   UserPlus,
   ArrowLeft,
   Users,
+  Share2,
+  Copy,
+  MessageCircle,
 } from "lucide-react";
 
 type AppRole = "DO" | "DEO" | "CON" | "PRO" | "CSS";
