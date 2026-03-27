@@ -55,7 +55,7 @@ const modules = [
   { key: "orders", label: "Libro de Órdenes", icon: BookOpen, desc: "Solo DEO" },
   { key: "incidents", label: "Libro de Incidencias", icon: AlertTriangle, desc: "Solo CSS" },
   { key: "costs", label: "Validación de Costes", icon: DollarSign, desc: "Flujo financiero" },
-  { key: "dwg", label: "Visor DWG", icon: Ruler, desc: "Solo archivos .dwg" },
+  { key: "dwg", label: "Metro Digital", icon: Ruler, desc: "Toma de medidas" },
   { key: "cfo", label: "Docs Finales (CFO)", icon: ClipboardCheck, desc: "16 puntos de control" },
 ];
 

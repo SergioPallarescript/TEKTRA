@@ -11,21 +11,20 @@ import {
   Loader2, Crosshair, Target, CheckCircle2,
 } from "lucide-react";
 
-/* ─── PDF coordinate point (PDF user-space, independent of zoom) ─── */
+/* ─── Coordinate point (canvas-space, independent of zoom) ─── */
 interface PdfPoint { px: number; py: number; }
 
 interface Measurement {
   type: "line" | "area";
   pdfPoints: PdfPoint[];
-  value: number; // meters or m²
+  value: number;
 }
 
-/* ─── Calibration state ─── */
 interface Calibration {
   p1: PdfPoint;
   p2: PdfPoint;
   realMeters: number;
-  pdfUnitsPerMeter: number; // computed
+  pdfUnitsPerMeter: number;
 }
 
 const SNAP_RADIUS_PX = 14;
@@ -35,17 +34,18 @@ const DWGViewer = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
 
-  /* Canvases: one for the PDF render, one for the measurement overlay */
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  /* File list */
   const [files, setFiles] = useState<any[]>([]);
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [fileLoading, setFileLoading] = useState(false);
+
+  /* Rendered file type */
+  const [renderedType, setRenderedType] = useState<"pdf" | "dwg" | null>(null);
 
   /* PDF rendering */
   const pdfDocRef = useRef<any>(null);
@@ -54,7 +54,7 @@ const DWGViewer = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [pdfViewport, setPdfViewport] = useState<any>(null);
 
-  /* Pan / zoom – we store a transform that maps PDF-space → screen-space */
+  /* Pan / zoom */
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
@@ -76,6 +76,10 @@ const DWGViewer = () => {
 
   const canUpload = profile?.role === "DO" || profile?.role === "DEO";
 
+  /* ─── helpers ─── */
+  const isPdf = (name: string) => /\.pdf$/i.test(name);
+  const isDwg = (name: string) => /\.dwg$/i.test(name);
+
   /* ─── Fetch files ─── */
   const fetchFiles = useCallback(async () => {
     if (!projectId) return;
@@ -90,7 +94,7 @@ const DWGViewer = () => {
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
-  /* ─── Upload (PDF or DWG) ─── */
+  /* ─── Upload ─── */
   const handleUpload = async (file: File) => {
     if (!projectId || !user || !canUpload) return;
     if (!file.name.match(/\.(pdf|dwg)$/i)) {
@@ -123,7 +127,7 @@ const DWGViewer = () => {
     fetchFiles();
   };
 
-  /* ─── PDF rendering with pdf.js ─── */
+  /* ─── PDF rendering ─── */
   const renderPdfPage = useCallback(async (pageNumber: number) => {
     const doc = pdfDocRef.current;
     if (!doc) return;
@@ -142,7 +146,7 @@ const DWGViewer = () => {
   }, []);
 
   const loadPdf = useCallback(async (fileRecord: any) => {
-    setPdfLoading(true);
+    setFileLoading(true);
     try {
       const { data: blob } = await supabase.storage.from("plans").download(fileRecord.file_url);
       if (!blob) throw new Error("No se pudo descargar");
@@ -156,8 +160,116 @@ const DWGViewer = () => {
       setTotalPages(doc.numPages);
       setPageNum(1);
       await renderPdfPage(1);
+      setRenderedType("pdf");
 
-      // Fit to container
+      fitToContainer();
+      setFileLoading(false);
+      toast.success("PDF cargado. Calibra la escala antes de medir.");
+    } catch (err: any) {
+      console.error("PDF load error:", err);
+      toast.error("Error al cargar el PDF: " + (err.message || ""));
+      setFileLoading(false);
+    }
+  }, [renderPdfPage]);
+
+  /* ─── DWG rendering via @x-viewer/core ─── */
+  const loadDwg = useCallback(async (fileRecord: any) => {
+    setFileLoading(true);
+    try {
+      const { data: blob } = await supabase.storage.from("plans").download(fileRecord.file_url);
+      if (!blob) throw new Error("No se pudo descargar");
+      const arrayBuf = await blob.arrayBuffer();
+
+      const xViewer = await import("@x-viewer/core");
+      const viewer = new xViewer.DWGViewer();
+      const result = await viewer.load(new Uint8Array(arrayBuf));
+
+      const canvas = pdfCanvasRef.current;
+      if (!canvas) throw new Error("Canvas no disponible");
+
+      /* Compute bounding box of all entities */
+      const entities = result.entities || [];
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+      const processPoints = (pts: any[]) => {
+        for (const p of pts) {
+          if (p.x !== undefined && p.y !== undefined) {
+            minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+          }
+        }
+      };
+
+      for (const e of entities) {
+        if (e.vertices) processPoints(e.vertices);
+        if (e.startPoint) processPoints([e.startPoint]);
+        if (e.endPoint) processPoints([e.endPoint]);
+        if (e.center) processPoints([e.center]);
+      }
+
+      if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 1000; maxY = 700; }
+
+      const padding = 40;
+      const drawW = maxX - minX || 1;
+      const drawH = maxY - minY || 1;
+      const cw = 2000;
+      const ch = Math.round(cw * (drawH / drawW));
+      canvas.width = cw;
+      canvas.height = ch;
+
+      const scale = Math.min((cw - padding * 2) / drawW, (ch - padding * 2) / drawH);
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("No 2d context");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, cw, ch);
+
+      const toCanvas = (x: number, y: number) => ({
+        cx: padding + (x - minX) * scale,
+        cy: ch - padding - (y - minY) * scale, // flip Y
+      });
+
+      ctx.strokeStyle = "#1a1a1a";
+      ctx.lineWidth = 1;
+
+      for (const e of entities) {
+        ctx.beginPath();
+        if (e.type === "LINE" && e.startPoint && e.endPoint) {
+          const a = toCanvas(e.startPoint.x, e.startPoint.y);
+          const b = toCanvas(e.endPoint.x, e.endPoint.y);
+          ctx.moveTo(a.cx, a.cy); ctx.lineTo(b.cx, b.cy);
+        } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices) {
+          const pts = e.vertices.map((v: any) => toCanvas(v.x, v.y));
+          if (pts.length > 0) {
+            ctx.moveTo(pts[0].cx, pts[0].cy);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].cx, pts[i].cy);
+            if (e.isClosed) ctx.closePath();
+          }
+        } else if (e.type === "CIRCLE" && e.center && e.radius) {
+          const c = toCanvas(e.center.x, e.center.y);
+          ctx.arc(c.cx, c.cy, e.radius * scale, 0, Math.PI * 2);
+        } else if (e.type === "ARC" && e.center && e.radius) {
+          const c = toCanvas(e.center.x, e.center.y);
+          ctx.arc(c.cx, c.cy, e.radius * scale, -(e.endAngle || 0), -(e.startAngle || 0), true);
+        }
+        ctx.stroke();
+      }
+
+      setRenderedType("dwg");
+      setTotalPages(0);
+      fitToContainer();
+      setFileLoading(false);
+      toast.success("DWG renderizado. Calibra la escala antes de medir.");
+    } catch (err: any) {
+      console.error("DWG load error:", err);
+      toast.error("Error al renderizar DWG: " + (err.message || ""));
+      setFileLoading(false);
+    }
+  }, []);
+
+  /* Fit to container */
+  const fitToContainer = () => {
+    setTimeout(() => {
       const container = containerRef.current;
       const pdfCanvas = pdfCanvasRef.current;
       if (container && pdfCanvas) {
@@ -170,17 +282,16 @@ const DWGViewer = () => {
           y: (container.clientHeight - pdfCanvas.height * fitZoom) / 2,
         });
       }
+    }, 50);
+  };
 
-      setPdfLoading(false);
-      toast.success("PDF cargado. Calibra la escala antes de medir.");
-    } catch (err: any) {
-      console.error("PDF load error:", err);
-      toast.error("Error al cargar el PDF: " + (err.message || ""));
-      setPdfLoading(false);
-    }
-  }, [renderPdfPage]);
+  /* Load file based on type */
+  const loadFile = (fileRecord: any) => {
+    if (isPdf(fileRecord.file_name)) loadPdf(fileRecord);
+    else if (isDwg(fileRecord.file_name)) loadDwg(fileRecord);
+  };
 
-  /* Change page */
+  /* Change page (PDF only) */
   const changePage = async (delta: number) => {
     const next = pageNum + delta;
     if (next < 1 || next > totalPages) return;
@@ -188,7 +299,7 @@ const DWGViewer = () => {
     await renderPdfPage(next);
   };
 
-  /* ─── Coordinate conversions (screen ↔ PDF-canvas pixels) ─── */
+  /* ─── Coordinate conversions ─── */
   const screenToPdf = useCallback((sx: number, sy: number): PdfPoint => ({
     px: (sx - offset.x) / zoom,
     py: (sy - offset.y) / zoom,
@@ -199,7 +310,7 @@ const DWGViewer = () => {
     y: p.py * zoom + offset.y,
   }), [offset, zoom]);
 
-  /* ─── Snap to existing points ─── */
+  /* ─── Snap ─── */
   const findSnap = useCallback((sx: number, sy: number): PdfPoint | null => {
     if (!snapEnabled) return null;
     const allPts: PdfPoint[] = [];
@@ -218,7 +329,7 @@ const DWGViewer = () => {
     return best;
   }, [snapEnabled, measurements, currentPoints, calibration, calibPoints, pdfToScreen]);
 
-  /* ─── PDF distance in meters ─── */
+  /* ─── Distance ─── */
   const pdfDist = (a: PdfPoint, b: PdfPoint) => Math.hypot(a.px - b.px, a.py - b.py);
 
   const toMeters = useCallback((pdfUnits: number) => {
@@ -238,7 +349,7 @@ const DWGViewer = () => {
 
     const font = 'bold 13px "Space Grotesk", sans-serif';
 
-    /* Draw calibration line */
+    /* Calibration line */
     if (calibration) {
       const s1 = pdfToScreen(calibration.p1);
       const s2 = pdfToScreen(calibration.p2);
@@ -253,7 +364,6 @@ const DWGViewer = () => {
       const mid = { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 };
       const label = `Ref: ${calibration.realMeters.toFixed(2)} m`;
       ctx.font = font;
-      ctx.fillStyle = "hsl(200, 90%, 20%)";
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = "hsla(200, 90%, 95%, 0.9)";
       ctx.fillRect(mid.x - tw / 2 - 4, mid.y - 20, tw + 8, 22);
@@ -261,7 +371,7 @@ const DWGViewer = () => {
       ctx.fillText(label, mid.x - tw / 2, mid.y - 3);
     }
 
-    /* In-progress calibration points */
+    /* In-progress calibration */
     if (tool === "calibrate" && calibPoints.length > 0) {
       const screenPts = calibPoints.map(p => pdfToScreen(p));
       ctx.beginPath();
@@ -348,7 +458,7 @@ const DWGViewer = () => {
 
   useEffect(() => { drawOverlay(); }, [drawOverlay]);
 
-  /* ─── Canvas click handler ─── */
+  /* ─── Canvas click ─── */
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (tool === "move") return;
     const canvas = overlayCanvasRef.current;
@@ -421,7 +531,7 @@ const DWGViewer = () => {
     toast.success(`Escala calibrada: ${pdfUnitsPerMeter.toFixed(1)} px/m. Ya puedes medir.`);
   };
 
-  /* ─── Mouse move / drag / wheel ─── */
+  /* ─── Mouse handlers ─── */
   const handleMouseMove = (e: React.MouseEvent) => {
     const canvas = overlayCanvasRef.current;
     if (!canvas) return;
@@ -460,6 +570,8 @@ const DWGViewer = () => {
     setZoom(newZoom);
   };
 
+  const isFileLoaded = renderedType !== null;
+
   /* ─── RENDER ─── */
   return (
     <AppLayout>
@@ -469,7 +581,7 @@ const DWGViewer = () => {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
-            Visor de Planos — Medición calibrada
+            Metro Digital — Toma de medidas
           </p>
         </div>
 
@@ -477,8 +589,8 @@ const DWGViewer = () => {
           <>
             <div className="flex items-end justify-between mb-6">
               <div>
-                <h1 className="font-display text-3xl font-bold tracking-tighter">Planos para Medición</h1>
-                <p className="text-sm text-muted-foreground mt-1">Sube un PDF de plano. Calibra dos puntos de una cota conocida y mide con precisión.</p>
+                <h1 className="font-display text-3xl font-bold tracking-tighter">Metro Digital</h1>
+                <p className="text-sm text-muted-foreground mt-1">Sube un plano (PDF o DWG). Calibra dos puntos de una cota conocida y mide con precisión.</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">Solo DO y DEO pueden subir archivos · Formatos: PDF, DWG</p>
               </div>
               {canUpload && (
@@ -497,7 +609,7 @@ const DWGViewer = () => {
               <div className="text-center py-20">
                 <Ruler className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
                 <p className="font-display text-muted-foreground">No hay planos subidos.</p>
-                {canUpload && <p className="text-xs text-muted-foreground mt-2">Sube un PDF con escala gráfica para calibrar y medir.</p>}
+                {canUpload && <p className="text-xs text-muted-foreground mt-2">Sube un PDF o DWG con escala gráfica para calibrar y medir.</p>}
               </div>
             ) : (
               <div className="space-y-2">
@@ -507,11 +619,14 @@ const DWGViewer = () => {
                       setSelectedFile(f);
                       setMeasurements([]); setCurrentPoints([]); setCalibration(null);
                       setCalibPoints([]); setZoom(1); setOffset({ x: 0, y: 0 }); setTool("move");
+                      setRenderedType(null); pdfDocRef.current = null; pdfPageRef.current = null;
                     }} className="flex items-center gap-3 text-left flex-1">
                       <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
                       <div>
                         <p className="text-sm font-medium">{f.file_name}</p>
-                        <p className="text-[10px] text-muted-foreground">{f.file_size ? `${(f.file_size / 1024).toFixed(0)} KB` : ""} · {new Date(f.created_at).toLocaleDateString("es-ES")}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {isPdf(f.file_name) ? "PDF" : "DWG"} · {f.file_size ? `${(f.file_size / 1024).toFixed(0)} KB` : ""} · {new Date(f.created_at).toLocaleDateString("es-ES")}
+                        </p>
                       </div>
                     </button>
                     {f.uploaded_by === user?.id && (
@@ -529,7 +644,7 @@ const DWGViewer = () => {
             {/* Header */}
             <div className="flex items-center justify-between mb-3">
               <div>
-                <button onClick={() => { setSelectedFile(null); pdfDocRef.current = null; pdfPageRef.current = null; }} className="text-xs text-muted-foreground hover:text-foreground font-display uppercase tracking-wider mb-1 inline-block">
+                <button onClick={() => { setSelectedFile(null); pdfDocRef.current = null; pdfPageRef.current = null; setRenderedType(null); }} className="text-xs text-muted-foreground hover:text-foreground font-display uppercase tracking-wider mb-1 inline-block">
                   ← Volver a archivos
                 </button>
                 <h1 className="font-display text-xl font-bold tracking-tighter">{selectedFile.file_name}</h1>
@@ -540,7 +655,7 @@ const DWGViewer = () => {
                     <CheckCircle2 className="h-3.5 w-3.5" /> Calibrado ({calibration.pdfUnitsPerMeter.toFixed(0)} px/m)
                   </span>
                 )}
-                {totalPages > 1 && (
+                {renderedType === "pdf" && totalPages > 1 && (
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="sm" onClick={() => changePage(-1)} disabled={pageNum <= 1} className="text-xs h-7 px-2">←</Button>
                     <span className="text-[10px] text-muted-foreground font-display">{pageNum}/{totalPages}</span>
@@ -576,19 +691,19 @@ const DWGViewer = () => {
               {tool === "area" && currentPoints.length >= 3 && (
                 <Button size="sm" onClick={handleAreaComplete} className="gap-1 text-xs ml-2">Cerrar Área</Button>
               )}
-              {!pdfDocRef.current && selectedFile.file_name.match(/\.pdf$/i) && (
+              {!isFileLoaded && !fileLoading && (
                 <>
                   <div className="w-px h-6 bg-border mx-1" />
-                  <Button variant="outline" size="sm" onClick={() => loadPdf(selectedFile)} disabled={pdfLoading} className="gap-1 text-xs">
-                    {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-                    {pdfLoading ? "Cargando..." : "Cargar PDF"}
+                  <Button variant="outline" size="sm" onClick={() => loadFile(selectedFile)} className="gap-1 text-xs">
+                    <FileText className="h-3.5 w-3.5" />
+                    Cargar {isPdf(selectedFile.file_name) ? "PDF" : "DWG"}
                   </Button>
                 </>
               )}
             </div>
 
             {/* Calibration help banner */}
-            {!calibration && pdfDocRef.current && (
+            {!calibration && isFileLoaded && (
               <div className="mb-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
                 <p className="text-xs font-display text-blue-800 dark:text-blue-200">
                   <strong>Paso 1 — Calibrar escala:</strong> Pulsa "Calibrar", marca los dos extremos de una cota conocida o barra de escala del plano, e introduce la distancia real en metros.
@@ -598,7 +713,6 @@ const DWGViewer = () => {
 
             {/* Viewer area */}
             <div ref={containerRef} className="relative bg-muted/30 border border-border rounded-lg overflow-hidden" style={{ height: "calc(100vh - 280px)" }}>
-              {/* PDF canvas (rendered image) */}
               <canvas
                 ref={pdfCanvasRef}
                 className="absolute"
@@ -610,25 +724,22 @@ const DWGViewer = () => {
                 }}
               />
 
-              {/* Loading state */}
-              {pdfLoading && (
+              {fileLoading && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ zIndex: 5, pointerEvents: "none" }}>
                   <Loader2 className="h-10 w-10 text-muted-foreground animate-spin mb-3" />
-                  <p className="font-display text-sm text-muted-foreground">Cargando PDF…</p>
+                  <p className="font-display text-sm text-muted-foreground">Cargando {isPdf(selectedFile.file_name) ? "PDF" : "DWG"}…</p>
                 </div>
               )}
 
-              {/* Placeholder */}
-              {!pdfDocRef.current && !pdfLoading && (
+              {!isFileLoaded && !fileLoading && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8" style={{ zIndex: 5, pointerEvents: "none" }}>
                   <FileText className="h-16 w-16 text-muted-foreground/20 mb-4" />
                   <p className="font-display text-muted-foreground mb-2">
-                    {selectedFile.file_name.match(/\.pdf$/i) ? 'Pulsa "Cargar PDF" para visualizar el plano' : "Los archivos DWG requieren conversión a PDF para medición calibrada"}
+                    Pulsa "Cargar {isPdf(selectedFile.file_name) ? "PDF" : "DWG"}" para visualizar el plano
                   </p>
                 </div>
               )}
 
-              {/* Measurement overlay canvas */}
               <canvas
                 ref={overlayCanvasRef}
                 className="absolute inset-0 w-full h-full"
