@@ -89,7 +89,10 @@ export type Database = {
       }
       cfo_items: {
         Row: {
+          allowed_roles: string[] | null
           category: string
+          claimed_at: string | null
+          claimed_by: string | null
           completed_at: string | null
           completed_by: string | null
           created_at: string
@@ -98,13 +101,19 @@ export type Database = {
           file_url: string | null
           id: string
           is_completed: boolean
+          item_number: number | null
           project_id: string
           sort_order: number
           title: string
           updated_at: string
+          validated_at: string | null
+          validated_by_deo: boolean | null
         }
         Insert: {
+          allowed_roles?: string[] | null
           category: string
+          claimed_at?: string | null
+          claimed_by?: string | null
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
@@ -113,13 +122,19 @@ export type Database = {
           file_url?: string | null
           id?: string
           is_completed?: boolean
+          item_number?: number | null
           project_id: string
           sort_order?: number
           title: string
           updated_at?: string
+          validated_at?: string | null
+          validated_by_deo?: boolean | null
         }
         Update: {
+          allowed_roles?: string[] | null
           category?: string
+          claimed_at?: string | null
+          claimed_by?: string | null
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
@@ -128,10 +143,13 @@ export type Database = {
           file_url?: string | null
           id?: string
           is_completed?: boolean
+          item_number?: number | null
           project_id?: string
           sort_order?: number
           title?: string
           updated_at?: string
+          validated_at?: string | null
+          validated_by_deo?: boolean | null
         }
         Relationships: [
           {
@@ -210,6 +228,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "cost_claims_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dwg_files: {
+        Row: {
+          created_at: string
+          description: string | null
+          file_name: string
+          file_size: number | null
+          file_url: string
+          id: string
+          project_id: string
+          uploaded_by: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          file_name: string
+          file_size?: number | null
+          file_url: string
+          id?: string
+          project_id: string
+          uploaded_by: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          file_name?: string
+          file_size?: number | null
+          file_url?: string
+          id?: string
+          project_id?: string
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dwg_files_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -551,6 +610,47 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      project_documents: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_size: number | null
+          file_type: string | null
+          file_url: string
+          id: string
+          project_id: string
+          uploaded_by: string
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_size?: number | null
+          file_type?: string | null
+          file_url: string
+          id?: string
+          project_id: string
+          uploaded_by: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_size?: number | null
+          file_type?: string | null
+          file_url?: string
+          id?: string
+          project_id?: string
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_documents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       project_members: {
         Row: {
