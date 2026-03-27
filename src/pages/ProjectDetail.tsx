@@ -81,9 +81,20 @@ const ProjectDetail = () => {
 
       const { data: mems } = await supabase
         .from("project_members")
-        .select("*, profiles(full_name, role)")
+        .select("*")
         .eq("project_id", id);
-      setMembers(mems || []);
+      // Fetch profiles separately (no FK between project_members and profiles)
+      if (mems && mems.length > 0) {
+        const userIds = mems.map((m: any) => m.user_id).filter(Boolean);
+        const { data: profiles } = userIds.length > 0
+          ? await supabase.from("profiles").select("user_id, full_name, role").in("user_id", userIds)
+          : { data: [] };
+        const profileMap: Record<string, any> = {};
+        (profiles || []).forEach((p: any) => { profileMap[p.user_id] = p; });
+        setMembers(mems.map((m: any) => ({ ...m, profiles: m.user_id ? profileMap[m.user_id] || null : null })));
+      } else {
+        setMembers([]);
+      }
     };
     fetchData();
   }, [id]);
@@ -117,9 +128,19 @@ const ProjectDetail = () => {
 
     const { data: mems } = await supabase
       .from("project_members")
-      .select("*, profiles(full_name, role)")
+      .select("*")
       .eq("project_id", id);
-    setMembers(mems || []);
+    if (mems && mems.length > 0) {
+      const userIds = mems.map((m: any) => m.user_id).filter(Boolean);
+      const { data: profiles } = userIds.length > 0
+        ? await supabase.from("profiles").select("user_id, full_name, role").in("user_id", userIds)
+        : { data: [] };
+      const profileMap: Record<string, any> = {};
+      (profiles || []).forEach((p: any) => { profileMap[p.user_id] = p; });
+      setMembers(mems.map((m: any) => ({ ...m, profiles: m.user_id ? profileMap[m.user_id] || null : null })));
+    } else {
+      setMembers([]);
+    }
   };
 
   // Sort members: accepted first, then pending

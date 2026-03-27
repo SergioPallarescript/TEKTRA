@@ -134,10 +134,20 @@ const PlansModule = () => {
     if (!projectId) return;
     const { data } = await supabase
       .from("project_members")
-      .select("*, profiles(full_name, role)")
+      .select("*")
       .eq("project_id", projectId)
       .eq("status", "accepted");
-    if (data) setMembers(data);
+    if (data && data.length > 0) {
+      const userIds = data.map((m: any) => m.user_id).filter(Boolean);
+      const { data: profiles } = userIds.length > 0
+        ? await supabase.from("profiles").select("user_id, full_name, role").in("user_id", userIds)
+        : { data: [] };
+      const profileMap: Record<string, any> = {};
+      (profiles || []).forEach((p: any) => { profileMap[p.user_id] = p; });
+      setMembers(data.map((m: any) => ({ ...m, profiles: m.user_id ? profileMap[m.user_id] || null : null })));
+    } else {
+      setMembers(data || []);
+    }
   }, [projectId]);
 
   useEffect(() => {
