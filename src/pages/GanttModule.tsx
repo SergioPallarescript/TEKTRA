@@ -214,12 +214,10 @@ const GanttModule = () => {
           <div className="flex items-end justify-between mb-4">
             <h1 className="font-display text-2xl font-bold tracking-tighter">Diagrama Gantt</h1>
             <div className="flex gap-2">
-              {items.length === 0 && (
-                <Button onClick={generateFromDocs} disabled={generating} className="font-display text-xs uppercase tracking-wider gap-2">
-                  {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-                  {generating ? "Generando..." : "Generar"}
-                </Button>
-              )}
+              <Button onClick={generateFromDocs} disabled={generating} className="font-display text-xs uppercase tracking-wider gap-2">
+                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+                {generating ? "Generando..." : items.length === 0 ? "Generar" : "Regenerar"}
+              </Button>
               {canEdit && (
                 <Button onClick={addItem} variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
                   <Plus className="h-4 w-4" /> Añadir
@@ -328,12 +326,10 @@ const GanttModule = () => {
                   <RotateCcw className="h-4 w-4" /> Girar pantalla
                 </Button>
               )}
-              {items.length === 0 && (
-                <Button onClick={generateFromDocs} disabled={generating} className="font-display text-xs uppercase tracking-wider gap-2">
-                  {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-                  {generating ? "Generando..." : "Generar desde documentos"}
-                </Button>
-              )}
+              <Button onClick={generateFromDocs} disabled={generating} className="font-display text-xs uppercase tracking-wider gap-2">
+                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+                {generating ? "Generando..." : items.length === 0 ? "Generar desde documentos" : "Regenerar"}
+              </Button>
               {canEdit && (
                 <Button onClick={addItem} variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
                   <Plus className="h-4 w-4" /> Añadir Hito
