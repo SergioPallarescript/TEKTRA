@@ -354,7 +354,7 @@ const PlansModule = () => {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
-            Planos Últimos
+            Planos Válidos
           </p>
         </div>
 

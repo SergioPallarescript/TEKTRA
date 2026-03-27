@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Plus, BookOpen, AlertTriangle, CheckCircle2, Clock, Mic, MicOff,
+  ArrowLeft, Plus, BookOpen, AlertTriangle, CheckCircle2, Clock, Mic, MicOff, Camera, Paperclip, X,
 } from "lucide-react";
 
 const CHANGE_KEYWORDS = ["modificar", "mover", "cambiar", "sustituir", "demoler", "ampliar", "reducir", "eliminar", "añadir", "reemplazar"];
@@ -32,6 +32,7 @@ const OrdersModule = () => {
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [confirmValidate, setConfirmValidate] = useState<string | null>(null);
 
   const isDEM = profile?.role === "DEM";
@@ -94,23 +95,33 @@ const OrdersModule = () => {
     e.preventDefault();
     if (!projectId || !user) return;
     setSubmitting(true);
+
+    // Upload photos/docs if any
+    const photoUrls: string[] = [];
+    for (const photo of photos) {
+      const path = `orders/${projectId}/${Date.now()}_${photo.name}`;
+      const { error } = await supabase.storage.from("plans").upload(path, photo);
+      if (!error) photoUrls.push(path);
+    }
+
     const flags = detectChanges(content);
     const requiresValidation = flags.length > 0;
     const { error } = await supabase.from("orders").insert({
       project_id: projectId, content, created_by: user.id,
       requires_validation: requiresValidation, ai_flags: { keywords: flags },
+      photos: photoUrls.length > 0 ? photoUrls : [],
     });
     if (error) { toast.error("Error al crear la orden"); setSubmitting(false); return; }
     await supabase.from("audit_logs").insert({
       user_id: user.id, project_id: projectId,
-      action: "order_created", details: { requires_validation: requiresValidation, ai_flags: flags },
+      action: "order_created", details: { requires_validation: requiresValidation, ai_flags: flags, has_photos: photoUrls.length > 0 },
     });
     if (requiresValidation) {
       toast.warning(`⚠️ Orden marcada para validación — palabras clave detectadas: ${flags.join(", ")}`);
     } else {
       toast.success("Orden registrada");
     }
-    setContent(""); setCreateOpen(false); setSubmitting(false); fetchOrders();
+    setContent(""); setPhotos([]); setCreateOpen(false); setSubmitting(false); fetchOrders();
   };
 
   const handleValidate = async (orderId: string) => {
@@ -190,9 +201,32 @@ const OrdersModule = () => {
                       </div>
                     )}
                   </div>
+                  <div className="space-y-2">
+                    <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Adjuntar fotos / documentos</Label>
+                    <div className="flex gap-2">
+                      <label className="flex items-center gap-1 px-3 py-2 text-xs border border-border rounded-md cursor-pointer hover:bg-accent transition-colors">
+                        <Camera className="h-3.5 w-3.5" /> Foto
+                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files && setPhotos(prev => [...prev, ...Array.from(e.target.files!)])} />
+                      </label>
+                      <label className="flex items-center gap-1 px-3 py-2 text-xs border border-border rounded-md cursor-pointer hover:bg-accent transition-colors">
+                        <Paperclip className="h-3.5 w-3.5" /> Archivo
+                        <input type="file" accept="image/*,.pdf,.doc,.docx" multiple className="hidden" onChange={(e) => e.target.files && setPhotos(prev => [...prev, ...Array.from(e.target.files!)])} />
+                      </label>
+                    </div>
+                    {photos.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {photos.map((f, i) => (
+                          <span key={i} className="flex items-center gap-1 px-2 py-1 text-xs bg-muted rounded">
+                            {f.name.length > 20 ? f.name.slice(0, 17) + "..." : f.name}
+                            <button type="button" onClick={() => setPhotos(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <Button type="submit" disabled={submitting} className="w-full font-display text-xs uppercase tracking-wider">
                     {submitting ? "Registrando..." : "Registrar Orden"}
-                  </Button>
+                   </Button>
                 </form>
               </DialogContent>
             </Dialog>

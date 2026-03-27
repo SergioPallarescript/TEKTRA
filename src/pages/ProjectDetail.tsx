@@ -52,7 +52,7 @@ const roleLabels: Record<AppRole, string> = {
 
 const modules = [
   { key: "docs", label: "Documentación de Proyecto", icon: FolderOpen, desc: "Base de conocimiento" },
-  { key: "plans", label: "Planos Últimos", icon: FileText, desc: "Repositorio de planos" },
+  { key: "plans", label: "Planos Válidos", icon: FileText, desc: "Repositorio de planos" },
   { key: "brain", label: "Cerebro de Obra", icon: Brain, desc: "IA basada en documentos" },
   { key: "orders", label: "Libro de Órdenes", icon: BookOpen, desc: "Solo DEM" },
   { key: "incidents", label: "Libro de Incidencias", icon: AlertTriangle, desc: "Solo CSS" },
