@@ -11,6 +11,9 @@ import PlansModule from "./pages/PlansModule";
 import OrdersModule from "./pages/OrdersModule";
 import IncidentsModule from "./pages/IncidentsModule";
 import CostsModule from "./pages/CostsModule";
+import DWGViewer from "./pages/DWGViewer";
+import CFOModule from "./pages/CFOModule";
+import BrainModule from "./pages/BrainModule";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -52,6 +55,9 @@ const App = () => (
             <Route path="/project/:id/orders" element={<ProtectedRoute><OrdersModule /></ProtectedRoute>} />
             <Route path="/project/:id/incidents" element={<ProtectedRoute><IncidentsModule /></ProtectedRoute>} />
             <Route path="/project/:id/costs" element={<ProtectedRoute><CostsModule /></ProtectedRoute>} />
+            <Route path="/project/:id/dwg" element={<ProtectedRoute><DWGViewer /></ProtectedRoute>} />
+            <Route path="/project/:id/cfo" element={<ProtectedRoute><CFOModule /></ProtectedRoute>} />
+            <Route path="/project/:id/brain" element={<ProtectedRoute><BrainModule /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
