@@ -1,0 +1,1 @@
+UPDATE profiles SET role = 'DO' WHERE email = 'test@gescon.com';
