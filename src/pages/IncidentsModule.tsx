@@ -44,6 +44,20 @@ const IncidentsModule = () => {
   const [hasDualCSS, setHasDualCSS] = useState(false);
   const canWrite = isCSS || hasDualCSS;
 
+  // Check dual role
+  useEffect(() => {
+    if (!user || !projectId) return;
+    supabase
+      .from("project_members")
+      .select("secondary_role")
+      .eq("project_id", projectId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.secondary_role === "CSS") setHasDualCSS(true);
+      });
+  }, [user, projectId]);
+
   const fetchIncidents = useCallback(async () => {
     if (!projectId) return;
     const { data } = await supabase
