@@ -197,6 +197,10 @@ const DWGViewer = () => {
       container.appendChild(viewerDiv);
 
       const xViewer = await import("@x-viewer/core");
+      
+      // Ensure libredwg WASM is loaded for DWG support
+      await xViewer.ensureLibredwgLoaded();
+      
       const viewer = new xViewer.Viewer2d({
         containerId: viewerDiv.id,
         enableSpinner: false,
@@ -204,7 +208,8 @@ const DWGViewer = () => {
       });
       dwgViewerRef.current = viewer;
 
-      const model = await xViewer.DxfLoader.load(url, viewer);
+      const loader = new xViewer.DxfLoader(viewer);
+      const model = await loader.loadAsync(url);
       viewer.addModel(model);
       viewer.viewFitAll();
       viewer.enableRender(0);
