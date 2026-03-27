@@ -6,16 +6,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
+const ROLES = [
+  { value: "DO", label: "Director de Obra", desc: "Arquitecto — Administrador" },
+  { value: "DEO", label: "Director de Ejecución", desc: "Arquitecto Técnico — Administrador" },
+  { value: "CON", label: "Contratista", desc: "Empresa constructora" },
+  { value: "PRO", label: "Promotor", desc: "Desarrollador / Inversor" },
+  { value: "CSS", label: "Coord. Seguridad y Salud", desc: "Coordinador CSS" },
+] as const;
+
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [selectedRole, setSelectedRole] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isLogin && !selectedRole) {
+      toast.error("Selecciona tu rol profesional");
+      return;
+    }
     setLoading(true);
 
     try {
@@ -29,11 +42,20 @@ const Auth = () => {
           email,
           password,
           options: {
-            data: { full_name: fullName },
+            data: { full_name: fullName, role: selectedRole },
             emailRedirectTo: window.location.origin,
           },
         });
         if (error) throw error;
+
+        // Update profile with selected role
+        if (data.user) {
+          await supabase
+            .from("profiles")
+            .update({ role: selectedRole as any })
+            .eq("user_id", data.user.id);
+        }
+
         if (data.session) {
           toast.success("Cuenta creada correctamente");
           navigate("/");
@@ -86,19 +108,54 @@ const Auth = () => {
 
           <form onSubmit={handleAuth} className="space-y-5">
             {!isLogin && (
-              <div className="space-y-2 animate-fade-in">
-                <Label htmlFor="fullName" className="font-display text-xs uppercase tracking-wider text-muted-foreground">
-                  Nombre Completo
-                </Label>
-                <Input
-                  id="fullName"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Arq. María García"
-                  required
-                  className="bg-background border-border"
-                />
-              </div>
+              <>
+                <div className="space-y-2 animate-fade-in">
+                  <Label htmlFor="fullName" className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                    Nombre Completo
+                  </Label>
+                  <Input
+                    id="fullName"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Arq. María García"
+                    required
+                    className="bg-background border-border"
+                  />
+                </div>
+
+                <div className="space-y-2 animate-fade-in">
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                    Rol Profesional
+                  </Label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {ROLES.map((role) => (
+                      <button
+                        key={role.value}
+                        type="button"
+                        onClick={() => setSelectedRole(role.value)}
+                        className={`text-left px-4 py-3 rounded border transition-all ${
+                          selectedRole === role.value
+                            ? "border-foreground bg-foreground/5"
+                            : "border-border bg-background hover:border-foreground/30"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-display text-xs font-bold tracking-wider">
+                              {role.value}
+                            </span>
+                            <span className="text-sm ml-2">{role.label}</span>
+                          </div>
+                          {selectedRole === role.value && (
+                            <div className="h-2 w-2 rounded-full bg-foreground" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{role.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
 
             <div className="space-y-2">
