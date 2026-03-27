@@ -139,7 +139,12 @@ const AdminPanel = () => {
   }, [fetchMembers, fetchAuditLogs]);
 
   const handleRoleChange = async (memberId: string, newRole: AppRole, memberEmail: string, oldRole: string) => {
-    if (!user || !projectId) return;
+    if (!user || !projectId || memberId.startsWith("creator-")) {
+      if (memberId.startsWith("creator-")) {
+        toast.error("El creador del proyecto no puede cambiar su rol desde aquí");
+      }
+      return;
+    }
 
     const { error } = await supabase
       .from("project_members")
