@@ -15,6 +15,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { notifyProjectMembers } from "@/lib/notifications";
 import {
   ArrowLeft, Plus, BookOpen, AlertTriangle, CheckCircle2, Mic, MicOff, Camera, Image, Paperclip, X, Pencil, Trash2,
 } from "lucide-react";
