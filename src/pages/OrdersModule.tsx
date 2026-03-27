@@ -32,6 +32,7 @@ const OrdersModule = () => {
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [confirmValidate, setConfirmValidate] = useState<string | null>(null);
 
   const isDEM = profile?.role === "DEM";
