@@ -38,6 +38,7 @@ const IncidentsModule = () => {
   const [severity, setSeverity] = useState("medium");
   const [remedial, setRemedial] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [recording, setRecording] = useState(false);
 
