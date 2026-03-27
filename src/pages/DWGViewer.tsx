@@ -179,11 +179,10 @@ const DWGViewer = () => {
       const { data: blob } = await supabase.storage.from("plans").download(fileRecord.file_url);
       if (!blob) throw new Error("No se pudo descargar");
       const arrayBuf = await blob.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuf);
 
       const xViewer = await import("@x-viewer/core");
       const parser = new xViewer.DxfParser();
-      const dxfData: any = await parser.parseAsync(uint8 as any);
+      const dxfData: any = await parser.parseAsync(arrayBuf as any);
 
       if (!dxfData || !dxfData.entities) throw new Error("No se pudieron extraer entidades del DWG");
 
