@@ -25,7 +25,7 @@ const Auth = () => {
         toast.success("Sesión iniciada correctamente");
         navigate("/");
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -34,7 +34,12 @@ const Auth = () => {
           },
         });
         if (error) throw error;
-        toast.success("Cuenta creada. Revisa tu correo para confirmar.");
+        if (data.session) {
+          toast.success("Cuenta creada correctamente");
+          navigate("/");
+        } else {
+          toast.success("Cuenta creada. Revisa tu correo para confirmar.");
+        }
       }
     } catch (err: any) {
       toast.error(err.message || "Error de autenticación");
