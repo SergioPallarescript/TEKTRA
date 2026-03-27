@@ -88,9 +88,9 @@ const AdminPanel = () => {
               secondary_role: null,
               status: "accepted",
               invited_email: creatorProfile.email,
-              profiles: creatorProfile,
+              profiles: creatorProfile as any,
               _isCreator: true,
-            },
+            } as any,
             ...allMembers,
           ];
         }
