@@ -5,64 +5,78 @@ import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Upload, FileText, Trash2, Ruler, Square, Move, RotateCcw, Loader2, Crosshair,
+  ArrowLeft, Upload, FileText, Trash2, Ruler, Square, Move, RotateCcw,
+  Loader2, Crosshair, Target, CheckCircle2,
 } from "lucide-react";
 
-// World coordinate point
-interface WorldPoint {
-  wx: number;
-  wy: number;
-}
+/* ─── PDF coordinate point (PDF user-space, independent of zoom) ─── */
+interface PdfPoint { px: number; py: number; }
 
 interface Measurement {
   type: "line" | "area";
-  worldPoints: WorldPoint[];
+  pdfPoints: PdfPoint[];
   value: number; // meters or m²
 }
 
-const SNAP_RADIUS_PX = 12;
+/* ─── Calibration state ─── */
+interface Calibration {
+  p1: PdfPoint;
+  p2: PdfPoint;
+  realMeters: number;
+  pdfUnitsPerMeter: number; // computed
+}
+
+const SNAP_RADIUS_PX = 14;
 
 const DWGViewer = () => {
   const { id: projectId } = useParams<{ id: string }>();
   const { user, profile } = useAuth();
   const navigate = useNavigate();
-  const viewerContainerRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<any>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  /* Canvases: one for the PDF render, one for the measurement overlay */
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  /* File list */
   const [files, setFiles] = useState<any[]>([]);
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [viewerLoading, setViewerLoading] = useState(false);
-  const [viewerError, setViewerError] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
-  // Transform state (our own pan/zoom for measurement)
+  /* PDF rendering */
+  const pdfDocRef = useRef<any>(null);
+  const pdfPageRef = useRef<any>(null);
+  const [pageNum, setPageNum] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [pdfViewport, setPdfViewport] = useState<any>(null);
+
+  /* Pan / zoom – we store a transform that maps PDF-space → screen-space */
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  // Measurement state - all in world coordinates
-  const [tool, setTool] = useState<"move" | "line" | "area">("move");
+  /* Tool & measurement state */
+  const [tool, setTool] = useState<"move" | "calibrate" | "line" | "area">("move");
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
-  const [currentPoints, setCurrentPoints] = useState<WorldPoint[]>([]);
+  const [currentPoints, setCurrentPoints] = useState<PdfPoint[]>([]);
   const [snapEnabled, setSnapEnabled] = useState(true);
-  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
-  const [snappedPoint, setSnappedPoint] = useState<WorldPoint | null>(null);
+  const [mouseScreenPos, setMouseScreenPos] = useState<{ x: number; y: number } | null>(null);
+  const [snappedPoint, setSnappedPoint] = useState<PdfPoint | null>(null);
 
-  // Scale: how many world units = 1 meter. User sets this.
-  const [scaleInput, setScaleInput] = useState("100");
-  const worldUnitsPerMeter = parseFloat(scaleInput) || 100;
+  /* Calibration */
+  const [calibration, setCalibration] = useState<Calibration | null>(null);
+  const [calibPoints, setCalibPoints] = useState<PdfPoint[]>([]);
+  const [calibInput, setCalibInput] = useState("");
+  const [showCalibDialog, setShowCalibDialog] = useState(false);
 
   const canUpload = profile?.role === "DO" || profile?.role === "DEO";
 
-  // Snap points extracted from geometry (corners, intersections)
-  const [snapPoints, setSnapPoints] = useState<WorldPoint[]>([]);
-
+  /* ─── Fetch files ─── */
   const fetchFiles = useCallback(async () => {
     if (!projectId) return;
     const { data } = await supabase
@@ -76,10 +90,11 @@ const DWGViewer = () => {
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
+  /* ─── Upload (PDF or DWG) ─── */
   const handleUpload = async (file: File) => {
     if (!projectId || !user || !canUpload) return;
-    if (!file.name.match(/\.dwg$/i)) {
-      toast.error("Solo se permiten archivos .DWG");
+    if (!file.name.match(/\.(pdf|dwg)$/i)) {
+      toast.error("Solo se permiten archivos .PDF o .DWG");
       return;
     }
     setUploading(true);
@@ -92,240 +107,323 @@ const DWGViewer = () => {
     });
     await supabase.from("audit_logs").insert({
       user_id: user.id, project_id: projectId,
-      action: "dwg_file_uploaded", details: { file_name: file.name },
+      action: "plan_file_uploaded", details: { file_name: file.name },
     });
-    toast.success("Archivo DWG subido correctamente");
+    toast.success("Archivo subido correctamente");
     setUploading(false);
     fetchFiles();
   };
 
-  const handleDelete = async (dwg: any) => {
-    if (dwg.uploaded_by !== user?.id) return;
-    await supabase.storage.from("plans").remove([dwg.file_url]);
-    await supabase.from("dwg_files").delete().eq("id", dwg.id);
+  const handleDelete = async (f: any) => {
+    if (f.uploaded_by !== user?.id) return;
+    await supabase.storage.from("plans").remove([f.file_url]);
+    await supabase.from("dwg_files").delete().eq("id", f.id);
     toast.success("Archivo eliminado");
-    if (selectedFile?.id === dwg.id) setSelectedFile(null);
+    if (selectedFile?.id === f.id) setSelectedFile(null);
     fetchFiles();
   };
 
-  // Load DWG in @x-viewer/core
-  const loadDwgInViewer = useCallback(async (dwgFile: any) => {
-    setViewerLoading(true);
-    setViewerError(null);
-    try {
-      const { data: blob } = await supabase.storage.from("plans").download(dwgFile.file_url);
-      if (!blob) throw new Error("No se pudo descargar el archivo");
-      const objectUrl = URL.createObjectURL(blob);
-      const { Viewer2d } = await import("@x-viewer/core");
-      if (viewerRef.current) { try { viewerRef.current.dispose?.(); } catch {} viewerRef.current = null; }
-      if (viewerContainerRef.current) {
-        viewerContainerRef.current.innerHTML = '';
-        const viewerDiv = document.createElement("div");
-        viewerDiv.id = "dwg-viewer-canvas";
-        viewerDiv.style.width = "100%";
-        viewerDiv.style.height = "100%";
-        viewerContainerRef.current.appendChild(viewerDiv);
-      }
-      const viewer = new Viewer2d({ containerId: "dwg-viewer-canvas", enableSpinner: true, enableLayoutBar: true });
-      await viewer.loadModel({ modelId: dwgFile.id, name: dwgFile.file_name, src: objectUrl },
-        (event: any) => console.log(`DWG loading: ${event.total > 0 ? Math.round((event.loaded * 100) / event.total) : 0}%`)
-      );
-      viewerRef.current = viewer;
-      setViewerLoading(false);
-      toast.success("Archivo DWG cargado. Usa las herramientas de medición sobre el plano.");
+  /* ─── PDF rendering with pdf.js ─── */
+  const renderPdfPage = useCallback(async (pageNumber: number) => {
+    const doc = pdfDocRef.current;
+    if (!doc) return;
+    const page = await doc.getPage(pageNumber);
+    pdfPageRef.current = page;
+    const vp = page.getViewport({ scale: 1.5 });
+    setPdfViewport(vp);
 
-      // Generate grid snap points for reference
-      const gridSnaps: WorldPoint[] = [];
-      for (let x = 0; x <= 2000; x += 50) {
-        for (let y = 0; y <= 2000; y += 50) {
-          gridSnaps.push({ wx: x, wy: y });
-        }
-      }
-      setSnapPoints(gridSnaps);
-    } catch (err: any) {
-      console.error("DWG viewer error:", err);
-      setViewerError(err.message || "Error al cargar el visor DWG");
-      setViewerLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => { if (viewerRef.current) { try { viewerRef.current.dispose?.(); } catch {} } };
-  }, []);
-
-  // Coordinate conversions - screen ↔ world
-  const screenToWorld = useCallback((sx: number, sy: number): WorldPoint => ({
-    wx: (sx - offset.x) / zoom,
-    wy: (sy - offset.y) / zoom,
-  }), [offset, zoom]);
-
-  const worldToScreen = useCallback((wp: WorldPoint) => ({
-    x: wp.wx * zoom + offset.x,
-    y: wp.wy * zoom + offset.y,
-  }), [offset, zoom]);
-
-  // Find nearest snap point within radius
-  const findSnapPoint = useCallback((sx: number, sy: number): WorldPoint | null => {
-    if (!snapEnabled) return null;
-    const wp = screenToWorld(sx, sy);
-    let closest: WorldPoint | null = null;
-    let closestDist = Infinity;
-
-    // Check existing measurement endpoints for snapping
-    const allPoints: WorldPoint[] = [...snapPoints];
-    measurements.forEach(m => m.worldPoints.forEach(p => allPoints.push(p)));
-    currentPoints.forEach(p => allPoints.push(p));
-
-    for (const sp of allPoints) {
-      const screenPt = worldToScreen(sp);
-      const dx = screenPt.x - sx;
-      const dy = screenPt.y - sy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < SNAP_RADIUS_PX && dist < closestDist) {
-        closestDist = dist;
-        closest = sp;
-      }
-    }
-    return closest;
-  }, [snapEnabled, screenToWorld, worldToScreen, snapPoints, measurements, currentPoints]);
-
-  // Draw measurement overlay
-  const drawMeasurements = useCallback(() => {
-    const canvas = canvasRef.current;
+    const canvas = pdfCanvasRef.current;
     if (!canvas) return;
-    const container = canvas.parentElement;
-    if (container) {
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight;
+    canvas.width = vp.width;
+    canvas.height = vp.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  }, []);
+
+  const loadPdf = useCallback(async (fileRecord: any) => {
+    setPdfLoading(true);
+    try {
+      const { data: blob } = await supabase.storage.from("plans").download(fileRecord.file_url);
+      if (!blob) throw new Error("No se pudo descargar");
+      const arrayBuf = await blob.arrayBuffer();
+
+      const pdfjsLib = await import("pdfjs-dist");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+      const doc = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+      pdfDocRef.current = doc;
+      setTotalPages(doc.numPages);
+      setPageNum(1);
+      await renderPdfPage(1);
+
+      // Fit to container
+      const container = containerRef.current;
+      const pdfCanvas = pdfCanvasRef.current;
+      if (container && pdfCanvas) {
+        const scaleX = container.clientWidth / pdfCanvas.width;
+        const scaleY = container.clientHeight / pdfCanvas.height;
+        const fitZoom = Math.min(scaleX, scaleY, 1) * 0.95;
+        setZoom(fitZoom);
+        setOffset({
+          x: (container.clientWidth - pdfCanvas.width * fitZoom) / 2,
+          y: (container.clientHeight - pdfCanvas.height * fitZoom) / 2,
+        });
+      }
+
+      setPdfLoading(false);
+      toast.success("PDF cargado. Calibra la escala antes de medir.");
+    } catch (err: any) {
+      console.error("PDF load error:", err);
+      toast.error("Error al cargar el PDF: " + (err.message || ""));
+      setPdfLoading(false);
     }
+  }, [renderPdfPage]);
+
+  /* Change page */
+  const changePage = async (delta: number) => {
+    const next = pageNum + delta;
+    if (next < 1 || next > totalPages) return;
+    setPageNum(next);
+    await renderPdfPage(next);
+  };
+
+  /* ─── Coordinate conversions (screen ↔ PDF-canvas pixels) ─── */
+  const screenToPdf = useCallback((sx: number, sy: number): PdfPoint => ({
+    px: (sx - offset.x) / zoom,
+    py: (sy - offset.y) / zoom,
+  }), [offset, zoom]);
+
+  const pdfToScreen = useCallback((p: PdfPoint) => ({
+    x: p.px * zoom + offset.x,
+    y: p.py * zoom + offset.y,
+  }), [offset, zoom]);
+
+  /* ─── Snap to existing points ─── */
+  const findSnap = useCallback((sx: number, sy: number): PdfPoint | null => {
+    if (!snapEnabled) return null;
+    const allPts: PdfPoint[] = [];
+    measurements.forEach(m => m.pdfPoints.forEach(p => allPts.push(p)));
+    currentPoints.forEach(p => allPts.push(p));
+    if (calibration) { allPts.push(calibration.p1); allPts.push(calibration.p2); }
+    calibPoints.forEach(p => allPts.push(p));
+
+    let best: PdfPoint | null = null;
+    let bestDist = Infinity;
+    for (const p of allPts) {
+      const sp = pdfToScreen(p);
+      const d = Math.hypot(sp.x - sx, sp.y - sy);
+      if (d < SNAP_RADIUS_PX && d < bestDist) { bestDist = d; best = p; }
+    }
+    return best;
+  }, [snapEnabled, measurements, currentPoints, calibration, calibPoints, pdfToScreen]);
+
+  /* ─── PDF distance in meters ─── */
+  const pdfDist = (a: PdfPoint, b: PdfPoint) => Math.hypot(a.px - b.px, a.py - b.py);
+
+  const toMeters = useCallback((pdfUnits: number) => {
+    if (!calibration) return pdfUnits;
+    return pdfUnits / calibration.pdfUnitsPerMeter;
+  }, [calibration]);
+
+  /* ─── Draw overlay ─── */
+  const drawOverlay = useCallback(() => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas) return;
+    const parent = canvas.parentElement;
+    if (parent) { canvas.width = parent.clientWidth; canvas.height = parent.clientHeight; }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw completed measurements
-    measurements.forEach((m) => {
-      const screenPts = m.worldPoints.map(p => worldToScreen(p));
+    const font = 'bold 13px "Space Grotesk", sans-serif';
+
+    /* Draw calibration line */
+    if (calibration) {
+      const s1 = pdfToScreen(calibration.p1);
+      const s2 = pdfToScreen(calibration.p2);
       ctx.beginPath();
-      ctx.strokeStyle = m.type === "line" ? "hsl(150, 45%, 40%)" : "hsl(38, 92%, 50%)";
+      ctx.strokeStyle = "hsl(200, 90%, 50%)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]);
+      ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      [s1, s2].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fillStyle = "hsl(200, 90%, 50%)"; ctx.fill(); });
+      const mid = { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 };
+      const label = `Ref: ${calibration.realMeters.toFixed(2)} m`;
+      ctx.font = font;
+      ctx.fillStyle = "hsl(200, 90%, 20%)";
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "hsla(200, 90%, 95%, 0.9)";
+      ctx.fillRect(mid.x - tw / 2 - 4, mid.y - 20, tw + 8, 22);
+      ctx.fillStyle = "hsl(200, 90%, 30%)";
+      ctx.fillText(label, mid.x - tw / 2, mid.y - 3);
+    }
+
+    /* In-progress calibration points */
+    if (tool === "calibrate" && calibPoints.length > 0) {
+      const screenPts = calibPoints.map(p => pdfToScreen(p));
+      ctx.beginPath();
+      ctx.strokeStyle = "hsl(200, 90%, 50%)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(screenPts[0].x, screenPts[0].y);
+      if (screenPts.length > 1) ctx.lineTo(screenPts[1].x, screenPts[1].y);
+      else if (mouseScreenPos) ctx.lineTo(mouseScreenPos.x, mouseScreenPos.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      screenPts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fillStyle = "hsl(200, 90%, 50%)"; ctx.fill(); });
+    }
+
+    /* Completed measurements */
+    measurements.forEach((m) => {
+      const sPts = m.pdfPoints.map(p => pdfToScreen(p));
+      const color = m.type === "line" ? "hsl(150, 45%, 40%)" : "hsl(38, 92%, 50%)";
+      ctx.beginPath();
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.setLineDash([]);
-
-      if (m.type === "line" && screenPts.length === 2) {
-        ctx.moveTo(screenPts[0].x, screenPts[0].y);
-        ctx.lineTo(screenPts[1].x, screenPts[1].y);
+      if (m.type === "line" && sPts.length === 2) {
+        ctx.moveTo(sPts[0].x, sPts[0].y); ctx.lineTo(sPts[1].x, sPts[1].y);
         ctx.stroke();
-        // Draw endpoints
-        screenPts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fillStyle = "hsl(150, 45%, 40%)"; ctx.fill(); });
-        // Label
-        const mid = { x: (screenPts[0].x + screenPts[1].x) / 2, y: (screenPts[0].y + screenPts[1].y) / 2 };
+        sPts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); });
+        const mid = { x: (sPts[0].x + sPts[1].x) / 2, y: (sPts[0].y + sPts[1].y) / 2 };
         const label = `${m.value.toFixed(2)} m`;
-        ctx.fillStyle = "hsl(0, 0%, 100%)";
-        ctx.fillRect(mid.x - 4, mid.y - 18, ctx.measureText(label).width + 8, 20);
+        ctx.font = font;
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = "hsla(0, 0%, 100%, 0.9)";
+        ctx.fillRect(mid.x - tw / 2 - 4, mid.y - 20, tw + 8, 22);
         ctx.fillStyle = "hsl(150, 45%, 30%)";
-        ctx.font = 'bold 13px "Space Grotesk", sans-serif';
-        ctx.fillText(label, mid.x, mid.y - 2);
-      } else if (m.type === "area" && screenPts.length >= 3) {
-        ctx.moveTo(screenPts[0].x, screenPts[0].y);
-        screenPts.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.fillText(label, mid.x - tw / 2, mid.y - 3);
+      } else if (m.type === "area" && sPts.length >= 3) {
+        ctx.moveTo(sPts[0].x, sPts[0].y);
+        sPts.forEach(p => ctx.lineTo(p.x, p.y));
         ctx.closePath();
         ctx.fillStyle = "hsla(38, 92%, 50%, 0.1)";
         ctx.fill();
         ctx.stroke();
-        screenPts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fillStyle = "hsl(38, 92%, 50%)"; ctx.fill(); });
-        const cx = screenPts.reduce((s, p) => s + p.x, 0) / screenPts.length;
-        const cy = screenPts.reduce((s, p) => s + p.y, 0) / screenPts.length;
+        sPts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); });
+        const cx = sPts.reduce((s, p) => s + p.x, 0) / sPts.length;
+        const cy = sPts.reduce((s, p) => s + p.y, 0) / sPts.length;
         const label = `${m.value.toFixed(2)} m²`;
-        ctx.fillStyle = "hsl(0, 0%, 100%)";
-        ctx.fillRect(cx - 4, cy - 18, ctx.measureText(label).width + 8, 20);
+        ctx.font = font;
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = "hsla(0, 0%, 100%, 0.9)";
+        ctx.fillRect(cx - tw / 2 - 4, cy - 20, tw + 8, 22);
         ctx.fillStyle = "hsl(38, 92%, 40%)";
-        ctx.font = 'bold 13px "Space Grotesk", sans-serif';
-        ctx.fillText(label, cx, cy - 2);
+        ctx.fillText(label, cx - tw / 2, cy - 3);
       }
     });
 
-    // Draw current points (in-progress measurement)
-    if (currentPoints.length > 0) {
-      const screenPts = currentPoints.map(p => worldToScreen(p));
+    /* In-progress measurement */
+    if (currentPoints.length > 0 && (tool === "line" || tool === "area")) {
+      const sPts = currentPoints.map(p => pdfToScreen(p));
+      const color = tool === "line" ? "hsl(150, 45%, 40%)" : "hsl(38, 92%, 50%)";
       ctx.beginPath();
-      ctx.strokeStyle = tool === "line" ? "hsl(150, 45%, 40%)" : "hsl(38, 92%, 50%)";
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
-      ctx.moveTo(screenPts[0].x, screenPts[0].y);
-      screenPts.forEach(p => ctx.lineTo(p.x, p.y));
-      // Draw line to mouse
-      if (mousePos) ctx.lineTo(mousePos.x, mousePos.y);
+      ctx.moveTo(sPts[0].x, sPts[0].y);
+      sPts.forEach(p => ctx.lineTo(p.x, p.y));
+      if (mouseScreenPos) ctx.lineTo(mouseScreenPos.x, mouseScreenPos.y);
       ctx.stroke();
       ctx.setLineDash([]);
-      screenPts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fillStyle = tool === "line" ? "hsl(150, 45%, 40%)" : "hsl(38, 92%, 50%)"; ctx.fill(); });
+      sPts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); });
     }
 
-    // Draw snap indicator
+    /* Snap indicator */
     if (snappedPoint && tool !== "move") {
-      const sp = worldToScreen(snappedPoint);
-      ctx.beginPath();
-      ctx.strokeStyle = "hsl(0, 80%, 60%)";
-      ctx.lineWidth = 2;
-      // Draw crosshair
+      const sp = pdfToScreen(snappedPoint);
+      ctx.beginPath(); ctx.strokeStyle = "hsl(0, 80%, 60%)"; ctx.lineWidth = 2;
       ctx.moveTo(sp.x - 10, sp.y); ctx.lineTo(sp.x + 10, sp.y);
       ctx.moveTo(sp.x, sp.y - 10); ctx.lineTo(sp.x, sp.y + 10);
       ctx.stroke();
-      // Draw diamond
       ctx.beginPath();
       ctx.moveTo(sp.x, sp.y - 8); ctx.lineTo(sp.x + 8, sp.y);
       ctx.lineTo(sp.x, sp.y + 8); ctx.lineTo(sp.x - 8, sp.y);
-      ctx.closePath();
-      ctx.strokeStyle = "hsl(0, 80%, 60%)";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.closePath(); ctx.strokeStyle = "hsl(0, 80%, 60%)"; ctx.lineWidth = 1.5; ctx.stroke();
     }
-  }, [measurements, currentPoints, tool, zoom, offset, worldToScreen, mousePos, snappedPoint]);
+  }, [measurements, currentPoints, tool, zoom, offset, pdfToScreen, mouseScreenPos, snappedPoint, calibration, calibPoints]);
 
-  useEffect(() => { drawMeasurements(); }, [drawMeasurements]);
+  useEffect(() => { drawOverlay(); }, [drawOverlay]);
 
-  // Canvas interactions
+  /* ─── Canvas click handler ─── */
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (tool === "move") return;
-    const canvas = canvasRef.current;
+    const canvas = overlayCanvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
+    const pt = snappedPoint || screenToPdf(sx, sy);
 
-    // Use snapped point if available, otherwise convert screen to world
-    const wp = snappedPoint || screenToWorld(sx, sy);
+    if (tool === "calibrate") {
+      const newPts = [...calibPoints, pt];
+      if (newPts.length === 2) {
+        setCalibPoints(newPts);
+        setShowCalibDialog(true);
+      } else {
+        setCalibPoints(newPts);
+      }
+      return;
+    }
+
+    if (!calibration) {
+      toast.error("Primero debes calibrar la escala del plano");
+      setTool("calibrate");
+      return;
+    }
 
     if (tool === "line") {
-      const newPts = [...currentPoints, wp];
+      const newPts = [...currentPoints, pt];
       if (newPts.length === 2) {
-        const dx = (newPts[1].wx - newPts[0].wx) / worldUnitsPerMeter;
-        const dy = (newPts[1].wy - newPts[0].wy) / worldUnitsPerMeter;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        setMeasurements(p => [...p, { type: "line", worldPoints: newPts, value: dist }]);
+        const d = pdfDist(newPts[0], newPts[1]);
+        const meters = toMeters(d);
+        setMeasurements(p => [...p, { type: "line", pdfPoints: newPts, value: meters }]);
         setCurrentPoints([]);
       } else {
         setCurrentPoints(newPts);
       }
     } else if (tool === "area") {
-      setCurrentPoints(p => [...p, wp]);
+      setCurrentPoints(p => [...p, pt]);
     }
   };
 
   const handleAreaComplete = () => {
-    if (tool === "area" && currentPoints.length >= 3) {
+    if (tool === "area" && currentPoints.length >= 3 && calibration) {
       let area = 0;
       for (let i = 0; i < currentPoints.length; i++) {
         const j = (i + 1) % currentPoints.length;
-        area += currentPoints[i].wx * currentPoints[j].wy - currentPoints[j].wx * currentPoints[i].wy;
+        area += currentPoints[i].px * currentPoints[j].py - currentPoints[j].px * currentPoints[i].py;
       }
-      const worldArea = Math.abs(area) / 2;
-      const metersArea = worldArea / (worldUnitsPerMeter * worldUnitsPerMeter);
-      setMeasurements(p => [...p, { type: "area", worldPoints: [...currentPoints], value: metersArea }]);
+      const pdfArea = Math.abs(area) / 2;
+      const m2 = pdfArea / (calibration.pdfUnitsPerMeter * calibration.pdfUnitsPerMeter);
+      setMeasurements(p => [...p, { type: "area", pdfPoints: [...currentPoints], value: m2 }]);
       setCurrentPoints([]);
     }
   };
 
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    const canvas = canvasRef.current;
+  /* Confirm calibration */
+  const confirmCalibration = () => {
+    const realM = parseFloat(calibInput);
+    if (!realM || realM <= 0 || calibPoints.length !== 2) {
+      toast.error("Introduce una distancia real válida");
+      return;
+    }
+    const pdfD = pdfDist(calibPoints[0], calibPoints[1]);
+    const pdfUnitsPerMeter = pdfD / realM;
+    setCalibration({ p1: calibPoints[0], p2: calibPoints[1], realMeters: realM, pdfUnitsPerMeter });
+    setShowCalibDialog(false);
+    setCalibPoints([]);
+    setCalibInput("");
+    setTool("line");
+    toast.success(`Escala calibrada: ${pdfUnitsPerMeter.toFixed(1)} px/m. Ya puedes medir.`);
+  };
+
+  /* ─── Mouse move / drag / wheel ─── */
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const canvas = overlayCanvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const sx = e.clientX - rect.left;
@@ -335,14 +433,8 @@ const DWGViewer = () => {
       setOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
       return;
     }
-
-    setMousePos({ x: sx, y: sy });
-
-    // Snap detection
-    if (tool !== "move") {
-      const snap = findSnapPoint(sx, sy);
-      setSnappedPoint(snap);
-    }
+    setMouseScreenPos({ x: sx, y: sy });
+    if (tool !== "move") setSnappedPoint(findSnap(sx, sy));
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -354,16 +446,13 @@ const DWGViewer = () => {
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const canvas = canvasRef.current;
+    const canvas = overlayCanvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    const newZoom = Math.max(0.1, Math.min(10, zoom * factor));
-
-    // Zoom toward cursor
+    const newZoom = Math.max(0.05, Math.min(20, zoom * factor));
     setOffset({
       x: mx - (mx - offset.x) * (newZoom / zoom),
       y: my - (my - offset.y) * (newZoom / zoom),
@@ -371,6 +460,7 @@ const DWGViewer = () => {
     setZoom(newZoom);
   };
 
+  /* ─── RENDER ─── */
   return (
     <AppLayout>
       <div className="max-w-full mx-auto px-4 py-4">
@@ -379,7 +469,7 @@ const DWGViewer = () => {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
-            Visor DWG — Solo archivos .dwg
+            Visor de Planos — Medición calibrada
           </p>
         </div>
 
@@ -387,14 +477,15 @@ const DWGViewer = () => {
           <>
             <div className="flex items-end justify-between mb-6">
               <div>
-                <h1 className="font-display text-3xl font-bold tracking-tighter">Archivos DWG</h1>
-                <p className="text-sm text-muted-foreground mt-1">Solo DO y DEO pueden subir archivos. Formato exclusivo: .dwg</p>
+                <h1 className="font-display text-3xl font-bold tracking-tighter">Planos para Medición</h1>
+                <p className="text-sm text-muted-foreground mt-1">Sube un PDF de plano. Calibra dos puntos de una cota conocida y mide con precisión.</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Solo DO y DEO pueden subir archivos · Formatos: PDF, DWG</p>
               </div>
               {canUpload && (
                 <label className="cursor-pointer">
-                  <input type="file" className="hidden" accept=".dwg" onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])} />
+                  <input type="file" className="hidden" accept=".pdf,.dwg" onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])} />
                   <Button asChild variant="outline" className="font-display text-xs uppercase tracking-wider gap-2" disabled={uploading}>
-                    <span><Upload className="h-4 w-4" />{uploading ? "Subiendo..." : "Subir DWG"}</span>
+                    <span><Upload className="h-4 w-4" />{uploading ? "Subiendo..." : "Subir Plano"}</span>
                   </Button>
                 </label>
               )}
@@ -405,14 +496,18 @@ const DWGViewer = () => {
             ) : files.length === 0 ? (
               <div className="text-center py-20">
                 <Ruler className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
-                <p className="font-display text-muted-foreground">No hay archivos DWG.</p>
-                {canUpload && <p className="text-xs text-muted-foreground mt-2">Sube archivos .dwg para visualizarlos con el visor CAD.</p>}
+                <p className="font-display text-muted-foreground">No hay planos subidos.</p>
+                {canUpload && <p className="text-xs text-muted-foreground mt-2">Sube un PDF con escala gráfica para calibrar y medir.</p>}
               </div>
             ) : (
               <div className="space-y-2">
                 {files.map((f) => (
                   <div key={f.id} className="flex items-center justify-between p-4 bg-card border border-border rounded-lg hover:border-foreground/10 transition-all">
-                    <button onClick={() => { setSelectedFile(f); setMeasurements([]); setCurrentPoints([]); setZoom(1); setOffset({ x: 0, y: 0 }); }} className="flex items-center gap-3 text-left flex-1">
+                    <button onClick={() => {
+                      setSelectedFile(f);
+                      setMeasurements([]); setCurrentPoints([]); setCalibration(null);
+                      setCalibPoints([]); setZoom(1); setOffset({ x: 0, y: 0 }); setTool("move");
+                    }} className="flex items-center gap-3 text-left flex-1">
                       <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
                       <div>
                         <p className="text-sm font-medium">{f.file_name}</p>
@@ -431,18 +526,27 @@ const DWGViewer = () => {
           </>
         ) : (
           <>
-            <div className="flex items-center justify-between mb-4">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-3">
               <div>
-                <button onClick={() => { setSelectedFile(null); if (viewerRef.current) { try { viewerRef.current.dispose?.(); } catch {} viewerRef.current = null; } }} className="text-xs text-muted-foreground hover:text-foreground font-display uppercase tracking-wider mb-1 inline-block">
+                <button onClick={() => { setSelectedFile(null); pdfDocRef.current = null; pdfPageRef.current = null; }} className="text-xs text-muted-foreground hover:text-foreground font-display uppercase tracking-wider mb-1 inline-block">
                   ← Volver a archivos
                 </button>
                 <h1 className="font-display text-xl font-bold tracking-tighter">{selectedFile.file_name}</h1>
               </div>
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-[10px] font-display uppercase tracking-wider text-muted-foreground">Escala (uds/m):</Label>
-                  <Input type="number" value={scaleInput} onChange={(e) => setScaleInput(e.target.value)} className="w-20 h-7 text-xs" />
-                </div>
+                {calibration && (
+                  <span className="flex items-center gap-1 text-[10px] text-green-600 font-display">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Calibrado ({calibration.pdfUnitsPerMeter.toFixed(0)} px/m)
+                  </span>
+                )}
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => changePage(-1)} disabled={pageNum <= 1} className="text-xs h-7 px-2">←</Button>
+                    <span className="text-[10px] text-muted-foreground font-display">{pageNum}/{totalPages}</span>
+                    <Button variant="ghost" size="sm" onClick={() => changePage(1)} disabled={pageNum >= totalPages} className="text-xs h-7 px-2">→</Button>
+                  </div>
+                )}
                 <span className="text-[10px] text-muted-foreground font-display">Zoom: {Math.round(zoom * 100)}%</span>
               </div>
             </div>
@@ -450,8 +554,19 @@ const DWGViewer = () => {
             {/* Toolbar */}
             <div className="flex items-center gap-1 mb-3 bg-card border border-border rounded-lg p-1.5 flex-wrap">
               <Button variant={tool === "move" ? "default" : "ghost"} size="sm" onClick={() => setTool("move")} className="gap-1 text-xs"><Move className="h-3.5 w-3.5" /> Mover</Button>
-              <Button variant={tool === "line" ? "default" : "ghost"} size="sm" onClick={() => setTool("line")} className="gap-1 text-xs"><Ruler className="h-3.5 w-3.5" /> Medir</Button>
-              <Button variant={tool === "area" ? "default" : "ghost"} size="sm" onClick={() => { setTool("area"); setCurrentPoints([]); }} className="gap-1 text-xs"><Square className="h-3.5 w-3.5" /> Área</Button>
+              <div className="w-px h-6 bg-border mx-1" />
+              <Button variant={tool === "calibrate" ? "default" : "ghost"} size="sm"
+                onClick={() => { setTool("calibrate"); setCalibPoints([]); setCurrentPoints([]); }}
+                className="gap-1 text-xs">
+                <Target className="h-3.5 w-3.5" /> {calibration ? "Recalibrar" : "① Calibrar"}
+              </Button>
+              <div className="w-px h-6 bg-border mx-1" />
+              <Button variant={tool === "line" ? "default" : "ghost"} size="sm"
+                onClick={() => { if (!calibration) { toast.error("Calibra primero"); setTool("calibrate"); } else setTool("line"); }}
+                className="gap-1 text-xs"><Ruler className="h-3.5 w-3.5" /> Medir</Button>
+              <Button variant={tool === "area" ? "default" : "ghost"} size="sm"
+                onClick={() => { if (!calibration) { toast.error("Calibra primero"); setTool("calibrate"); } else { setTool("area"); setCurrentPoints([]); } }}
+                className="gap-1 text-xs"><Square className="h-3.5 w-3.5" /> Área</Button>
               <div className="w-px h-6 bg-border mx-1" />
               <Button variant={snapEnabled ? "default" : "ghost"} size="sm" onClick={() => setSnapEnabled(!snapEnabled)} className="gap-1 text-xs">
                 <Crosshair className="h-3.5 w-3.5" /> Snap {snapEnabled ? "ON" : "OFF"}
@@ -461,59 +576,100 @@ const DWGViewer = () => {
               {tool === "area" && currentPoints.length >= 3 && (
                 <Button size="sm" onClick={handleAreaComplete} className="gap-1 text-xs ml-2">Cerrar Área</Button>
               )}
-              <div className="w-px h-6 bg-border mx-1" />
-              <Button variant="outline" size="sm" onClick={() => loadDwgInViewer(selectedFile)} disabled={viewerLoading} className="gap-1 text-xs">
-                {viewerLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-                {viewerLoading ? "Cargando..." : "Renderizar DWG"}
-              </Button>
+              {!pdfDocRef.current && selectedFile.file_name.match(/\.pdf$/i) && (
+                <>
+                  <div className="w-px h-6 bg-border mx-1" />
+                  <Button variant="outline" size="sm" onClick={() => loadPdf(selectedFile)} disabled={pdfLoading} className="gap-1 text-xs">
+                    {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                    {pdfLoading ? "Cargando..." : "Cargar PDF"}
+                  </Button>
+                </>
+              )}
             </div>
 
-            {/* Viewer + Measurement overlay */}
-            <div className="relative bg-card border border-border rounded-lg overflow-hidden" style={{ height: "calc(100vh - 260px)" }}>
-              {/* Status overlays */}
-              {!viewerLoading && !viewerRef.current && !viewerError && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8" style={{ zIndex: 5, pointerEvents: "none" }}>
-                  <FileText className="h-16 w-16 text-muted-foreground/20 mb-4" />
-                  <p className="font-display text-muted-foreground mb-2">Pulsa "Renderizar DWG" para cargar el archivo</p>
-                  <p className="text-xs text-muted-foreground/60">Las mediciones se realizan en coordenadas del plano, independientes del zoom</p>
-                </div>
-              )}
-              {viewerLoading && (
+            {/* Calibration help banner */}
+            {!calibration && pdfDocRef.current && (
+              <div className="mb-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                <p className="text-xs font-display text-blue-800 dark:text-blue-200">
+                  <strong>Paso 1 — Calibrar escala:</strong> Pulsa "Calibrar", marca los dos extremos de una cota conocida o barra de escala del plano, e introduce la distancia real en metros.
+                </p>
+              </div>
+            )}
+
+            {/* Viewer area */}
+            <div ref={containerRef} className="relative bg-muted/30 border border-border rounded-lg overflow-hidden" style={{ height: "calc(100vh - 280px)" }}>
+              {/* PDF canvas (rendered image) */}
+              <canvas
+                ref={pdfCanvasRef}
+                className="absolute"
+                style={{
+                  transformOrigin: "0 0",
+                  transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+                  imageRendering: "auto",
+                  zIndex: 1,
+                }}
+              />
+
+              {/* Loading state */}
+              {pdfLoading && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ zIndex: 5, pointerEvents: "none" }}>
                   <Loader2 className="h-10 w-10 text-muted-foreground animate-spin mb-3" />
-                  <p className="font-display text-sm text-muted-foreground">Procesando archivo DWG...</p>
-                </div>
-              )}
-              {viewerError && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8" style={{ zIndex: 5 }}>
-                  <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-6 max-w-md">
-                    <p className="font-display text-sm text-destructive mb-2">Error al cargar el visor DWG</p>
-                    <p className="text-xs text-muted-foreground mb-4">{viewerError}</p>
-                    <Button variant="outline" size="sm" className="mt-3 text-xs" onClick={() => loadDwgInViewer(selectedFile)}>Reintentar</Button>
-                  </div>
+                  <p className="font-display text-sm text-muted-foreground">Cargando PDF…</p>
                 </div>
               )}
 
-              {/* DWG Viewer container */}
-              <div ref={viewerContainerRef} className="absolute inset-0" style={{ zIndex: 1 }} />
+              {/* Placeholder */}
+              {!pdfDocRef.current && !pdfLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8" style={{ zIndex: 5, pointerEvents: "none" }}>
+                  <FileText className="h-16 w-16 text-muted-foreground/20 mb-4" />
+                  <p className="font-display text-muted-foreground mb-2">
+                    {selectedFile.file_name.match(/\.pdf$/i) ? 'Pulsa "Cargar PDF" para visualizar el plano' : "Los archivos DWG requieren conversión a PDF para medición calibrada"}
+                  </p>
+                </div>
+              )}
 
               {/* Measurement overlay canvas */}
               <canvas
-                ref={canvasRef}
+                ref={overlayCanvasRef}
                 className="absolute inset-0 w-full h-full"
                 style={{
-                  zIndex: tool !== "move" ? 10 : 0,
+                  zIndex: 10,
                   cursor: tool === "move" ? (dragging ? "grabbing" : "grab") : "crosshair",
-                  pointerEvents: tool === "move" ? "auto" : "auto",
                 }}
                 onClick={handleCanvasClick}
                 onMouseDown={handleMouseDown}
-                onMouseMove={handleCanvasMouseMove}
+                onMouseMove={handleMouseMove}
                 onMouseUp={() => setDragging(false)}
-                onMouseLeave={() => { setDragging(false); setMousePos(null); setSnappedPoint(null); }}
+                onMouseLeave={() => { setDragging(false); setMouseScreenPos(null); setSnappedPoint(null); }}
                 onWheel={handleWheel}
               />
             </div>
+
+            {/* Calibration dialog */}
+            {showCalibDialog && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center" style={{ zIndex: 50 }}>
+                <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl">
+                  <h3 className="font-display text-lg font-bold mb-2">Calibrar escala</h3>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Has marcado dos puntos sobre el plano. Introduce la distancia real que representan.
+                  </p>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Input
+                      type="number" step="0.01" min="0.01" placeholder="Ej: 5.00"
+                      value={calibInput} onChange={(e) => setCalibInput(e.target.value)}
+                      className="flex-1" autoFocus
+                    />
+                    <span className="text-sm font-display text-muted-foreground">metros</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => { setShowCalibDialog(false); setCalibPoints([]); }} className="flex-1 text-xs">Cancelar</Button>
+                    <Button onClick={confirmCalibration} className="flex-1 text-xs gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Measurements panel */}
             {measurements.length > 0 && (
@@ -532,9 +688,8 @@ const DWGViewer = () => {
               </div>
             )}
 
-            {/* Info */}
             <p className="text-[10px] text-muted-foreground/40 mt-2 text-center">
-              Las medidas se calculan en coordenadas del plano y no varían con el zoom · Snap: detecta esquinas y puntos de medición previos
+              Calibra marcando dos puntos de una cota conocida · Las medidas son independientes del zoom · Snap detecta puntos de medición previos
             </p>
           </>
         )}
