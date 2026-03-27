@@ -301,12 +301,16 @@ const AdminPanel = () => {
                     const name = member.profiles?.full_name || email;
                     const currentRole = member.role as AppRole;
                     const secondaryRole = member.secondary_role as string | null;
+                    const isVirtualCreator = member._isCreator === true;
 
                     return (
                       <TableRow key={member.id}>
                         <TableCell>
                           <div>
-                            <p className="font-medium text-foreground text-sm">{name}</p>
+                            <p className="font-medium text-foreground text-sm">
+                              {name}
+                              {isVirtualCreator && <span className="ml-2 text-xs text-primary">(Creador)</span>}
+                            </p>
                             <p className="text-xs text-muted-foreground">{email}</p>
                           </div>
                         </TableCell>
