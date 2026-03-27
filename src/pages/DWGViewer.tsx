@@ -225,8 +225,44 @@ const DWGViewer = () => {
 
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("No 2d context");
-      ctx.fillStyle = "#ffffff";
+
+      /* Dark CAD-style background */
+      ctx.fillStyle = "#1e1e2e";
       ctx.fillRect(0, 0, cw, ch);
+
+      /* AutoCAD Color Index (ACI) → hex mapping (standard 256 colors, key subset) */
+      const aciColors: Record<number, string> = {
+        0: "#ffffff", 1: "#ff0000", 2: "#ffff00", 3: "#00ff00", 4: "#00ffff",
+        5: "#0000ff", 6: "#ff00ff", 7: "#ffffff", 8: "#808080", 9: "#c0c0c0",
+        10: "#ff0000", 11: "#ff7f7f", 12: "#cc0000", 14: "#ff3333",
+        20: "#ff3300", 30: "#ff6600", 40: "#ff9900", 50: "#ffcc00",
+        60: "#cccc00", 70: "#99cc00", 80: "#66cc00", 90: "#33cc00",
+        100: "#00cc00", 110: "#00cc33", 120: "#00cc66", 130: "#00cc99",
+        140: "#00cccc", 150: "#0099cc", 160: "#0066cc", 170: "#0033cc",
+        180: "#0000cc", 190: "#3300cc", 200: "#6600cc", 210: "#9900cc",
+        220: "#cc00cc", 230: "#cc0099", 240: "#cc0066", 250: "#333333",
+        251: "#505050", 252: "#696969", 253: "#808080", 254: "#b3b3b3", 255: "#e6e6e6",
+      };
+
+      /* Resolve entity color from entity → layer → default */
+      const layerColors: Record<string, number> = {};
+      if (dxfData.tables?.layer?.layers) {
+        for (const [name, layer] of Object.entries(dxfData.tables.layer.layers as Record<string, any>)) {
+          if (layer.color !== undefined) layerColors[name] = layer.color;
+        }
+      }
+
+      const getEntityColor = (e: any): string => {
+        let colorIdx = e.color ?? e.colorIndex;
+        // ByLayer (256) or undefined → use layer color
+        if (colorIdx === undefined || colorIdx === 256 || colorIdx === 0) {
+          const layerName = e.layer || "0";
+          colorIdx = layerColors[layerName] ?? 7;
+        }
+        // Color 7 on dark bg = white
+        if (colorIdx === 7) return "#ffffff";
+        return aciColors[colorIdx] || `hsl(${(colorIdx * 37) % 360}, 70%, 60%)`;
+      };
 
       /* Transform DWG coords → canvas coords (flip Y) */
       const toC = (x: number, y: number) => ({
@@ -234,10 +270,10 @@ const DWGViewer = () => {
         cy: ch - padding - (y - minY) * scale,
       });
 
-      ctx.strokeStyle = "#1a1a1a";
-      ctx.lineWidth = 1;
-
       for (const e of entities) {
+        const color = getEntityColor(e);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
         ctx.beginPath();
         const type = (e.type || "").toUpperCase();
 
@@ -274,14 +310,50 @@ const DWGViewer = () => {
         } else if (type === "POINT" && e.position) {
           const p = toC(e.position.x, e.position.y);
           ctx.arc(p.cx, p.cy, 2, 0, Math.PI * 2);
-          ctx.fillStyle = "#1a1a1a"; ctx.fill();
+          ctx.fillStyle = color; ctx.fill();
         } else if (type === "SOLID" && e.points) {
           const pts = e.points.map((v: any) => toC(v.x, v.y));
           if (pts.length >= 3) {
             ctx.moveTo(pts[0].cx, pts[0].cy);
             for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].cx, pts[i].cy);
             ctx.closePath();
-            ctx.fillStyle = "#cccccc"; ctx.fill();
+            ctx.fillStyle = color; ctx.fill();
+          }
+        } else if (type === "INSERT" && e.name && dxfData.blocks?.[e.name]) {
+          /* Render block inserts */
+          const block = dxfData.blocks[e.name];
+          const insertX = e.position?.x || 0;
+          const insertY = e.position?.y || 0;
+          const scaleX = e.xScale || 1;
+          const scaleY = e.yScale || 1;
+          if (block.entities) {
+            for (const be of block.entities) {
+              const beColor = getEntityColor({ ...be, layer: be.layer || e.layer });
+              ctx.strokeStyle = beColor;
+              ctx.beginPath();
+              const bt = (be.type || "").toUpperCase();
+              if (bt === "LINE" && be.startPoint && be.endPoint) {
+                const a = toC(insertX + be.startPoint.x * scaleX, insertY + be.startPoint.y * scaleY);
+                const b = toC(insertX + be.endPoint.x * scaleX, insertY + be.endPoint.y * scaleY);
+                ctx.moveTo(a.cx, a.cy); ctx.lineTo(b.cx, b.cy);
+              } else if ((bt === "LWPOLYLINE" || bt === "POLYLINE") && be.vertices) {
+                const pts = be.vertices.map((v: any) => toC(insertX + v.x * scaleX, insertY + v.y * scaleY));
+                if (pts.length > 0) {
+                  ctx.moveTo(pts[0].cx, pts[0].cy);
+                  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].cx, pts[i].cy);
+                  if (be.shape || be.isClosed) ctx.closePath();
+                }
+              } else if (bt === "CIRCLE" && be.center && be.radius) {
+                const c = toC(insertX + be.center.x * scaleX, insertY + be.center.y * scaleY);
+                ctx.arc(c.cx, c.cy, be.radius * scale * Math.abs(scaleX), 0, Math.PI * 2);
+              } else if (bt === "ARC" && be.center && be.radius) {
+                const c = toC(insertX + be.center.x * scaleX, insertY + be.center.y * scaleY);
+                const sa = -(be.endAngle || 0) * Math.PI / 180;
+                const ea = -(be.startAngle || 0) * Math.PI / 180;
+                ctx.arc(c.cx, c.cy, be.radius * scale * Math.abs(scaleX), sa, ea, false);
+              }
+              ctx.stroke();
+            }
           }
         }
         ctx.stroke();
