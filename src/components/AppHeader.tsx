@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Bell, Menu, X, LogOut, FolderOpen, Home, Settings } from "lucide-react";
+import { Bell, Menu, X, LogOut, FolderOpen, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -35,8 +35,7 @@ const AppHeader = () => {
   }, []);
 
   const navItems = [
-    { label: "Panel Principal", icon: Home, path: "/" },
-    { label: "Proyectos", icon: FolderOpen, path: "/projects" },
+    { label: "Proyectos", icon: FolderOpen, path: "/" },
     { label: "Configuración", icon: Settings, path: "/settings" },
   ];
 

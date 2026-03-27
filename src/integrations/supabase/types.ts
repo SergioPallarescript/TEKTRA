@@ -52,6 +52,133 @@ export type Database = {
           },
         ]
       }
+      cost_claims: {
+        Row: {
+          amount: number
+          claim_number: number
+          created_at: string
+          description: string | null
+          file_name: string | null
+          file_url: string | null
+          id: string
+          payment_authorized_at: string | null
+          payment_authorized_by: string | null
+          project_id: string
+          rejected_at: string | null
+          rejected_by: string | null
+          rejection_reason: string | null
+          status: string
+          submitted_by: string
+          technical_approved_at: string | null
+          technical_approved_by: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          claim_number?: number
+          created_at?: string
+          description?: string | null
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          payment_authorized_at?: string | null
+          payment_authorized_by?: string | null
+          project_id: string
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
+          status?: string
+          submitted_by: string
+          technical_approved_at?: string | null
+          technical_approved_by?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          claim_number?: number
+          created_at?: string
+          description?: string | null
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          payment_authorized_at?: string | null
+          payment_authorized_by?: string | null
+          project_id?: string
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
+          status?: string
+          submitted_by?: string
+          technical_approved_at?: string | null
+          technical_approved_by?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_claims_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      incidents: {
+        Row: {
+          content: string
+          created_at: string
+          created_by: string
+          id: string
+          incident_number: number
+          photos: string[] | null
+          project_id: string
+          remedial_actions: string | null
+          resolved_at: string | null
+          severity: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          created_by: string
+          id?: string
+          incident_number?: number
+          photos?: string[] | null
+          project_id: string
+          remedial_actions?: string | null
+          resolved_at?: string | null
+          severity?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          incident_number?: number
+          photos?: string[] | null
+          project_id?: string
+          remedial_actions?: string | null
+          resolved_at?: string | null
+          severity?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incidents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           ack_geo: string | null
@@ -92,6 +219,88 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "notifications_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_validations: {
+        Row: {
+          geo_location: string | null
+          id: string
+          order_id: string
+          role: string
+          user_id: string
+          validated_at: string
+        }
+        Insert: {
+          geo_location?: string | null
+          id?: string
+          order_id: string
+          role: string
+          user_id: string
+          validated_at?: string
+        }
+        Update: {
+          geo_location?: string | null
+          id?: string
+          order_id?: string
+          role?: string
+          user_id?: string
+          validated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_validations_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          ai_flags: Json | null
+          content: string
+          created_at: string
+          created_by: string
+          id: string
+          order_number: number
+          photos: string[] | null
+          project_id: string
+          requires_validation: boolean | null
+          updated_at: string
+        }
+        Insert: {
+          ai_flags?: Json | null
+          content: string
+          created_at?: string
+          created_by: string
+          id?: string
+          order_number?: number
+          photos?: string[] | null
+          project_id: string
+          requires_validation?: boolean | null
+          updated_at?: string
+        }
+        Update: {
+          ai_flags?: Json | null
+          content?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          order_number?: number
+          photos?: string[] | null
+          project_id?: string
+          requires_validation?: boolean | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
