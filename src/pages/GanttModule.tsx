@@ -186,22 +186,91 @@ const GanttModule = () => {
     cursor.setMonth(cursor.getMonth() + 1);
   }
 
+  const isMobilePortrait = typeof window !== 'undefined' && window.innerWidth < 768 && window.innerHeight > window.innerWidth;
+
   return (
     <AppLayout>
-      {/* Portrait lock overlay */}
-      {isPortrait && (
-        <div className="fixed inset-0 z-[100] bg-background flex flex-col items-center justify-center gap-4 px-8 text-center">
-          <RotateCcw className="h-16 w-16 text-muted-foreground animate-pulse" />
-          <h2 className="font-display text-xl font-bold tracking-tighter">Gira tu dispositivo</h2>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            El diagrama Gantt necesita orientación horizontal para una correcta visualización y edición.
-          </p>
-          <Button variant="outline" size="sm" onClick={() => navigate(`/project/${projectId}`)}>
-            <ArrowLeft className="h-4 w-4 mr-2" /> Volver al proyecto
-          </Button>
+      {/* Forced landscape wrapper */}
+      {forcedLandscape ? (
+        <div
+          className="fixed inset-0 z-[100] bg-background overflow-auto"
+          style={{
+            transform: "rotate(90deg)",
+            transformOrigin: "top left",
+            width: `${window.innerHeight}px`,
+            height: `${window.innerWidth}px`,
+            top: 0,
+            left: `${window.innerWidth}px`,
+          }}
+        >
+          <div className="p-4">
+            <div className="flex items-center gap-3 mb-2">
+              <Button variant="ghost" size="icon" onClick={() => setForcedLandscape(false)}>
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+              <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
+                Diagrama Gantt — Cronología de obra
+              </p>
+            </div>
+
+            <div className="flex items-end justify-between mb-4">
+              <h1 className="font-display text-2xl font-bold tracking-tighter">Diagrama Gantt</h1>
+              <div className="flex gap-2">
+                {items.length === 0 && (
+                  <Button onClick={generateFromDocs} disabled={generating} className="font-display text-xs uppercase tracking-wider gap-2">
+                    {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+                    {generating ? "Generando..." : "Generar"}
+                  </Button>
+                )}
+                {canEdit && (
+                  <Button onClick={addItem} variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
+                    <Plus className="h-4 w-4" /> Añadir
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {items.length === 0 ? (
+              <div className="text-center py-10">
+                <BarChart3 className="h-12 w-12 text-muted-foreground/20 mx-auto mb-3" />
+                <p className="font-display text-muted-foreground text-sm">No hay hitos definidos</p>
+              </div>
+            ) : (
+              <div className="bg-card border border-border rounded-lg overflow-hidden">
+                <div className="relative h-7 border-b border-border bg-secondary/30 overflow-hidden">
+                  {months.map((m, i) => (
+                    <span key={i} className="absolute top-1 text-[9px] font-display uppercase tracking-wider text-muted-foreground" style={{ left: m.left }}>
+                      {m.label}
+                    </span>
+                  ))}
+                </div>
+                <div className="divide-y divide-border">
+                  {sortedItems.map((item, idx) => (
+                    <div key={item.id} className="flex items-center h-9">
+                      <div className="w-40 shrink-0 px-2 flex items-center border-r border-border">
+                        <span className="text-[10px] truncate">{item.title}</span>
+                      </div>
+                      <div className="flex-1 relative h-full px-1">
+                        <div
+                          className="absolute top-1.5 h-5 rounded"
+                          style={{
+                            ...getBarStyle(item),
+                            backgroundColor: COLORS[idx % COLORS.length],
+                            opacity: 0.8,
+                            minWidth: "4px",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      )}
-      <div className="max-w-full mx-auto px-4 py-8">
+      ) : (
+        <>
+          {/* Normal view with rotate button for mobile */}
         <div className="flex items-center gap-3 mb-2">
           <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
             <ArrowLeft className="h-4 w-4" />
