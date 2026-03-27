@@ -16,23 +16,23 @@ import {
 
 type AppRole = "DO" | "DEO" | "CON" | "PRO" | "CSS";
 
-const CFO_16_POINTS: { num: number; title: string; category: string; allowedRoles: AppRole[] }[] = [
-  { num: 1, title: "Identificación de subcontratas y trabajadores", category: "Gestión de Obra", allowedRoles: ["CON"] },
-  { num: 2, title: "Certificado Final de Obra firmado por DO y DEO", category: "Certificaciones Técnicas", allowedRoles: ["DO", "DEO"] },
-  { num: 3, title: "Certificaciones de obra ejecutada", category: "Gestión de Obra", allowedRoles: ["CON"] },
-  { num: 4, title: "Acta de recepción de obra", category: "Actas", allowedRoles: ["DO", "DEO", "CSS"] },
-  { num: 5, title: "Certificado de instalación eléctrica (Endesa)", category: "Certificaciones Instalaciones", allowedRoles: ["CON"] },
-  { num: 6, title: "Certificado de instalación de agua (Aqualia)", category: "Certificaciones Instalaciones", allowedRoles: ["CON"] },
-  { num: 7, title: "Certificado de telecomunicaciones", category: "Certificaciones Instalaciones", allowedRoles: ["CON"] },
-  { num: 8, title: "Certificado de instalación de gas", category: "Certificaciones Instalaciones", allowedRoles: ["CON"] },
-  { num: 9, title: "Certificado de eficiencia energética", category: "Certificaciones Técnicas", allowedRoles: ["CON"] },
-  { num: 10, title: "Ensayos de hormigón y acero", category: "Ensayos", allowedRoles: ["CON"] },
-  { num: 11, title: "Certificados CE de materiales", category: "Certificaciones Materiales", allowedRoles: ["CON"] },
-  { num: 12, title: "Libro de órdenes cerrado", category: "Documentación Legal", allowedRoles: ["CON"] },
-  { num: 13, title: "Libro de incidencias cerrado", category: "Documentación Legal", allowedRoles: ["CON"] },
-  { num: 14, title: "Plan de Seguridad y Salud aprobado", category: "Seguridad y Salud", allowedRoles: ["CON"] },
-  { num: 15, title: "Seguro decenal / garantías", category: "Garantías", allowedRoles: ["CON"] },
-  { num: 16, title: "Licencia de primera ocupación", category: "Documentación Legal", allowedRoles: ["CON"] },
+const CFO_16_POINTS: { num: number; title: string; category: string; allowedRoles: AppRole[]; agentLabel: string }[] = [
+  { num: 1, title: "Identificación de subcontratas y trabajadores", category: "Gestión de Obra", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 2, title: "Certificado Final de Obra firmado por DO y DEO", category: "Certificaciones Técnicas", allowedRoles: ["DO", "DEO"], agentLabel: "Arquitecto / Aparejador" },
+  { num: 3, title: "Certificaciones de obra ejecutada", category: "Gestión de Obra", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 4, title: "Acta de recepción de obra", category: "Actas", allowedRoles: ["DO", "DEO", "CSS"], agentLabel: "Arquitecto / Aparejador / Seguridad" },
+  { num: 5, title: "Certificado de instalación eléctrica (Endesa)", category: "Certificaciones Instalaciones", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 6, title: "Certificado de instalación de agua (Aqualia)", category: "Certificaciones Instalaciones", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 7, title: "Certificado de telecomunicaciones", category: "Certificaciones Instalaciones", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 8, title: "Certificado de instalación de gas", category: "Certificaciones Instalaciones", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 9, title: "Certificado de eficiencia energética", category: "Certificaciones Técnicas", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 10, title: "Ensayos de hormigón y acero", category: "Ensayos", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 11, title: "Certificados CE de materiales", category: "Certificaciones Materiales", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 12, title: "Libro de órdenes cerrado", category: "Documentación Legal", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 13, title: "Libro de incidencias cerrado", category: "Documentación Legal", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 14, title: "Plan de Seguridad y Salud aprobado", category: "Seguridad y Salud", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 15, title: "Seguro decenal / garantías", category: "Garantías", allowedRoles: ["CON"], agentLabel: "Constructor" },
+  { num: 16, title: "Licencia de primera ocupación", category: "Documentación Legal", allowedRoles: ["CON"], agentLabel: "Constructor" },
 ];
 
 const roleLabels: Record<string, string> = {
@@ -46,13 +46,21 @@ const CFOModule = () => {
 
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [claimDialog, setClaimDialog] = useState<{ open: boolean; item: any | null }>({ open: false, item: null });
   const [auditing, setAuditing] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  const isDEO = profile?.role === "DEO";
   const userRole = profile?.role as AppRole | undefined;
+  const isDEO = userRole === "DEO";
+
+  // Wait for profile to load
+  useEffect(() => {
+    if (profile !== undefined) {
+      setProfileLoading(false);
+    }
+  }, [profile]);
 
   const fetchItems = useCallback(async () => {
     if (!projectId) return;
@@ -64,10 +72,11 @@ const CFOModule = () => {
 
     if (data && data.length > 0) {
       setItems(data);
+      setLoading(false);
     } else {
       await initializeChecklist();
+      setLoading(false);
     }
-    setLoading(false);
   }, [projectId]);
 
   const initializeChecklist = async () => {
@@ -81,8 +90,19 @@ const CFOModule = () => {
       allowed_roles: pt.allowedRoles,
     }));
 
-    const { data } = await supabase.from("cfo_items").insert(inserts).select();
-    if (data) setItems(data);
+    const { data, error } = await supabase.from("cfo_items").insert(inserts).select();
+    if (error) {
+      console.error("Error initializing CFO checklist:", error);
+      // Try fetching again in case another user initialized it
+      const { data: retryData } = await supabase
+        .from("cfo_items")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("item_number", { ascending: true });
+      if (retryData) setItems(retryData);
+    } else if (data) {
+      setItems(data);
+    }
   };
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
@@ -101,13 +121,20 @@ const CFOModule = () => {
     const { error: uploadError } = await supabase.storage.from("plans").upload(path, file);
     if (uploadError) { toast.error("Error al subir archivo"); setUploadingId(null); return; }
 
-    await supabase.from("cfo_items").update({
+    const { error: updateError } = await supabase.from("cfo_items").update({
       is_completed: true,
       completed_at: new Date().toISOString(),
       completed_by: user.id,
       file_url: path,
       file_name: file.name,
     }).eq("id", itemId);
+
+    if (updateError) {
+      console.error("Error updating CFO item:", updateError);
+      toast.error("Error al actualizar el documento");
+      setUploadingId(null);
+      return;
+    }
 
     await supabase.from("audit_logs").insert({
       user_id: user.id, project_id: projectId,
@@ -120,17 +147,18 @@ const CFOModule = () => {
     fetchItems();
   };
 
-  // DEO Audit scan
   const handleAudit = async () => {
     setAuditing(true);
     await fetchItems();
-    setAuditing(false);
-    const pending = items.filter((i) => !i.is_completed);
-    if (pending.length === 0) {
-      toast.success("✅ Todos los documentos están completos");
-    } else {
-      toast.warning(`⚠️ ${pending.length} documentos pendientes`);
-    }
+    setTimeout(() => {
+      const pending = items.filter((i) => !i.is_completed);
+      if (pending.length === 0) {
+        toast.success("✅ Todos los documentos están completos");
+      } else {
+        toast.warning(`⚠️ ${pending.length} documentos pendientes`);
+      }
+      setAuditing(false);
+    }, 500);
 
     if (user && projectId) {
       await supabase.from("audit_logs").insert({
@@ -141,11 +169,8 @@ const CFOModule = () => {
     }
   };
 
-  // Claim notification
   const handleClaim = async (item: any) => {
     if (!user || !projectId) return;
-
-    // Find the responsible agents
     const allowedRoles: string[] = item.allowed_roles || ["CON"];
     const { data: members } = await supabase
       .from("project_members")
@@ -181,7 +206,6 @@ const CFOModule = () => {
     fetchItems();
   };
 
-  // DEO Validation
   const handleValidate = async (itemId: string) => {
     if (!user) return;
     await supabase.from("cfo_items").update({
@@ -199,11 +223,9 @@ const CFOModule = () => {
     fetchItems();
   };
 
-  // Export CFO
   const handleExport = async () => {
     setExporting(true);
     const completedDocs = items.filter((i) => i.is_completed && i.file_url);
-    const urls: string[] = [];
 
     for (const item of completedDocs) {
       const { data } = await supabase.storage.from("plans").download(item.file_url);
@@ -214,7 +236,6 @@ const CFOModule = () => {
         a.download = `${String(item.item_number).padStart(2, "0")}_${item.file_name}`;
         a.click();
         URL.revokeObjectURL(url);
-        urls.push(item.file_name);
       }
     }
 
@@ -222,11 +243,11 @@ const CFOModule = () => {
       await supabase.from("audit_logs").insert({
         user_id: user.id, project_id: projectId,
         action: "cfo_export",
-        details: { files_count: urls.length },
+        details: { files_count: completedDocs.length },
       });
     }
 
-    toast.success(`Descargados ${urls.length} documentos del expediente CFO`);
+    toast.success(`Descargados ${completedDocs.length} documentos del expediente CFO`);
     setExporting(false);
   };
 
@@ -236,6 +257,28 @@ const CFOModule = () => {
   const validatedItems = items.filter((i) => i.validated_by_deo).length;
   const progress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
   const allValidated = totalItems > 0 && validatedItems === totalItems;
+
+  if (profileLoading || loading) {
+    return (
+      <AppLayout>
+        <div className="max-w-5xl mx-auto px-4 py-8">
+          <div className="flex items-center gap-3 mb-6">
+            <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
+              Gestión de Cierre — CFO
+            </p>
+          </div>
+          <div className="space-y-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-20 bg-card border border-border rounded-lg animate-pulse" />
+            ))}
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -250,7 +293,12 @@ const CFOModule = () => {
         </div>
 
         <div className="flex items-end justify-between mb-4">
-          <h1 className="font-display text-3xl font-bold tracking-tighter">Documentos Finales</h1>
+          <div>
+            <h1 className="font-display text-3xl font-bold tracking-tighter">Documentos Finales</h1>
+            <p className="text-xs text-muted-foreground mt-1">
+              Tu rol: <span className="font-semibold">{roleLabels[userRole || ""] || userRole || "—"}</span>
+            </p>
+          </div>
           <div className="text-right">
             <p className="font-display text-2xl font-bold tracking-tighter text-success">{progress}%</p>
             <p className="text-xs text-muted-foreground">{completedItems}/{totalItems} · {validatedItems} validados</p>
@@ -278,137 +326,126 @@ const CFOModule = () => {
           )}
         </div>
 
-        {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-20 bg-card border border-border rounded-lg animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {categories.map((cat) => {
-              const catPoints = CFO_16_POINTS.filter((p) => p.category === cat);
-              const catItems = catPoints.map((p) => items.find((i) => i.item_number === p.num)).filter(Boolean);
-              const catCompleted = catItems.filter((i: any) => i.is_completed).length;
+        <div className="space-y-6">
+          {categories.map((cat) => {
+            const catPoints = CFO_16_POINTS.filter((p) => p.category === cat);
+            const catItems = catPoints.map((p) => items.find((i) => i.item_number === p.num)).filter(Boolean);
+            const catCompleted = catItems.filter((i: any) => i.is_completed).length;
+            // Get unique agent labels for this category
+            const catAgents = [...new Set(catPoints.map((p) => p.agentLabel))];
 
-              return (
-                <div key={cat} className="bg-card border border-border rounded-lg p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="font-display text-sm font-semibold uppercase tracking-wider">{cat}</h2>
-                    <span className={`px-2 py-0.5 text-[10px] font-display uppercase tracking-widest rounded ${
-                      catCompleted === catItems.length ? "bg-success/10 text-success" : "bg-secondary text-muted-foreground"
-                    }`}>
-                      {catCompleted}/{catItems.length}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {catPoints.map((pt) => {
-                      const item = items.find((i) => i.item_number === pt.num);
-                      if (!item) return null;
-                      const isCompleted = item.is_completed;
-                      const isValidated = item.validated_by_deo;
-                      const canUpload_ = canUploadItem(item);
-                      const isPending = !isCompleted;
+            return (
+              <div key={cat} className="bg-card border border-border rounded-lg p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="font-display text-sm font-semibold uppercase tracking-wider">{cat}</h2>
+                  <span className={`px-2 py-0.5 text-[10px] font-display uppercase tracking-widest rounded ${
+                    catCompleted === catItems.length ? "bg-success/10 text-success" : "bg-secondary text-muted-foreground"
+                  }`}>
+                    {catCompleted}/{catItems.length}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {catPoints.map((pt) => {
+                    const item = items.find((i) => i.item_number === pt.num);
+                    if (!item) return null;
+                    const isCompleted = item.is_completed;
+                    const isValidated = item.validated_by_deo;
+                    const canUpload_ = canUploadItem(item);
+                    const isPending = !isCompleted;
 
-                      return (
-                        <div key={item.id} className={`flex items-center justify-between p-3 rounded border transition-all ${
-                          isValidated ? "border-success/50 bg-success/10" :
-                          isCompleted ? "border-success/30 bg-success/5" :
-                          item.claimed_at ? "border-destructive/30 bg-destructive/5" :
-                          "border-border hover:border-foreground/10"
-                        }`}>
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {isValidated ? (
-                              <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
-                            ) : isCompleted ? (
-                              <CheckCircle2 className="h-5 w-5 text-success/60 shrink-0" />
-                            ) : (
-                              <Circle className="h-5 w-5 text-muted-foreground/30 shrink-0" />
-                            )}
-                            <div className="min-w-0">
-                              <p className={`text-sm ${isCompleted ? "text-success" : ""}`}>
-                                <span className="font-display font-bold mr-2">{pt.num}.</span>
-                                {pt.title}
-                              </p>
-                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                {item.file_name && (
-                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                    <FileText className="h-3 w-3" /> {item.file_name}
-                                  </span>
-                                )}
-                                <span className="text-[10px] text-muted-foreground/60">
-                                  Responsable: {pt.allowedRoles.map((r) => roleLabels[r] || r).join(", ")}
+                    return (
+                      <div key={item.id} className={`flex items-center justify-between p-3 rounded border transition-all ${
+                        isValidated ? "border-success/50 bg-success/10" :
+                        isCompleted ? "border-success/30 bg-success/5" :
+                        item.claimed_at ? "border-destructive/30 bg-destructive/5" :
+                        "border-border hover:border-foreground/10"
+                      }`}>
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          {isValidated ? (
+                            <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
+                          ) : isCompleted ? (
+                            <CheckCircle2 className="h-5 w-5 text-success/60 shrink-0" />
+                          ) : (
+                            <Circle className="h-5 w-5 text-muted-foreground/30 shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <p className={`text-sm ${isCompleted ? "text-success" : ""}`}>
+                              <span className="font-display font-bold mr-2">{pt.num}.</span>
+                              {pt.title}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              {item.file_name && (
+                                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                  <FileText className="h-3 w-3" /> {item.file_name}
                                 </span>
-                                {item.claimed_at && !isCompleted && (
-                                  <span className="text-[10px] text-destructive font-display uppercase tracking-wider">
-                                    Reclamado
-                                  </span>
-                                )}
-                                {isValidated && (
-                                  <span className="text-[10px] text-success font-display uppercase tracking-wider">
-                                    ✓ Validado DEO
-                                  </span>
-                                )}
-                              </div>
+                              )}
+                              {item.claimed_at && !isCompleted && (
+                                <span className="text-[10px] text-destructive font-display uppercase tracking-wider">
+                                  Reclamado
+                                </span>
+                              )}
+                              {isValidated && (
+                                <span className="text-[10px] text-success font-display uppercase tracking-wider">
+                                  ✓ Validado DEO
+                                </span>
+                              )}
                             </div>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            {/* Upload button - only if user has the right role */}
-                            {isPending && canUpload_ && (
-                              <label className="cursor-pointer">
-                                <input
-                                  type="file"
-                                  className="hidden"
-                                  accept=".pdf,.doc,.docx,.jpg,.png"
-                                  onChange={(e) => {
-                                    const f = e.target.files?.[0];
-                                    if (f) handleFileUpload(item.id, f);
-                                  }}
-                                />
-                                <span className={`flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors ${
-                                  uploadingId === item.id ? "opacity-50" : ""
-                                }`}>
-                                  <Upload className="h-3 w-3" />
-                                  {uploadingId === item.id ? "Subiendo..." : "Subir"}
-                                </span>
-                              </label>
-                            )}
-
-                            {/* DEO: Validate completed items */}
-                            {isDEO && isCompleted && !isValidated && (
-                              <Button size="sm" variant="outline" onClick={() => handleValidate(item.id)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7">
-                                <Shield className="h-3 w-3" /> Validar
-                              </Button>
-                            )}
-
-                            {/* DEO: Claim pending items */}
-                            {isDEO && isPending && (
-                              <Button
-                                size="sm" variant="ghost"
-                                onClick={() => setClaimDialog({ open: true, item })}
-                                className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive"
-                              >
-                                <Bell className="h-3 w-3" /> Reclamar
-                              </Button>
-                            )}
-
-                            {/* Pending alert in audit mode */}
-                            {isPending && auditing && (
-                              <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-display uppercase tracking-widest bg-destructive/10 text-destructive rounded">
-                                <AlertTriangle className="h-3 w-3" /> Pendiente
-                              </span>
-                            )}
+                            {/* Agent responsible label */}
+                            <p className="text-[10px] text-muted-foreground/50 mt-0.5">
+                              Responsable: {pt.agentLabel}
+                            </p>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isPending && canUpload_ && (
+                            <label className="cursor-pointer">
+                              <input
+                                type="file"
+                                className="hidden"
+                                accept=".pdf,.doc,.docx,.jpg,.png"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleFileUpload(item.id, f);
+                                }}
+                              />
+                              <span className={`flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer ${
+                                uploadingId === item.id ? "opacity-50" : ""
+                              }`}>
+                                <Upload className="h-3 w-3" />
+                                {uploadingId === item.id ? "Subiendo..." : "Subir"}
+                              </span>
+                            </label>
+                          )}
+
+                          {isDEO && isCompleted && !isValidated && (
+                            <Button size="sm" variant="outline" onClick={() => handleValidate(item.id)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7">
+                              <Shield className="h-3 w-3" /> Validar
+                            </Button>
+                          )}
+
+                          {isDEO && isPending && (
+                            <Button
+                              size="sm" variant="ghost"
+                              onClick={() => setClaimDialog({ open: true, item })}
+                              className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive"
+                            >
+                              <Bell className="h-3 w-3" /> Reclamar
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        )}
+                {/* Category agent summary */}
+                <p className="text-[10px] text-muted-foreground/40 mt-3 pl-8">
+                  Agente encargado: {catAgents.join(" / ")}
+                </p>
+              </div>
+            );
+          })}
+        </div>
 
         {/* Legal footer */}
         <p className="text-[10px] text-muted-foreground/50 text-center mt-8 font-display uppercase tracking-wider">
