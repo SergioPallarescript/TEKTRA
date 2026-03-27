@@ -297,10 +297,13 @@ const PlansModule = () => {
       // Geo unavailable
     }
 
+    // Get the user's project-specific role
+    const memberRole = members.find((m: any) => m.user_id === user.id)?.role || profile.role || "DO";
+
     const { error } = await supabase.from("plan_conformities").insert({
       plan_version_id: latestVersion.id,
       user_id: user.id,
-      role: profile.role || "DO",
+      role: memberRole,
       geo_location: geoString,
     });
 
