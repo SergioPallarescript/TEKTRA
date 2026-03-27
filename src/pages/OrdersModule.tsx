@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -42,6 +42,8 @@ const OrdersModule = () => {
   const [hasDualCSS, setHasDualCSS] = useState(false);
   const canWrite = isDEM || isDO || hasDualCSS;
   const canValidate = profile?.role === "CON" || profile?.role === "PRO";
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Check dual role
   useEffect(() => {
@@ -205,14 +207,14 @@ const OrdersModule = () => {
                   <div className="space-y-2">
                     <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Adjuntar fotos / documentos</Label>
                     <div className="flex gap-2">
-                      <label className="flex items-center gap-1 px-3 py-2 text-xs border border-border rounded-md cursor-pointer hover:bg-accent transition-colors">
+                      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files) { setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ""; } }} />
+                      <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx" multiple className="hidden" onChange={(e) => { if (e.target.files) { setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ""; } }} />
+                      <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => cameraInputRef.current?.click()}>
                         <Camera className="h-3.5 w-3.5" /> Foto
-                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files && setPhotos(prev => [...prev, ...Array.from(e.target.files!)])} />
-                      </label>
-                      <label className="flex items-center gap-1 px-3 py-2 text-xs border border-border rounded-md cursor-pointer hover:bg-accent transition-colors">
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => fileInputRef.current?.click()}>
                         <Paperclip className="h-3.5 w-3.5" /> Archivo
-                        <input type="file" accept="image/*,.pdf,.doc,.docx" multiple className="hidden" onChange={(e) => e.target.files && setPhotos(prev => [...prev, ...Array.from(e.target.files!)])} />
-                      </label>
+                      </Button>
                     </div>
                     {photos.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-1">
