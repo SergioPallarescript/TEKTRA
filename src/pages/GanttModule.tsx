@@ -109,30 +109,7 @@ const GanttModule = () => {
         });
       });
 
-      // Add milestones from docs
-      if (docs && docs.length > 0) {
-        docs.slice(0, 5).forEach((doc) => {
-          milestones.push({
-            id: crypto.randomUUID(),
-            title: `📄 ${doc.file_name}`,
-            start: doc.created_at.split("T")[0],
-            end: doc.created_at.split("T")[0],
-            order: order++,
-          });
-        });
-      }
-
-      if (plans && plans.length > 0) {
-        plans.forEach((plan) => {
-          milestones.push({
-            id: crypto.randomUUID(),
-            title: `📐 Plano: ${plan.name}`,
-            start: plan.created_at.split("T")[0],
-            end: plan.created_at.split("T")[0],
-            order: order++,
-          });
-        });
-      }
+      // Documents and plans are used to inform the timeline but NOT shown as milestones
 
       saveItems(milestones);
       toast.success(`Diagrama generado con ${milestones.length} hitos`);
@@ -319,20 +296,20 @@ const GanttModule = () => {
                       <Input
                         value={item.title}
                         onChange={(e) => updateItem(item.id, { title: e.target.value })}
-                        className="flex-1 h-8 text-xs"
+                        className="flex-1 h-8 text-xs text-foreground"
                       />
                       <Input
                         type="date"
                         value={item.start}
                         onChange={(e) => updateItem(item.id, { start: e.target.value })}
-                        className="w-36 h-8 text-xs"
+                        className="w-40 h-8 text-xs text-foreground"
                       />
                       <span className="text-xs text-muted-foreground">→</span>
                       <Input
                         type="date"
                         value={item.end}
                         onChange={(e) => updateItem(item.id, { end: e.target.value })}
-                        className="w-36 h-8 text-xs"
+                        className="w-40 h-8 text-xs text-foreground"
                       />
                       <Button variant="ghost" size="icon" onClick={() => deleteItem(item.id)} className="text-destructive/60 hover:text-destructive shrink-0 h-8 w-8">
                         <Trash2 className="h-3.5 w-3.5" />
