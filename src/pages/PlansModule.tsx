@@ -297,10 +297,13 @@ const PlansModule = () => {
       // Geo unavailable
     }
 
+    // Get the user's project-specific role
+    const memberRole = members.find((m: any) => m.user_id === user.id)?.role || profile.role || "DO";
+
     const { error } = await supabase.from("plan_conformities").insert({
       plan_version_id: latestVersion.id,
       user_id: user.id,
-      role: profile.role || "DO",
+      role: memberRole,
       geo_location: geoString,
     });
 
@@ -322,7 +325,7 @@ const PlansModule = () => {
       details: {
         plan_name: selectedPlan?.name,
         version: latestVersion.version_number,
-        role: profile.role,
+        role: memberRole,
         geo_location: geoString,
       },
     });
@@ -357,6 +360,9 @@ const PlansModule = () => {
   };
 
   const userHasSigned = conformities.some((c) => c.user_id === user?.id);
+
+  // Get user's project-specific role (not profile global role)
+  const userProjectRole = members.find((m) => m.user_id === user?.id)?.role || profile?.role || "DO";
 
   // Get all expected roles from project members
   const expectedRoles = [...new Set(members.map((m) => m.role as string))];
