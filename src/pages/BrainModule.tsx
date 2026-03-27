@@ -6,7 +6,7 @@ import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { ArrowLeft, Brain, Send, Bot, User, Loader2 } from "lucide-react";
+import { ArrowLeft, Brain, Send, Bot, User, Loader2, FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -22,11 +22,30 @@ const BrainModule = () => {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [project, setProject] = useState<any>(null);
+  const [docNames, setDocNames] = useState<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!projectId) return;
     supabase.from("projects").select("*").eq("id", projectId).single().then(({ data }) => setProject(data));
+
+    // Fetch project documents and latest plans for context
+    const fetchDocs = async () => {
+      const { data: docs } = await supabase
+        .from("project_documents")
+        .select("file_name")
+        .eq("project_id", projectId);
+      const { data: plans } = await supabase
+        .from("plans")
+        .select("name, category")
+        .eq("project_id", projectId);
+
+      const names: string[] = [];
+      if (docs) names.push(...docs.map((d: any) => d.file_name));
+      if (plans) names.push(...plans.map((p: any) => `[Plano] ${p.name} (${p.category || "sin categoría"})`));
+      setDocNames(names);
+    };
+    fetchDocs();
   }, [projectId]);
 
   useEffect(() => {
@@ -53,6 +72,10 @@ const BrainModule = () => {
     };
 
     try {
+      const projectContext = project
+        ? `Proyecto: ${project.name}\nDirección: ${project.address || "N/A"}\nDescripción: ${project.description || "N/A"}\n\nDocumentos disponibles en el proyecto:\n${docNames.length > 0 ? docNames.map((n, i) => `${i + 1}. ${n}`).join("\n") : "No hay documentos subidos aún."}\n\nIMPORTANTE: Basa tus respuestas EXCLUSIVAMENTE en los documentos del proyecto listados arriba y en los planos subidos. Si la información no está en estos documentos, indícalo claramente.`
+        : undefined;
+
       const resp = await fetch(CHAT_URL, {
         method: "POST",
         headers: {
@@ -61,7 +84,7 @@ const BrainModule = () => {
         },
         body: JSON.stringify({
           messages: [...messages, userMsg],
-          projectContext: project ? `Proyecto: ${project.name}, Dirección: ${project.address || "N/A"}, Descripción: ${project.description || "N/A"}` : undefined,
+          projectContext,
         }),
       });
 
@@ -85,14 +108,11 @@ const BrainModule = () => {
         while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
           let line = textBuffer.slice(0, newlineIndex);
           textBuffer = textBuffer.slice(newlineIndex + 1);
-
           if (line.endsWith("\r")) line = line.slice(0, -1);
           if (line.startsWith(":") || line.trim() === "") continue;
           if (!line.startsWith("data: ")) continue;
-
           const jsonStr = line.slice(6).trim();
           if (jsonStr === "[DONE]") break;
-
           try {
             const parsed = JSON.parse(jsonStr);
             const content = parsed.choices?.[0]?.delta?.content as string | undefined;
@@ -112,10 +132,7 @@ const BrainModule = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
   return (
@@ -127,12 +144,13 @@ const BrainModule = () => {
             <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
-              <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
-                Cerebro de Obra
-              </p>
-              <h1 className="font-display text-lg font-bold tracking-tighter">Consultas IA</h1>
+            <div className="flex-1">
+              <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">Cerebro de Obra</p>
+              <h1 className="font-display text-lg font-bold tracking-tighter">Consultas basadas en documentos</h1>
             </div>
+            <Button variant="ghost" size="sm" onClick={() => navigate(`/project/${projectId}/docs`)} className="text-xs font-display uppercase tracking-wider gap-1">
+              <FileText className="h-3.5 w-3.5" /> Docs ({docNames.length})
+            </Button>
           </div>
         </div>
 
@@ -141,26 +159,31 @@ const BrainModule = () => {
           {messages.length === 0 && (
             <div className="text-center py-16">
               <Brain className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
-              <h2 className="font-display text-lg font-semibold text-muted-foreground mb-2">
-                Cerebro de Obra
-              </h2>
+              <h2 className="font-display text-lg font-semibold text-muted-foreground mb-2">Cerebro de Obra</h2>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Pregúntame sobre normativa CTE, LOE, procedimientos de obra,
-                seguridad y salud, certificaciones, o cualquier duda técnica
-                relacionada con tu proyecto.
+                Respondo <strong>exclusivamente</strong> basándome en la documentación del proyecto y los planos subidos.
+                Sube documentos desde "Documentación de Proyecto" para alimentar mi conocimiento.
               </p>
+              {docNames.length > 0 && (
+                <div className="mt-4 p-3 bg-card border border-border rounded-lg max-w-md mx-auto text-left">
+                  <p className="text-[10px] font-display uppercase tracking-wider text-muted-foreground mb-2">
+                    {docNames.length} documentos disponibles
+                  </p>
+                  <div className="space-y-1">
+                    {docNames.slice(0, 5).map((n, i) => (
+                      <p key={i} className="text-xs text-muted-foreground truncate">• {n}</p>
+                    ))}
+                    {docNames.length > 5 && <p className="text-xs text-muted-foreground">...y {docNames.length - 5} más</p>}
+                  </div>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2 justify-center mt-6">
                 {[
-                  "¿Qué documentos necesito para el CFO?",
-                  "Explica el proceso de certificación de obra",
-                  "¿Cuándo necesito ensayos de hormigón?",
-                  "Normativa CTE sobre aislamiento",
+                  "¿Qué documentos tenemos subidos?",
+                  "Resume los planos del proyecto",
+                  "¿Qué falta para el cierre de obra?",
                 ].map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => { setInput(q); }}
-                    className="px-3 py-1.5 text-xs border border-border rounded-full hover:border-foreground/20 transition-colors text-muted-foreground hover:text-foreground"
-                  >
+                  <button key={q} onClick={() => setInput(q)} className="px-3 py-1.5 text-xs border border-border rounded-full hover:border-foreground/20 transition-colors text-muted-foreground hover:text-foreground">
                     {q}
                   </button>
                 ))}
@@ -176,14 +199,10 @@ const BrainModule = () => {
                 </div>
               )}
               <div className={`max-w-[80%] rounded-lg px-4 py-3 ${
-                msg.role === "user"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-card border border-border"
+                msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border"
               }`}>
                 {msg.role === "assistant" ? (
-                  <div className="prose prose-sm max-w-none text-foreground">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  </div>
+                  <div className="prose prose-sm max-w-none text-foreground"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
                 ) : (
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                 )}
@@ -202,7 +221,7 @@ const BrainModule = () => {
                 <Loader2 className="h-4 w-4 text-accent animate-spin" />
               </div>
               <div className="bg-card border border-border rounded-lg px-4 py-3">
-                <p className="text-sm text-muted-foreground">Pensando...</p>
+                <p className="text-sm text-muted-foreground">Consultando documentos...</p>
               </div>
             </div>
           )}
@@ -213,22 +232,8 @@ const BrainModule = () => {
         {/* Input */}
         <div className="border-t border-border px-4 py-3">
           <div className="flex gap-2 max-w-3xl mx-auto">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Pregunta al Cerebro de Obra..."
-              rows={1}
-              className="resize-none min-h-[40px] max-h-[120px]"
-            />
-            <Button
-              onClick={sendMessage}
-              disabled={!input.trim() || isLoading}
-              size="icon"
-              className="shrink-0"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+            <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Pregunta sobre los documentos del proyecto..." rows={1} className="resize-none min-h-[40px] max-h-[120px]" />
+            <Button onClick={sendMessage} disabled={!input.trim() || isLoading} size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
           </div>
         </div>
       </div>
