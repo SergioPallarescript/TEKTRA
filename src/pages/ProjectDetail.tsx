@@ -180,7 +180,10 @@ const ProjectDetail = () => {
             )}
           </div>
           {isCreator && (
-            <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+            <Dialog open={inviteOpen} onOpenChange={(open) => {
+              setInviteOpen(open);
+              if (!open) setInviteSuccess(null);
+            }}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
                   <UserPlus className="h-4 w-4" />
@@ -189,97 +192,142 @@ const ProjectDetail = () => {
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle className="font-display">Invitar Agente</DialogTitle>
+                  <DialogTitle className="font-display">
+                    {inviteSuccess ? "¡Invitación Registrada!" : "Invitar Agente"}
+                  </DialogTitle>
                 </DialogHeader>
-                <form onSubmit={handleInvite} className="space-y-4 mt-4">
-                  <div className="space-y-2">
-                    <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
-                      Correo del Agente
-                    </Label>
-                    <Input
-                      type="email"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      placeholder="agente@empresa.com"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
-                      Rol
-                    </Label>
-                    <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as AppRole)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(Object.keys(roleLabels) as AppRole[]).map((r) => (
-                          <SelectItem key={r} value={r}>
-                            {r} — {roleLabels[r]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="submit" className="w-full font-display text-xs uppercase tracking-wider">
-                    Enviar Invitación
-                  </Button>
-                </form>
 
-                {/* Share invite link */}
-                <div className="border-t border-border pt-4 mt-2">
-                  <p className="font-display text-xs uppercase tracking-wider text-muted-foreground mb-3">
-                    O comparte enlace de registro
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 gap-2 text-xs"
-                      onClick={() => {
-                        const signupUrl = `${window.location.origin}/auth`;
-                        const msg = `Te invito al proyecto "${project?.name}" en GESCON. Regístrate aquí: ${signupUrl}`;
-                        const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                        window.open(waUrl, "_blank");
-                      }}
-                    >
-                      <MessageCircle className="h-3.5 w-3.5" />
-                      WhatsApp
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 gap-2 text-xs"
-                      onClick={() => {
-                        const signupUrl = `${window.location.origin}/auth`;
-                        const msg = `Te invito al proyecto "${project?.name}" en GESCON. Regístrate aquí: ${signupUrl}`;
-                        if (navigator.share) {
-                          navigator.share({ title: "Invitación GESCON", text: msg, url: signupUrl });
-                        } else {
+                {inviteSuccess ? (
+                  <div className="space-y-4 mt-2">
+                    <div className="bg-success/10 border border-success/30 rounded-lg p-4 space-y-2">
+                      <p className="text-sm font-semibold text-success">✓ Agente añadido correctamente</p>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-semibold">{inviteSuccess.email}</span> ha sido invitado como{" "}
+                        <span className="font-bold">{inviteSuccess.role} — {roleLabels[inviteSuccess.role]}</span>
+                      </p>
+                    </div>
+
+                    <div className="bg-secondary/50 border border-border rounded-lg p-4 space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        Ahora envíale el enlace de registro para que pueda acceder al proyecto. 
+                        Al registrarse con <span className="font-semibold">{inviteSuccess.email}</span>, se vinculará automáticamente.
+                      </p>
+                    </div>
+
+                    <p className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                      Enviar enlace de registro
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-2 text-xs"
+                        onClick={() => {
+                          const signupUrl = `${window.location.origin}/auth`;
+                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en GESCON como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
+                          const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                          window.open(waUrl, "_blank");
+                        }}
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />
+                        WhatsApp
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-2 text-xs"
+                        onClick={() => {
+                          const signupUrl = `${window.location.origin}/auth`;
+                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en GESCON como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
+                          if (navigator.share) {
+                            navigator.share({ title: "Invitación GESCON", text: msg, url: signupUrl });
+                          } else {
+                            navigator.clipboard.writeText(msg);
+                            toast.success("Mensaje copiado al portapapeles");
+                          }
+                        }}
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        Compartir
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 text-xs"
+                        onClick={() => {
+                          const signupUrl = `${window.location.origin}/auth`;
+                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en GESCON como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
                           navigator.clipboard.writeText(msg);
-                          toast.success("Enlace copiado al portapapeles");
-                        }
-                      }}
-                    >
-                      <Share2 className="h-3.5 w-3.5" />
-                      Compartir
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2 text-xs"
-                      onClick={() => {
-                        navigator.clipboard.writeText(`${window.location.origin}/auth`);
-                        toast.success("Enlace copiado");
-                      }}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
+                          toast.success("Mensaje copiado");
+                        }}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+
+                    <div className="flex gap-2 pt-2 border-t border-border">
+                      <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        className="flex-1 font-display text-xs uppercase tracking-wider"
+                        onClick={() => setInviteSuccess(null)}
+                      >
+                        <UserPlus className="h-3.5 w-3.5 mr-2" />
+                        Invitar otro agente
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="font-display text-xs uppercase tracking-wider"
+                        onClick={() => { setInviteOpen(false); setInviteSuccess(null); }}
+                      >
+                        Cerrar
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <form onSubmit={handleInvite} className="space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                          Correo del Agente
+                        </Label>
+                        <Input
+                          type="email"
+                          value={inviteEmail}
+                          onChange={(e) => setInviteEmail(e.target.value)}
+                          placeholder="agente@empresa.com"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                          Rol
+                        </Label>
+                        <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as AppRole)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(Object.keys(roleLabels) as AppRole[]).map((r) => (
+                              <SelectItem key={r} value={r}>
+                                {r} — {roleLabels[r]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button type="submit" className="w-full font-display text-xs uppercase tracking-wider">
+                        Enviar Invitación
+                      </Button>
+                    </form>
+                  </>
+                )}
               </DialogContent>
             </Dialog>
           )}
