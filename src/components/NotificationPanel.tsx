@@ -27,6 +27,7 @@ interface NotificationItem {
 }
 
 const NotificationPanel = ({ onClose }: { onClose: () => void }) => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [selectedNotif, setSelectedNotif] = useState<NotificationItem | null>(null);
