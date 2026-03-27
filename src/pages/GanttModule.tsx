@@ -34,22 +34,7 @@ const GanttModule = () => {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [isPortrait, setIsPortrait] = useState(false);
-
-  // Detect portrait on mobile
-  useEffect(() => {
-    const checkOrientation = () => {
-      const isMobile = window.innerWidth < 768 || window.innerHeight < 768;
-      setIsPortrait(isMobile && window.innerHeight > window.innerWidth);
-    };
-    checkOrientation();
-    window.addEventListener("resize", checkOrientation);
-    window.addEventListener("orientationchange", () => setTimeout(checkOrientation, 100));
-    return () => {
-      window.removeEventListener("resize", checkOrientation);
-      window.removeEventListener("orientationchange", checkOrientation);
-    };
-  }, []);
+  const [forcedLandscape, setForcedLandscape] = useState(false);
 
   const canEdit = profile?.role === "DEM" || profile?.role === "DO" || profile?.role === "CON";
 
