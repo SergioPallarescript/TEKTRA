@@ -203,6 +203,19 @@ const GanttModule = () => {
 
   return (
     <AppLayout>
+      {/* Portrait lock overlay */}
+      {isPortrait && (
+        <div className="fixed inset-0 z-[100] bg-background flex flex-col items-center justify-center gap-4 px-8 text-center">
+          <RotateCcw className="h-16 w-16 text-muted-foreground animate-pulse" />
+          <h2 className="font-display text-xl font-bold tracking-tighter">Gira tu dispositivo</h2>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            El diagrama Gantt necesita orientación horizontal para una correcta visualización y edición.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => navigate(`/project/${projectId}`)}>
+            <ArrowLeft className="h-4 w-4 mr-2" /> Volver al proyecto
+          </Button>
+        </div>
+      )}
       <div className="max-w-full mx-auto px-4 py-8">
         <div className="flex items-center gap-3 mb-2">
           <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
