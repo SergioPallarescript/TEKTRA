@@ -49,6 +49,8 @@ const IncidentsModule = () => {
   const isMobile = useIsMobile();
   const [submitting, setSubmitting] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   const [editIncident, setEditIncident] = useState<any | null>(null);
   const [editContent, setEditContent] = useState("");
@@ -161,21 +163,47 @@ const IncidentsModule = () => {
     setDeleteIncidentId(null); fetchIncidents();
   };
 
+  const cleanDictation = async (rawText: string) => {
+    setCleaning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("clean-dictation", {
+        body: { rawText, context: "incidents" },
+      });
+      if (error) throw error;
+      setContent(data.cleanedText || rawText);
+      toast.success("Dictado procesado por IA — revisa el texto antes de guardar");
+    } catch {
+      toast.error("Error al procesar el dictado, se mantiene el texto original");
+    } finally {
+      setCleaning(false);
+    }
+  };
+
   const toggleRecording = () => {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
       toast.error("Tu navegador no soporta reconocimiento de voz"); return;
     }
-    if (recording) { setRecording(false); return; }
+    if (recording) {
+      recognitionRef.current?.stop();
+      setRecording(false);
+      return;
+    }
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
     recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
+    let finalTranscript = "";
     recognition.onresult = (event: any) => {
       let transcript = "";
       for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+      finalTranscript = transcript;
       setContent(transcript);
     };
     recognition.onerror = () => { setRecording(false); toast.error("Error en reconocimiento de voz"); };
-    recognition.onend = () => setRecording(false);
+    recognition.onend = () => {
+      setRecording(false);
+      if (finalTranscript.trim()) cleanDictation(finalTranscript);
+    };
     recognition.start(); setRecording(true);
   };
 
@@ -212,9 +240,8 @@ const IncidentsModule = () => {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Descripción del Riesgo</Label>
-                      <Button type="button" variant={recording ? "destructive" : "outline"} size="sm" onClick={toggleRecording} className="gap-1 text-xs">
-                        {recording ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
-                        {recording ? "Parar" : "Dictar"}
+                      <Button type="button" variant={recording ? "destructive" : "outline"} size="sm" onClick={toggleRecording} disabled={cleaning} className="gap-1 text-xs">
+                        {cleaning ? <><span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> Procesando...</> : recording ? <><MicOff className="h-3 w-3" /> Parar</> : <><Mic className="h-3 w-3" /> Dictar</>}
                       </Button>
                     </div>
                     <Textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Describa la incidencia de seguridad..." rows={5} required />
