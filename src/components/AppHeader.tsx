@@ -92,6 +92,21 @@ const AppHeader = () => {
                 </button>
               ))}
             </nav>
+            {isSupported && (
+              <div className="px-4 mt-2">
+                <Button
+                  variant="outline"
+                  onClick={handlePushToggle}
+                  className="w-full justify-start gap-2 text-sm"
+                >
+                  {isSubscribed ? (
+                    <><BellOff className="h-4 w-4" /> Desactivar Push</>
+                  ) : (
+                    <><BellRing className="h-4 w-4" /> Activar Push</>
+                  )}
+                </Button>
+              </div>
+            )}
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border">
               <Button
                 variant="ghost"
