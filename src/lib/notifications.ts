@@ -1,6 +1,19 @@
 import { supabase } from "@/integrations/supabase/client";
 
 /**
+ * Trigger push notifications via edge function for given user IDs.
+ */
+async function triggerPush(userIds: string[], title: string, message: string, url?: string) {
+  try {
+    await supabase.functions.invoke("send-push", {
+      body: { user_ids: userIds, title, message, url },
+    });
+  } catch (e) {
+    console.error("Push trigger failed:", e);
+  }
+}
+
+/**
  * Send a notification to all project members except the actor.
  */
 export async function notifyProjectMembers({
@@ -9,12 +22,14 @@ export async function notifyProjectMembers({
   title,
   message,
   type = "info",
+  url,
 }: {
   projectId: string;
   actorId: string;
   title: string;
   message: string;
   type?: string;
+  url?: string;
 }) {
   // Get all accepted members
   const { data: members } = await supabase
@@ -40,7 +55,8 @@ export async function notifyProjectMembers({
 
   if (userIds.size === 0) return;
 
-  const notifications = Array.from(userIds).map((uid) => ({
+  const uidArray = Array.from(userIds);
+  const notifications = uidArray.map((uid) => ({
     user_id: uid,
     project_id: projectId,
     title,
@@ -49,6 +65,10 @@ export async function notifyProjectMembers({
   }));
 
   await supabase.from("notifications").insert(notifications);
+
+  // Also send push notifications
+  const pushUrl = url || `/project/${projectId}`;
+  triggerPush(uidArray, title, message, pushUrl);
 }
 
 /**
