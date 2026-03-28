@@ -225,7 +225,7 @@ const ProjectDetail = () => {
                         className="flex-1 gap-2 text-xs"
                         onClick={() => {
                           const signupUrl = `${window.location.origin}/auth`;
-                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en GESCON como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
+                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en TECTRA como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
                           const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
                           window.open(waUrl, "_blank");
                         }}
@@ -240,9 +240,9 @@ const ProjectDetail = () => {
                         className="flex-1 gap-2 text-xs"
                         onClick={() => {
                           const signupUrl = `${window.location.origin}/auth`;
-                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en GESCON como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
+                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en TECTRA como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
                           if (navigator.share) {
-                            navigator.share({ title: "Invitación GESCON", text: msg, url: signupUrl });
+                            navigator.share({ title: "Invitación TECTRA", text: msg, url: signupUrl });
                           } else {
                             navigator.clipboard.writeText(msg);
                             toast.success("Mensaje copiado al portapapeles");
@@ -259,7 +259,7 @@ const ProjectDetail = () => {
                         className="gap-2 text-xs"
                         onClick={() => {
                           const signupUrl = `${window.location.origin}/auth`;
-                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en GESCON como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
+                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en TECTRA como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
                           navigator.clipboard.writeText(msg);
                           toast.success("Mensaje copiado");
                         }}

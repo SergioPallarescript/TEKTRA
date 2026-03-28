@@ -70,13 +70,12 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center concrete-bg bg-background relative">
+    <div className="min-h-screen flex items-center justify-center relative" style={{ backgroundColor: '#1a1a1a' }}>
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: 'url(/login-bg.jpg)', opacity: 0.15 }} />
       <div className="relative z-10 w-full max-w-md px-6">
         <div className="mb-12 text-center">
-          <h1 className="font-display text-4xl font-bold tracking-tighter text-foreground">
-            GESCON
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground font-display uppercase tracking-[0.2em]">
+          <img src="/tectra-logo.png" alt="TECTRA" className="h-12 mx-auto brightness-0 invert" />
+          <p className="mt-3 text-sm text-white/50 uppercase tracking-[0.2em]">
             Gestión de Construcción
           </p>
         </div>

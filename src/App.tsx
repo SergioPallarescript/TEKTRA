@@ -28,7 +28,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background concrete-bg relative">
         <div className="relative z-10 text-center">
-          <h1 className="font-display text-2xl font-bold tracking-tighter text-foreground">GESCON</h1>
+          <img src="/tectra-logo.png" alt="TECTRA" className="h-8 mx-auto" />
           <div className="mt-4 h-6 w-6 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin mx-auto" />
         </div>
       </div>

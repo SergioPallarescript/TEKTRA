@@ -66,7 +66,7 @@ const AppHeader = () => {
           </SheetTrigger>
           <SheetContent side="left" className="w-72 bg-card p-0">
             <div className="p-6 border-b border-border">
-              <h2 className="font-display text-xl font-bold tracking-tighter">GESCON</h2>
+              <img src="/tectra-logo.png" alt="TECTRA" className="h-6" />
               <p className="text-xs text-muted-foreground font-display uppercase tracking-wider mt-1">
                 {profile?.full_name || "Usuario"}
               </p>
@@ -121,8 +121,8 @@ const AppHeader = () => {
         </Sheet>
 
         {/* Center: Logo */}
-        <button onClick={() => navigate("/")} className="font-display text-lg font-bold tracking-tighter">
-          GESCON
+        <button onClick={() => navigate("/")} className="flex items-center">
+          <img src="/tectra-logo.png" alt="TECTRA" className="h-6" />
         </button>
 
         {/* Right: Notifications */}

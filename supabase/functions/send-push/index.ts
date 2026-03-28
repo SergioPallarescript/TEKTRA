@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
           payload,
           vapidPublicKey,
           vapidPrivateKey,
-          "mailto:admin@gescon.app"
+          "mailto:admin@tectra.app"
         );
         if (res.status === 201 || res.status === 200) {
           sent++;
