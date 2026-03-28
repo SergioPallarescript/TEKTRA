@@ -94,4 +94,7 @@ export async function notifyUser({
     message,
     type,
   });
+
+  // Also send push
+  triggerPush([userId], title, message, `/project/${projectId}`);
 }
