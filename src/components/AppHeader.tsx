@@ -15,6 +15,19 @@ const AppHeader = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { isSupported, isSubscribed, permission, subscribe, unsubscribe } = usePushSubscription();
+
+  const handlePushToggle = async () => {
+    if (isSubscribed) {
+      await unsubscribe();
+      toast.info("Notificaciones push desactivadas");
+    } else {
+      const ok = await subscribe();
+      if (ok) toast.success("Notificaciones push activadas");
+      else if (permission === "denied") toast.error("Permiso de notificaciones denegado en el navegador");
+      else toast.error("No se pudo activar las notificaciones push");
+    }
+  };
 
   useEffect(() => {
     const fetchUnread = async () => {
