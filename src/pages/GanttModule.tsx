@@ -90,42 +90,31 @@ const GanttModule = () => {
     }
   }, [projectId]);
 
-  // Auto-generate from project documents
+  // AI-powered generation from project documents and orders
   const generateFromDocs = async () => {
     if (!projectId) return;
     setGenerating(true);
 
     try {
-      const milestones: GanttItem[] = [];
-      let order = 0;
-
-      const defaultPhases = [
-        "Demoliciones y movimiento de tierras",
-        "Cimentación",
-        "Estructura",
-        "Cerramientos y fachada",
-        "Instalaciones (fontanería, electricidad, clima)",
-        "Particiones y albañilería interior",
-        "Revestimientos y acabados",
-        "Carpintería y cerrajería",
-        "Urbanización exterior",
-        "Limpieza final y recepción",
-      ];
-
-      const today = new Date();
-      defaultPhases.forEach((phase, i) => {
-        const start = new Date(today);
-        start.setDate(start.getDate() + i * 30);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 25);
-        milestones.push({
-          id: crypto.randomUUID(),
-          title: phase,
-          start: start.toISOString().split("T")[0],
-          end: end.toISOString().split("T")[0],
-          order: order++,
-        });
+      const { data, error } = await supabase.functions.invoke("generate-gantt", {
+        body: { projectId },
       });
+
+      if (error) throw error;
+
+      const milestones: GanttItem[] = (data.milestones || []).map((m: any, i: number) => ({
+        id: crypto.randomUUID(),
+        title: m.title,
+        start: m.start,
+        end: m.end,
+        order: i,
+      }));
+
+      if (milestones.length === 0) {
+        toast.error("No se pudieron generar hitos");
+        setGenerating(false);
+        return;
+      }
 
       await saveItems(milestones);
 
@@ -134,14 +123,15 @@ const GanttModule = () => {
           projectId,
           actorId: user.id,
           title: "Diagrama Gantt actualizado",
-          message: "Se ha regenerado el diagrama Gantt del proyecto",
+          message: "Se ha regenerado el diagrama Gantt del proyecto con IA predictiva",
           type: "info",
         });
       }
 
-      toast.success(`Diagrama generado con ${milestones.length} hitos`);
-    } catch {
-      toast.error("Error al generar el diagrama");
+      toast.success(`Diagrama generado con IA — ${milestones.length} hitos basados en documentos y órdenes`);
+    } catch (e: any) {
+      console.error("Gantt generation error:", e);
+      toast.error(e?.message || "Error al generar el diagrama");
     } finally {
       setGenerating(false);
     }
