@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { ArrowLeft, CheckCircle2, FileSignature, Loader2, PenSquare, Send, Upload } from "lucide-react";
+import * as pdfjsLib from "pdfjs-dist";
+import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileSignature, Loader2, PenSquare, Send, Trash2, Upload, RefreshCw } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import SignatureCanvas, { type SignatureCanvasHandle } from "@/components/SignatureCanvas";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import { toast } from "sonner";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 type SignatureDocument = {
   id: string;
@@ -34,17 +40,23 @@ const SignatureDocuments = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const signatureRef = useRef<SignatureCanvasHandle | null>(null);
+  const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const [documents, setDocuments] = useState<SignatureDocument[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<SignatureDocument | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "sent">("pending");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [pdfPages, setPdfPages] = useState<HTMLCanvasElement[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [signing, setSigning] = useState(false);
   const [title, setTitle] = useState("");
   const [recipientId, setRecipientId] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SignatureDocument | null>(null);
+  const [replaceTarget, setReplaceTarget] = useState<SignatureDocument | null>(null);
+  const [replaceFile, setReplaceFile] = useState<File | null>(null);
+  const [replacing, setReplacing] = useState(false);
 
   const fetchDocuments = async () => {
     if (!user) return;
@@ -53,219 +65,242 @@ const SignatureDocuments = () => {
       .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
       .eq("project_id", projectId)
       .order("created_at", { ascending: false });
-
     setDocuments((data || []) as SignatureDocument[]);
   };
 
   useEffect(() => {
     const load = async () => {
       if (!projectId || !user) return;
-
-      const [{ data: memberRows }, _] = await Promise.all([
+      const [{ data: memberRows }] = await Promise.all([
         supabase.from("project_members").select("user_id, role, invited_email").eq("project_id", projectId).eq("status", "accepted"),
         fetchDocuments(),
       ]);
-
-      const userIds = (memberRows || []).map((member: any) => member.user_id).filter(Boolean);
+      const userIds = (memberRows || []).map((m: any) => m.user_id).filter(Boolean);
       const { data: profiles } = userIds.length
         ? await supabase.from("profiles").select("user_id, full_name, email").in("user_id", userIds)
         : { data: [] };
-
-      const profileMap = new Map((profiles || []).map((profile: any) => [profile.user_id, profile]));
+      const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
       setMembers(
         (memberRows || [])
-          .filter((member: any) => member.user_id && member.user_id !== user.id)
-          .map((member: any) => ({ ...member, profile: profileMap.get(member.user_id) || null })),
+          .filter((m: any) => m.user_id && m.user_id !== user.id)
+          .map((m: any) => ({ ...m, profile: profileMap.get(m.user_id) || null })),
       );
       setLoading(false);
     };
-
     void load();
   }, [projectId, user]);
 
-  useEffect(() => {
-    const loadPreview = async () => {
-      if (!selectedDocument) {
-        setPreviewUrl(null);
-        return;
+  // Render PDF with PDF.js
+  const renderPdf = useCallback(async (url: string) => {
+    try {
+      const loadingTask = pdfjsLib.getDocument(url);
+      const pdf = await loadingTask.promise;
+      const pages: HTMLCanvasElement[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const scale = 1.5;
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d")!;
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        pages.push(canvas);
       }
+      setPdfPages(pages);
+    } catch {
+      setPdfPages([]);
+    }
+  }, []);
 
+  useEffect(() => {
+    if (!selectedDocument) {
+      setPdfBlobUrl((c) => { if (c) URL.revokeObjectURL(c); return null; });
+      setPdfPages([]);
+      return;
+    }
+    const loadPreview = async () => {
       const targetPath = selectedDocument.signed_file_path || selectedDocument.original_file_path;
       const { data, error } = await supabase.storage.from("plans").download(targetPath);
-      if (error || !data) {
-        toast.error("No se pudo abrir el PDF");
-        setPreviewUrl(null);
-        return;
-      }
-
-      const nextUrl = URL.createObjectURL(data);
-      setPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return nextUrl;
-      });
+      if (error || !data) { toast.error("No se pudo abrir el PDF"); return; }
+      const url = URL.createObjectURL(data);
+      setPdfBlobUrl((c) => { if (c) URL.revokeObjectURL(c); return url; });
+      await renderPdf(url);
     };
-
     void loadPreview();
+    return () => { setPdfBlobUrl((c) => { if (c) URL.revokeObjectURL(c); return null; }); };
+  }, [selectedDocument, renderPdf]);
 
-    return () => {
-      setPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return null;
-      });
-    };
-  }, [selectedDocument]);
+  // Scroll canvases into container
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (!container || pdfPages.length === 0) return;
+    container.innerHTML = "";
+    pdfPages.forEach((canvas) => {
+      canvas.style.width = "100%";
+      canvas.style.height = "auto";
+      canvas.style.display = "block";
+      canvas.style.marginBottom = "8px";
+      container.appendChild(canvas);
+    });
+  }, [pdfPages]);
 
   const pendingDocuments = useMemo(
-    () => documents.filter((doc) => doc.recipient_id === user?.id && doc.status === "pending"),
+    () => documents.filter((d) => d.recipient_id === user?.id && d.status === "pending"),
     [documents, user?.id],
   );
-
   const sentAndCompletedDocuments = useMemo(
-    () => documents.filter((doc) => doc.sender_id === user?.id || doc.status === "signed"),
+    () => documents.filter((d) => d.sender_id === user?.id || d.status === "signed"),
     [documents, user?.id],
   );
-
   const activeDocuments = activeTab === "pending" ? pendingDocuments : sentAndCompletedDocuments;
 
-  const handleCreateDocument = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleCreateDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!projectId || !user || !file || !recipientId || !title.trim()) return;
-
     setCreating(true);
     try {
       const safeName = sanitizeFileName(file.name);
       const path = `signature-documents/${projectId}/original/${Date.now()}_${safeName}`;
       const { error: uploadError } = await uploadFileWithFallback({ path, file });
       if (uploadError) throw uploadError;
-
       const { error: insertError } = await (supabase.from("signature_documents" as any) as any).insert({
-        project_id: projectId,
-        sender_id: user.id,
-        recipient_id: recipientId,
-        title: title.trim(),
-        original_file_name: file.name,
-        original_file_path: path,
-        file_size: file.size,
-        mime_type: file.type || "application/pdf",
+        project_id: projectId, sender_id: user.id, recipient_id: recipientId,
+        title: title.trim(), original_file_name: file.name, original_file_path: path,
+        file_size: file.size, mime_type: file.type || "application/pdf",
       });
-
       if (insertError) throw insertError;
-
       await supabase.from("audit_logs").insert({
-        user_id: user.id,
-        project_id: projectId,
-        action: "signature_document_created",
+        user_id: user.id, project_id: projectId, action: "signature_document_created",
         details: { title: title.trim(), recipient_id: recipientId, file_name: file.name },
       });
-
-      setTitle("");
-      setRecipientId("");
-      setFile(null);
+      setTitle(""); setRecipientId(""); setFile(null);
       toast.success("Documento enviado para firma");
       await fetchDocuments();
       setActiveTab("sent");
-    } catch (error: any) {
-      toast.error(error?.message || "No se pudo enviar el documento a firma");
+    } catch (err: any) {
+      toast.error(err?.message || "No se pudo enviar el documento");
     } finally {
       setCreating(false);
     }
   };
 
-  const handleSignDocument = async () => {
-    if (!projectId || !selectedDocument || !previewUrl || !signatureRef.current) return;
-    if (signatureRef.current.isEmpty()) {
-      toast.error("Debes dibujar una firma antes de validar");
-      return;
-    }
+  const handleDelete = async () => {
+    if (!deleteTarget || !user) return;
+    try {
+      await supabase.storage.from("plans").remove([deleteTarget.original_file_path]);
+      await (supabase.from("signature_documents" as any) as any).delete().eq("id", deleteTarget.id);
+      await supabase.from("audit_logs").insert({
+        user_id: user.id, project_id: projectId,
+        action: "signature_document_deleted", details: { document_id: deleteTarget.id, title: deleteTarget.title },
+      });
+      toast.success("Documento eliminado");
+      if (selectedDocument?.id === deleteTarget.id) setSelectedDocument(null);
+      setDeleteTarget(null);
+      await fetchDocuments();
+    } catch { toast.error("Error al eliminar"); }
+  };
 
+  const handleReplace = async () => {
+    if (!replaceTarget || !replaceFile || !user) return;
+    setReplacing(true);
+    try {
+      await supabase.storage.from("plans").remove([replaceTarget.original_file_path]);
+      const safeName = sanitizeFileName(replaceFile.name);
+      const newPath = `signature-documents/${projectId}/original/${Date.now()}_${safeName}`;
+      const { error: uploadError } = await uploadFileWithFallback({ path: newPath, file: replaceFile });
+      if (uploadError) throw uploadError;
+      await (supabase.from("signature_documents" as any) as any)
+        .update({ original_file_path: newPath, original_file_name: replaceFile.name, file_size: replaceFile.size })
+        .eq("id", replaceTarget.id);
+      await supabase.from("audit_logs").insert({
+        user_id: user.id, project_id: projectId,
+        action: "signature_document_replaced", details: { document_id: replaceTarget.id, new_file: replaceFile.name },
+      });
+      toast.success("Documento sustituido");
+      setReplaceTarget(null); setReplaceFile(null);
+      await fetchDocuments();
+      if (selectedDocument?.id === replaceTarget.id) setSelectedDocument(null);
+    } catch { toast.error("Error al sustituir"); }
+    finally { setReplacing(false); }
+  };
+
+  const handleSignDocument = async () => {
+    if (!projectId || !selectedDocument || !pdfBlobUrl || !signatureRef.current) return;
+    if (signatureRef.current.isEmpty()) { toast.error("Debes dibujar una firma"); return; }
     setSigning(true);
     try {
       const signatureDataUrl = signatureRef.current.toDataUrl();
       if (!signatureDataUrl) throw new Error("Firma no válida");
 
-      const { data: originalFile, error: originalError } = await supabase.storage
-        .from("plans")
-        .download(selectedDocument.original_file_path);
+      let geo = "";
+      try {
+        const pos: GeolocationPosition = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 }));
+        geo = `${pos.coords.latitude},${pos.coords.longitude}`;
+      } catch {}
 
-      if (originalError || !originalFile) throw originalError || new Error("No se pudo descargar el PDF original");
-
+      const { data: originalFile } = await supabase.storage.from("plans").download(selectedDocument.original_file_path);
+      if (!originalFile) throw new Error("No se pudo descargar el PDF original");
       const originalBytes = await originalFile.arrayBuffer();
       const signedAt = new Date().toISOString();
       const hashSource = `${selectedDocument.id}:${signedAt}:${user?.id}:${signatureDataUrl}`;
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(hashSource));
-      const validationHash = Array.from(new Uint8Array(digest))
-        .map((value) => value.toString(16).padStart(2, "0"))
-        .join("")
-        .slice(0, 32)
-        .toUpperCase();
+      const validationHash = Array.from(new Uint8Array(digest)).map((v) => v.toString(16).padStart(2, "0")).join("").slice(0, 32).toUpperCase();
 
       const pdfDoc = await PDFDocument.load(originalBytes);
       const lastPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
       const signatureImage = await pdfDoc.embedPng(signatureDataUrl);
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const { width } = lastPage.getSize();
-      const signatureWidth = 180;
-      const signatureHeight = (signatureImage.height / signatureImage.width) * signatureWidth;
-      const boxX = 36;
-      const boxY = 36;
+      const boxX = 36, boxY = 36;
 
-      lastPage.drawRectangle({
-        x: boxX,
-        y: boxY,
-        width: Math.min(width - 72, 250),
-        height: 96,
-        color: rgb(0.97, 0.97, 0.97),
-        borderColor: rgb(0.2, 0.2, 0.2),
-        borderWidth: 1,
-      });
-      lastPage.drawText("Firma digital validada", { x: boxX + 12, y: boxY + 72, size: 10, font });
-      lastPage.drawText(`Hash: ${validationHash}`, { x: boxX + 12, y: boxY + 58, size: 9, font });
-      lastPage.drawText(`Fecha: ${new Date(signedAt).toLocaleString("es-ES")}`, { x: boxX + 12, y: boxY + 44, size: 9, font });
-      lastPage.drawImage(signatureImage, {
-        x: boxX + 12,
-        y: boxY + 8,
-        width: signatureWidth,
-        height: Math.min(signatureHeight, 30),
-      });
+      lastPage.drawRectangle({ x: boxX, y: boxY, width: 250, height: 110, color: rgb(0.97, 0.97, 0.97), borderColor: rgb(0.2, 0.2, 0.2), borderWidth: 1 });
+      lastPage.drawText("Firma digital validada — TEKTRA", { x: boxX + 12, y: boxY + 90, size: 9, font });
+      lastPage.drawText(`Hash: ${validationHash}`, { x: boxX + 12, y: boxY + 76, size: 8, font });
+      lastPage.drawText(`Fecha: ${new Date(signedAt).toLocaleString("es-ES")}`, { x: boxX + 12, y: boxY + 64, size: 8, font });
+      lastPage.drawText(`Usuario: ${user?.id?.slice(0, 8)}… | Geo: ${geo || "N/A"}`, { x: boxX + 12, y: boxY + 52, size: 7, font, color: rgb(0.4, 0.4, 0.4) });
+      const sigW = 160, sigH = Math.min((signatureImage.height / signatureImage.width) * sigW, 36);
+      lastPage.drawImage(signatureImage, { x: boxX + 12, y: boxY + 8, width: sigW, height: sigH });
 
       const signedBytes = await pdfDoc.save();
-      const signedBlob = new Blob([Uint8Array.from(signedBytes)], {
-        type: "application/pdf",
-      });
-      const signedFile = new File([signedBlob], `firmado_${sanitizeFileName(selectedDocument.original_file_name)}`, {
-        type: "application/pdf",
-      });
+      const signedBlob = new Blob([Uint8Array.from(signedBytes)], { type: "application/pdf" });
+      const signedFile = new File([signedBlob], `firmado_${sanitizeFileName(selectedDocument.original_file_name)}`, { type: "application/pdf" });
       const signedPath = `signature-documents/${projectId}/signed/${selectedDocument.id}_${Date.now()}.pdf`;
       const { error: uploadError } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
       if (uploadError) throw uploadError;
 
-      const { error: updateError } = await (supabase.from("signature_documents" as any) as any)
-        .update({
-          status: "signed",
-          signed_file_path: signedPath,
-          signed_at: signedAt,
-          validation_hash: validationHash,
-        })
+      await (supabase.from("signature_documents" as any) as any)
+        .update({ status: "signed", signed_file_path: signedPath, signed_at: signedAt, validation_hash: validationHash })
         .eq("id", selectedDocument.id);
 
-      if (updateError) throw updateError;
-
       await supabase.from("audit_logs").insert({
-        user_id: user?.id,
-        project_id: projectId,
+        user_id: user?.id, project_id: projectId,
         action: "signature_document_signed",
-        details: { document_id: selectedDocument.id, hash: validationHash },
+        details: { document_id: selectedDocument.id, hash: validationHash, geo_location: geo },
+        geo_location: geo,
       });
 
       signatureRef.current.clear();
       toast.success("Documento firmado y validado");
       await fetchDocuments();
       setSelectedDocument(null);
-    } catch (error: any) {
-      toast.error(error?.message || "No se pudo firmar el documento");
+    } catch (err: any) {
+      toast.error(err?.message || "No se pudo firmar el documento");
     } finally {
       setSigning(false);
     }
+  };
+
+  const handleDownload = () => {
+    if (!pdfBlobUrl || !selectedDocument) return;
+    const a = document.createElement("a");
+    a.href = pdfBlobUrl;
+    a.download = selectedDocument.signed_file_path ? `firmado_${selectedDocument.original_file_name}` : selectedDocument.original_file_name;
+    a.click();
+  };
+
+  const handleOpenExternal = () => {
+    if (!pdfBlobUrl) return;
+    window.open(pdfBlobUrl, "_blank");
   };
 
   if (loading) {
@@ -273,9 +308,7 @@ const SignatureDocuments = () => {
       <AppLayout>
         <div className="max-w-6xl mx-auto px-4 py-8">
           <div className="space-y-3">
-            {[1, 2, 3].map((index) => (
-              <div key={index} className="h-24 rounded-lg border border-border bg-card animate-pulse" />
-            ))}
+            {[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-lg border border-border bg-card animate-pulse" />)}
           </div>
         </div>
       </AppLayout>
@@ -293,47 +326,32 @@ const SignatureDocuments = () => {
         </div>
 
         <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
-          <div className="space-y-4">
+          {/* Left panel */}
+          <div className="space-y-4 min-w-0">
             <div className="rounded-lg border border-border bg-card p-4">
               <h1 className="font-display text-2xl font-bold tracking-tighter">Firma de Documentos</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Flujo privado entre emisor y receptor con validación legal y hash único.
-              </p>
+              <p className="mt-1 text-sm text-muted-foreground">Flujo privado con validación legal y hash único.</p>
             </div>
 
             <form onSubmit={handleCreateDocument} className="rounded-lg border border-border bg-card p-4 space-y-4">
               <div className="space-y-2">
                 <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Título</Label>
-                <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Acta de recepción parcial" required />
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Acta de recepción parcial" required />
               </div>
-
               <div className="space-y-2">
                 <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Destinatario</Label>
-                <select
-                  value={recipientId}
-                  onChange={(event) => setRecipientId(event.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
-                  required
-                >
+                <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground" required>
                   <option value="">Selecciona agente</option>
-                  {members.map((member: any) => (
-                    <option key={member.user_id} value={member.user_id}>
-                      {member.profile?.full_name || member.invited_email || member.user_id}
-                    </option>
+                  {members.map((m: any) => (
+                    <option key={m.user_id} value={m.user_id}>{m.profile?.full_name || m.invited_email || m.user_id}</option>
                   ))}
                 </select>
               </div>
-
               <div className="space-y-2">
                 <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">PDF</Label>
-                <Input
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  onChange={(event) => setFile(event.target.files?.[0] || null)}
-                  required
-                />
+                <Input type="file" accept="application/pdf,.pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} required />
               </div>
-
               <Button type="submit" className="w-full gap-2 font-display text-xs uppercase tracking-wider" disabled={creating}>
                 {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {creating ? "Enviando..." : "Enviar a firma"}
@@ -342,80 +360,91 @@ const SignatureDocuments = () => {
 
             <div className="rounded-lg border border-border bg-card p-4 space-y-3">
               <div className="flex gap-2">
-                <Button
-                  variant={activeTab === "pending" ? "default" : "outline"}
-                  className="flex-1 text-xs font-display uppercase tracking-wider"
-                  onClick={() => setActiveTab("pending")}
-                >
-                  Pendientes de mi firma
+                <Button variant={activeTab === "pending" ? "default" : "outline"} className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider" onClick={() => setActiveTab("pending")}>
+                  Pendientes
                 </Button>
-                <Button
-                  variant={activeTab === "sent" ? "default" : "outline"}
-                  className="flex-1 text-xs font-display uppercase tracking-wider"
-                  onClick={() => setActiveTab("sent")}
-                >
-                  Enviados / Completados
+                <Button variant={activeTab === "sent" ? "default" : "outline"} className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider" onClick={() => setActiveTab("sent")}>
+                  Enviados
                 </Button>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-[50vh] overflow-y-auto">
                 {activeDocuments.length === 0 ? (
                   <p className="py-6 text-center text-sm text-muted-foreground">No hay documentos en esta bandeja.</p>
                 ) : (
-                  activeDocuments.map((document) => (
-                    <button
-                      key={document.id}
-                      onClick={() => setSelectedDocument(document)}
-                      className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                        selectedDocument?.id === document.id
-                          ? "border-primary bg-secondary/40"
-                          : "border-border bg-background hover:border-foreground/20"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{document.title}</p>
-                          <p className="truncate text-xs text-muted-foreground mt-1">{document.original_file_name}</p>
+                  activeDocuments.map((doc) => {
+                    const isSender = doc.sender_id === user?.id;
+                    const canModify = isSender && doc.status === "pending";
+                    return (
+                      <div key={doc.id}
+                        className={`rounded-lg border p-3 transition-colors cursor-pointer ${
+                          selectedDocument?.id === doc.id ? "border-primary bg-secondary/40" : "border-border bg-background hover:border-foreground/20"
+                        }`}
+                        onClick={() => setSelectedDocument(doc)}
+                      >
+                        <div className="flex items-start justify-between gap-2 min-w-0">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{doc.title}</p>
+                            <p className="truncate text-xs text-muted-foreground mt-0.5">{doc.original_file_name}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              {new Date(doc.created_at).toLocaleDateString("es-ES")}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {canModify && (
+                              <>
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setReplaceTarget(doc); }}>
+                                  <RefreshCw className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteTarget(doc); }}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </>
+                            )}
+                            {doc.status === "signed" ? (
+                              <CheckCircle2 className="h-4 w-4 text-success" />
+                            ) : (
+                              <PenSquare className="h-4 w-4 text-warning" />
+                            )}
+                          </div>
                         </div>
-                        {document.status === "signed" ? (
-                          <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
-                        ) : (
-                          <PenSquare className="h-4 w-4 text-warning shrink-0" />
-                        )}
                       </div>
-                    </button>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
           </div>
 
-          <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4 min-w-0">
+          {/* Right panel - PDF viewer */}
+          <div className="rounded-lg border border-border bg-card p-4 md:p-6 space-y-4 min-w-0 overflow-hidden">
             {selectedDocument ? (
               <>
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <h2 className="font-display text-xl font-semibold tracking-tight truncate">{selectedDocument.title}</h2>
-                    <p className="text-sm text-muted-foreground truncate">{selectedDocument.original_file_name}</p>
+                    <h2 className="font-display text-lg sm:text-xl font-semibold tracking-tight truncate">{selectedDocument.title}</h2>
+                    <p className="text-xs sm:text-sm text-muted-foreground truncate">{selectedDocument.original_file_name}</p>
                   </div>
-                  <span className={`inline-flex items-center rounded px-2 py-1 text-[10px] font-display uppercase tracking-widest ${
-                    selectedDocument.status === "signed"
-                      ? "bg-success/10 text-success"
-                      : "bg-warning/10 text-warning"
-                  }`}>
-                    {selectedDocument.status === "signed" ? "Firmado" : "Pendiente"}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
+                      <Download className="h-3.5 w-3.5" /> Descargar
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
+                      <ExternalLink className="h-3.5 w-3.5" /> Abrir
+                    </Button>
+                    <span className={`inline-flex items-center rounded px-2 py-1 text-[10px] font-display uppercase tracking-widest ${
+                      selectedDocument.status === "signed" ? "bg-success/10 text-success" : "bg-warning/10 text-warning"
+                    }`}>
+                      {selectedDocument.status === "signed" ? "Firmado" : "Pendiente"}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="overflow-hidden rounded-lg border border-border bg-background">
-                  {previewUrl ? (
-                    <object data={previewUrl} type="application/pdf" className="h-[420px] w-full">
-                      <div className="p-6 text-sm text-muted-foreground">
-                        Este navegador no puede incrustar el PDF. Ábrelo o descárgalo manualmente.
-                      </div>
-                    </object>
-                  ) : (
-                    <div className="flex h-[420px] items-center justify-center text-sm text-muted-foreground">Cargando PDF…</div>
+                <div ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
+                  {pdfPages.length === 0 && (
+                    <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
+                      <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando PDF…
+                    </div>
                   )}
                 </div>
 
@@ -423,15 +452,11 @@ const SignatureDocuments = () => {
                   <div className="space-y-4 rounded-lg border border-border bg-background p-4">
                     <div>
                       <h3 className="font-display text-sm font-semibold uppercase tracking-wider">Firma manual</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        La firma se estampará en el PDF y se generará un hash de validación único.
-                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">Se estampará en el PDF con hash de validación, timestamp y geolocalización.</p>
                     </div>
                     <SignatureCanvas ref={signatureRef} />
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" onClick={() => signatureRef.current?.clear()}>
-                        Limpiar firma
-                      </Button>
+                      <Button variant="outline" onClick={() => signatureRef.current?.clear()}>Limpiar firma</Button>
                       <Button onClick={handleSignDocument} disabled={signing} className="gap-2 font-display text-xs uppercase tracking-wider">
                         {signing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSignature className="h-4 w-4" />}
                         {signing ? "Firmando..." : "Firmar y Validar"}
@@ -439,11 +464,12 @@ const SignatureDocuments = () => {
                     </div>
                   </div>
                 ) : selectedDocument.validation_hash ? (
-                  <div className="rounded-lg border border-success/20 bg-success/5 p-4">
-                    <p className="text-sm font-medium text-success">Hash de validación: {selectedDocument.validation_hash}</p>
+                  <div className="rounded-lg border border-success/20 bg-success/5 p-4 space-y-1">
+                    <p className="text-xs font-semibold text-success">Hash de Integridad</p>
+                    <p className="text-sm font-mono text-success break-all">{selectedDocument.validation_hash}</p>
                     {selectedDocument.signed_at && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Firmado el {new Date(selectedDocument.signed_at).toLocaleString("es-ES")}
+                      <p className="text-xs text-muted-foreground">
+                        Firmado: {new Date(selectedDocument.signed_at).toLocaleString("es-ES")}
                       </p>
                     )}
                   </div>
@@ -454,13 +480,50 @@ const SignatureDocuments = () => {
                 <Upload className="h-12 w-12 text-muted-foreground/30 mb-4" />
                 <h2 className="font-display text-xl font-semibold tracking-tight">Selecciona un documento</h2>
                 <p className="mt-2 max-w-md text-sm text-muted-foreground">
-                  Aquí verás el PDF integrado y, si te corresponde firmarlo, el panel táctil para validarlo.
+                  Visualización integrada con PDF.js, firma táctil y validación legal.
                 </p>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar documento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará permanentemente "{deleteTarget?.title}". Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Replace dialog */}
+      <AlertDialog open={!!replaceTarget} onOpenChange={(open) => { if (!open) { setReplaceTarget(null); setReplaceFile(null); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sustituir documento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Selecciona el nuevo PDF que sustituirá a "{replaceTarget?.original_file_name}".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input type="file" accept="application/pdf,.pdf" onChange={(e) => setReplaceFile(e.target.files?.[0] || null)} />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReplace} disabled={!replaceFile || replacing}>
+              {replacing ? "Sustituyendo..." : "Sustituir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 };
