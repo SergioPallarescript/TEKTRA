@@ -229,7 +229,11 @@ const SignatureDocuments = () => {
       });
 
       const signedBytes = await pdfDoc.save();
-      const signedFile = new File([signedBytes], `firmado_${sanitizeFileName(selectedDocument.original_file_name)}`, {
+      const signedBuffer = signedBytes.buffer.slice(
+        signedBytes.byteOffset,
+        signedBytes.byteOffset + signedBytes.byteLength,
+      );
+      const signedFile = new File([signedBuffer], `firmado_${sanitizeFileName(selectedDocument.original_file_name)}`, {
         type: "application/pdf",
       });
       const signedPath = `signature-documents/${projectId}/signed/${selectedDocument.id}_${Date.now()}.pdf`;
