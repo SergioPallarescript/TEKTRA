@@ -1,16 +1,18 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Bell, Menu, X, LogOut, FolderOpen, Settings, BellRing, BellOff } from "lucide-react";
+import { Bell, Menu, X, LogOut, FolderOpen, Settings, BellRing, BellOff, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useNavigate, useLocation } from "react-router-dom";
 import NotificationPanel from "./NotificationPanel";
 import { usePushSubscription } from "@/hooks/usePushSubscription";
+import { useTheme } from "@/hooks/useTheme";
 import { toast } from "sonner";
 
 const AppHeader = () => {
   const { profile, signOut } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const navigate = useNavigate();

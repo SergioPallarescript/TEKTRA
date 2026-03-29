@@ -1,18 +1,7 @@
-@font-face {
-  font-family: 'Altone Trial';
-  src: url('/fonts/Altone_Trial-Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Altone Trial';
-  src: url('/fonts/Altone_Trial-Bold.ttf') format('truetype');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
+@import "@fontsource/montserrat/400.css";
+@import "@fontsource/montserrat/500.css";
+@import "@fontsource/montserrat/600.css";
+@import "@fontsource/montserrat/700.css";
 
 @tailwind base;
 @tailwind components;
@@ -68,7 +57,7 @@
     --stone: 30 3% 70%;
     --charcoal: 0 0% 20%;
 
-    font-family: 'Altone Trial', system-ui, sans-serif;
+    font-family: 'Montserrat', system-ui, sans-serif;
   }
 
   .dark {
@@ -112,7 +101,7 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Altone Trial', system-ui, sans-serif;
+    font-family: 'Montserrat', system-ui, sans-serif;
     font-weight: 700;
     @apply tracking-tight;
   }
@@ -126,17 +115,21 @@
     content: '';
     position: absolute;
     inset: 0;
-    background-image: url('/concrete-texture.jpg');
+    background-image: url('/texture-light.jpg');
     background-size: 512px 512px;
     background-repeat: repeat;
-    opacity: 0.08;
+    opacity: 0.15;
     pointer-events: none;
     z-index: 0;
+  }
+  .dark .concrete-bg::before {
+    background-image: url('/texture-dark.jpg');
+    opacity: 0.25;
   }
 
   .legal-footer {
     @apply text-xs text-muted-foreground border-t border-border py-3 px-4 text-center;
-    font-family: 'Altone Trial', system-ui, sans-serif;
+    font-family: 'Montserrat', system-ui, sans-serif;
     letter-spacing: 0.05em;
     text-transform: uppercase;
   }
