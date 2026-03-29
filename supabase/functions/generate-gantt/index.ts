@@ -10,7 +10,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { projectId } = await req.json();
+    const { projectId, startDate } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
@@ -18,7 +18,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch project documents to get context
     const { data: docs } = await supabase
       .from("project_documents")
       .select("file_name, file_type")
@@ -30,7 +29,6 @@ serve(async (req) => {
       .eq("id", projectId)
       .single();
 
-    // Fetch existing orders for context
     const { data: orders } = await supabase
       .from("orders")
       .select("content, created_at")
@@ -40,6 +38,8 @@ serve(async (req) => {
 
     const docList = (docs || []).map(d => `- ${d.file_name} (${d.file_type || "documento"})`).join("\n");
     const orderSummary = (orders || []).map(o => `- [${new Date(o.created_at).toLocaleDateString("es-ES")}] ${o.content.substring(0, 150)}`).join("\n");
+
+    const effectiveStartDate = startDate || new Date().toISOString().split("T")[0];
 
     const prompt = `Eres un experto en planificación de obras de construcción en España. Genera un diagrama de Gantt realista para el siguiente proyecto:
 
@@ -54,7 +54,7 @@ ${orderSummary || "No hay órdenes registradas aún."}
 
 INSTRUCCIONES:
 1. Genera entre 8 y 15 hitos/fases de construcción típicas y realistas.
-2. Las fechas deben ser coherentes, empezando desde hoy.
+2. La fecha de inicio del primer hito DEBE SER: ${effectiveStartDate}. Todas las demás fases se calculan a partir de esta fecha.
 3. Considera solapamientos técnicos realistas (ej. instalaciones pueden empezar antes de acabar estructura).
 4. Si hay órdenes de obra, úsalas para ajustar el progreso y las fechas.
 5. Cada fase debe tener una duración realista en días.
@@ -104,7 +104,6 @@ Devuelve ÚNICAMENTE un JSON array válido con esta estructura (sin markdown, si
       const cleaned = rawOutput.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
       milestones = JSON.parse(cleaned);
     } catch {
-      // Fallback to default phases
       milestones = [];
       const defaultPhases = [
         "Demoliciones y movimiento de tierras", "Cimentación", "Estructura",
@@ -112,9 +111,9 @@ Devuelve ÚNICAMENTE un JSON array válido con esta estructura (sin markdown, si
         "Revestimientos y acabados", "Carpintería y cerrajería", "Urbanización exterior",
         "Limpieza final y recepción",
       ];
-      const today = new Date();
+      const startD = new Date(effectiveStartDate);
       defaultPhases.forEach((phase, i) => {
-        const start = new Date(today);
+        const start = new Date(startD);
         start.setDate(start.getDate() + i * 30);
         const end = new Date(start);
         end.setDate(end.getDate() + 25);

@@ -5,9 +5,10 @@ import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { notifyProjectMembers } from "@/lib/notifications";
-import { ArrowLeft, Plus, Trash2, GripVertical, BarChart3, Loader2, RotateCcw } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, GripVertical, BarChart3, Loader2, RotateCcw, CalendarDays } from "lucide-react";
 
 interface GanttItem {
   id: string;
@@ -37,8 +38,14 @@ const GanttModule = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [forcedLandscape, setForcedLandscape] = useState(false);
 
-  const canEdit = profile?.role === "DEM" || profile?.role === "DO" || profile?.role === "CON";
-  const canRegenerate = profile?.role === "DEM" || profile?.role === "DO";
+  // Start date dialog state
+  const [showStartDateDialog, setShowStartDateDialog] = useState(false);
+  const [startDateInput, setStartDateInput] = useState(new Date().toISOString().split("T")[0]);
+
+  // Permissions: only DO/DEM can generate/regenerate and add/delete milestones
+  const isAdmin = profile?.role === "DEM" || profile?.role === "DO";
+  // DO, DEM and CON can edit dates/titles of existing milestones
+  const canEditExisting = isAdmin || profile?.role === "CON";
 
   // Load milestones from database
   useEffect(() => {
@@ -70,7 +77,6 @@ const GanttModule = () => {
     setItems(newItems);
     if (!projectId) return;
 
-    // Delete all existing milestones for this project, then insert new ones
     await supabase.from("gantt_milestones").delete().eq("project_id", projectId);
 
     if (newItems.length > 0) {
@@ -90,14 +96,21 @@ const GanttModule = () => {
     }
   }, [projectId]);
 
-  // AI-powered generation from project documents and orders
+  // Open start date dialog before generation
+  const handleGenerateClick = () => {
+    setStartDateInput(new Date().toISOString().split("T")[0]);
+    setShowStartDateDialog(true);
+  };
+
+  // AI-powered generation with start date
   const generateFromDocs = async () => {
     if (!projectId) return;
+    setShowStartDateDialog(false);
     setGenerating(true);
 
     try {
       const { data, error } = await supabase.functions.invoke("generate-gantt", {
-        body: { projectId },
+        body: { projectId, startDate: startDateInput },
       });
 
       if (error) throw error;
@@ -206,6 +219,156 @@ const GanttModule = () => {
 
   const isMobilePortrait = typeof window !== 'undefined' && window.innerWidth < 768 && window.innerHeight > window.innerWidth;
 
+  // Start date dialog component
+  const startDateDialog = (
+    <Dialog open={showStartDateDialog} onOpenChange={setShowStartDateDialog}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display tracking-tight">Fecha de inicio de obra</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">
+            Introduce la fecha de inicio del primer hito. La IA generará el diagrama completo a partir de esta fecha.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4">
+          <label className="text-xs font-display uppercase tracking-wider text-muted-foreground mb-2 block">
+            Fecha de inicio
+          </label>
+          <Input
+            type="date"
+            value={startDateInput}
+            onChange={(e) => setStartDateInput(e.target.value)}
+            className="text-foreground"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setShowStartDateDialog(false)}>Cancelar</Button>
+          <Button onClick={generateFromDocs} disabled={!startDateInput} className="gap-2 font-display text-xs uppercase tracking-wider">
+            <BarChart3 className="h-4 w-4" />
+            Generar Diagrama
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  // Gantt chart rendering (reusable)
+  const renderChart = () => (
+    <div className="bg-card border border-border rounded-lg overflow-hidden mb-4">
+      <div className="relative h-8 border-b border-border bg-secondary/30 overflow-hidden">
+        {months.map((m, i) => (
+          <span key={i} className="absolute top-1.5 text-[10px] font-display uppercase tracking-wider text-muted-foreground" style={{ left: m.left }}>
+            {m.label}
+          </span>
+        ))}
+      </div>
+      <div className="divide-y divide-border">
+        {sortedItems.map((item, idx) => (
+          <div key={item.id} className={`flex items-center h-10 group ${isCurrentMilestone(item) ? "ring-2 ring-green-500 bg-green-500/10" : ""}`}>
+            <div className="w-48 md:w-64 shrink-0 px-3 flex items-center gap-1 border-r border-border">
+              {isAdmin && (
+                <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => moveItem(item.id, -1)} className="text-muted-foreground hover:text-foreground text-[8px] leading-none">▲</button>
+                  <button onClick={() => moveItem(item.id, 1)} className="text-muted-foreground hover:text-foreground text-[8px] leading-none">▼</button>
+                </div>
+              )}
+              {editingId === item.id ? (
+                <Input
+                  value={item.title}
+                  onChange={(e) => updateItem(item.id, { title: e.target.value })}
+                  onBlur={() => setEditingId(null)}
+                  onKeyDown={(e) => e.key === "Enter" && setEditingId(null)}
+                  className="h-7 text-xs"
+                  autoFocus
+                />
+              ) : (
+                <button
+                  onClick={() => canEditExisting && setEditingId(item.id)}
+                  className="text-xs truncate text-left flex-1 hover:text-foreground transition-colors"
+                >
+                  {item.title}
+                </button>
+              )}
+            </div>
+            <div className="flex-1 relative h-full px-1">
+              <div
+                className="absolute top-2 h-6 rounded"
+                style={{
+                  ...getBarStyle(item),
+                  backgroundColor: COLORS[idx % COLORS.length],
+                  opacity: 0.8,
+                  minWidth: "4px",
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  // Edit panel for existing milestones (dates only for non-admins)
+  const renderEditPanel = () => {
+    if (!canEditExisting) return null;
+    return (
+      <>
+        <h2 className="font-display text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Editar hitos</h2>
+        <div className="space-y-2">
+          {sortedItems.map((item) => (
+            <div key={item.id} className="flex items-center gap-2 bg-card border border-border rounded-lg p-3">
+              <GripVertical className="h-4 w-4 text-muted-foreground/30 shrink-0" />
+              <Input
+                value={item.title}
+                onChange={(e) => updateItem(item.id, { title: e.target.value })}
+                className="flex-1 h-8 text-xs text-foreground"
+                readOnly={!canEditExisting}
+              />
+              <Input
+                type="date"
+                value={item.start}
+                onChange={(e) => updateItem(item.id, { start: e.target.value })}
+                className="w-40 h-8 text-xs text-foreground"
+              />
+              <span className="text-xs text-muted-foreground">→</span>
+              <Input
+                type="date"
+                value={item.end}
+                onChange={(e) => updateItem(item.id, { end: e.target.value })}
+                className="w-40 h-8 text-xs text-foreground"
+              />
+              {isAdmin && (
+                <Button variant="ghost" size="icon" onClick={() => deleteItem(item.id)} className="text-destructive/60 hover:text-destructive shrink-0 h-8 w-8">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  };
+
+  // Action buttons
+  const renderActions = () => (
+    <div className="flex gap-2 flex-wrap">
+      {isMobilePortrait && !forcedLandscape && (
+        <Button onClick={() => setForcedLandscape(true)} variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
+          <RotateCcw className="h-4 w-4" /> Girar pantalla
+        </Button>
+      )}
+      {isAdmin && (
+        <Button onClick={handleGenerateClick} disabled={generating} className="font-display text-xs uppercase tracking-wider gap-2">
+          {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+          {generating ? "Generando..." : items.length === 0 ? "Generar desde documentos" : "Regenerar"}
+        </Button>
+      )}
+      {isAdmin && (
+        <Button onClick={addItem} variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
+          <Plus className="h-4 w-4" /> Añadir Hito
+        </Button>
+      )}
+    </div>
+  );
+
   if (forcedLandscape) {
     return (
       <div
@@ -219,6 +382,7 @@ const GanttModule = () => {
           left: `${window.innerWidth}px`,
         }}
       >
+        {startDateDialog}
         <div className="p-4 pb-16">
           <div className="flex items-center gap-3 mb-2">
             <Button variant="outline" size="sm" onClick={() => setForcedLandscape(false)} className="gap-2 font-display text-xs uppercase tracking-wider">
@@ -231,19 +395,7 @@ const GanttModule = () => {
 
           <div className="flex items-end justify-between mb-4">
             <h1 className="font-display text-2xl font-bold tracking-tighter">Diagrama Gantt</h1>
-            <div className="flex gap-2">
-              {canRegenerate && (
-                <Button onClick={generateFromDocs} disabled={generating} className="font-display text-xs uppercase tracking-wider gap-2">
-                  {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-                  {generating ? "Generando..." : items.length === 0 ? "Generar" : "Regenerar"}
-                </Button>
-              )}
-              {canEdit && (
-                <Button onClick={addItem} variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
-                  <Plus className="h-4 w-4" /> Añadir
-                </Button>
-              )}
-            </div>
+            {renderActions()}
           </div>
 
           {items.length === 0 ? (
@@ -253,69 +405,8 @@ const GanttModule = () => {
             </div>
           ) : (
             <>
-              <div className="bg-card border border-border rounded-lg overflow-hidden mb-4">
-                <div className="relative h-7 border-b border-border bg-secondary/30 overflow-hidden">
-                  {months.map((m, i) => (
-                    <span key={i} className="absolute top-1 text-[9px] font-display uppercase tracking-wider text-muted-foreground" style={{ left: m.left }}>
-                      {m.label}
-                    </span>
-                  ))}
-                </div>
-                <div className="divide-y divide-border">
-                  {sortedItems.map((item, idx) => (
-                    <div key={item.id} className={`flex items-center h-9 ${isCurrentMilestone(item) ? "ring-2 ring-green-500 bg-green-500/10" : ""}`}>
-                      <div className="w-40 shrink-0 px-2 flex items-center border-r border-border">
-                        <span className="text-[10px] truncate">{item.title}</span>
-                      </div>
-                      <div className="flex-1 relative h-full px-1">
-                        <div
-                          className="absolute top-1.5 h-5 rounded"
-                          style={{
-                            ...getBarStyle(item),
-                            backgroundColor: COLORS[idx % COLORS.length],
-                            opacity: 0.8,
-                            minWidth: "4px",
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {canEdit && (
-                <>
-                  <h2 className="font-display text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Editar hitos</h2>
-                  <div className="space-y-2">
-                    {sortedItems.map((item) => (
-                      <div key={item.id} className="flex items-center gap-2 bg-card border border-border rounded-lg p-2">
-                        <GripVertical className="h-3 w-3 text-muted-foreground/30 shrink-0" />
-                        <Input
-                          value={item.title}
-                          onChange={(e) => updateItem(item.id, { title: e.target.value })}
-                          className="flex-1 h-7 text-xs text-foreground"
-                        />
-                        <Input
-                          type="date"
-                          value={item.start}
-                          onChange={(e) => updateItem(item.id, { start: e.target.value })}
-                          className="w-32 h-7 text-xs text-foreground"
-                        />
-                        <span className="text-xs text-muted-foreground">→</span>
-                        <Input
-                          type="date"
-                          value={item.end}
-                          onChange={(e) => updateItem(item.id, { end: e.target.value })}
-                          className="w-32 h-7 text-xs text-foreground"
-                        />
-                        <Button variant="ghost" size="icon" onClick={() => deleteItem(item.id)} className="text-destructive/60 hover:text-destructive shrink-0 h-7 w-7">
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
+              {renderChart()}
+              {renderEditPanel()}
             </>
           )}
         </div>
@@ -325,143 +416,44 @@ const GanttModule = () => {
 
   return (
     <AppLayout>
-        <div className="max-w-full mx-auto px-4 py-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
-              Diagrama Gantt — Cronología de obra
-            </p>
-          </div>
-
-          <div className="flex items-end justify-between mb-6 flex-wrap gap-2">
-            <div>
-              <h1 className="font-display text-3xl font-bold tracking-tighter">Diagrama Gantt</h1>
-              <p className="text-sm text-muted-foreground mt-1">Cronología de obra personalizable</p>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              {isMobilePortrait && (
-                <Button onClick={() => setForcedLandscape(true)} variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
-                  <RotateCcw className="h-4 w-4" /> Girar pantalla
-                </Button>
-              )}
-              {canRegenerate && (
-                <Button onClick={generateFromDocs} disabled={generating} className="font-display text-xs uppercase tracking-wider gap-2">
-                  {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-                  {generating ? "Generando..." : items.length === 0 ? "Generar desde documentos" : "Regenerar"}
-                </Button>
-              )}
-              {canEdit && (
-                <Button onClick={addItem} variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
-                  <Plus className="h-4 w-4" /> Añadir Hito
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-12 bg-card border border-border rounded-lg animate-pulse" />)}</div>
-          ) : items.length === 0 ? (
-            <div className="text-center py-20">
-              <BarChart3 className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
-              <p className="font-display text-muted-foreground">No hay hitos definidos</p>
-              {canRegenerate ? (
-                <p className="text-xs text-muted-foreground mt-2">Genera automáticamente desde los documentos del proyecto o añade hitos manualmente.</p>
-              ) : (
-                <p className="text-xs text-muted-foreground mt-2">El Director de Obra o el Director de Ejecución Material debe generar el diagrama.</p>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="bg-card border border-border rounded-lg overflow-hidden mb-6">
-                <div className="relative h-8 border-b border-border bg-secondary/30 overflow-hidden">
-                  {months.map((m, i) => (
-                    <span key={i} className="absolute top-1.5 text-[10px] font-display uppercase tracking-wider text-muted-foreground" style={{ left: m.left }}>
-                      {m.label}
-                    </span>
-                  ))}
-                </div>
-                <div className="divide-y divide-border">
-                  {sortedItems.map((item, idx) => (
-                    <div key={item.id} className={`flex items-center h-10 group ${isCurrentMilestone(item) ? "ring-2 ring-green-500 bg-green-500/10" : ""}`}>
-                      <div className="w-48 md:w-64 shrink-0 px-3 flex items-center gap-1 border-r border-border">
-                        {canEdit && (
-                          <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => moveItem(item.id, -1)} className="text-muted-foreground hover:text-foreground text-[8px] leading-none">▲</button>
-                            <button onClick={() => moveItem(item.id, 1)} className="text-muted-foreground hover:text-foreground text-[8px] leading-none">▼</button>
-                          </div>
-                        )}
-                        {editingId === item.id ? (
-                          <Input
-                            value={item.title}
-                            onChange={(e) => updateItem(item.id, { title: e.target.value })}
-                            onBlur={() => setEditingId(null)}
-                            onKeyDown={(e) => e.key === "Enter" && setEditingId(null)}
-                            className="h-7 text-xs"
-                            autoFocus
-                          />
-                        ) : (
-                          <button
-                            onClick={() => canEdit && setEditingId(item.id)}
-                            className="text-xs truncate text-left flex-1 hover:text-foreground transition-colors"
-                          >
-                            {item.title}
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex-1 relative h-full px-1">
-                        <div
-                          className="absolute top-2 h-6 rounded"
-                          style={{
-                            ...getBarStyle(item),
-                            backgroundColor: COLORS[idx % COLORS.length],
-                            opacity: 0.8,
-                            minWidth: "4px",
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {canEdit && (
-                <>
-                  <h2 className="font-display text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Editar hitos</h2>
-                  <div className="space-y-2">
-                    {sortedItems.map((item) => (
-                      <div key={item.id} className="flex items-center gap-2 bg-card border border-border rounded-lg p-3">
-                        <GripVertical className="h-4 w-4 text-muted-foreground/30 shrink-0" />
-                        <Input
-                          value={item.title}
-                          onChange={(e) => updateItem(item.id, { title: e.target.value })}
-                          className="flex-1 h-8 text-xs text-foreground"
-                        />
-                        <Input
-                          type="date"
-                          value={item.start}
-                          onChange={(e) => updateItem(item.id, { start: e.target.value })}
-                          className="w-40 h-8 text-xs text-foreground"
-                        />
-                        <span className="text-xs text-muted-foreground">→</span>
-                        <Input
-                          type="date"
-                          value={item.end}
-                          onChange={(e) => updateItem(item.id, { end: e.target.value })}
-                          className="w-40 h-8 text-xs text-foreground"
-                        />
-                        <Button variant="ghost" size="icon" onClick={() => deleteItem(item.id)} className="text-destructive/60 hover:text-destructive shrink-0 h-8 w-8">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </>
-          )}
+      {startDateDialog}
+      <div className="max-w-full mx-auto px-4 py-8">
+        <div className="flex items-center gap-3 mb-2">
+          <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">
+            Diagrama Gantt — Cronología de obra
+          </p>
         </div>
+
+        <div className="flex items-end justify-between mb-6 flex-wrap gap-2">
+          <div>
+            <h1 className="font-display text-3xl font-bold tracking-tighter">Diagrama Gantt</h1>
+            <p className="text-sm text-muted-foreground mt-1">Cronología de obra personalizable</p>
+          </div>
+          {renderActions()}
+        </div>
+
+        {loading ? (
+          <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-12 bg-card border border-border rounded-lg animate-pulse" />)}</div>
+        ) : items.length === 0 ? (
+          <div className="text-center py-20">
+            <BarChart3 className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
+            <p className="font-display text-muted-foreground">No hay hitos definidos</p>
+            {isAdmin ? (
+              <p className="text-xs text-muted-foreground mt-2">Genera automáticamente desde los documentos del proyecto o añade hitos manualmente.</p>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-2">El Director de Obra o el Director de Ejecución Material debe generar el diagrama.</p>
+            )}
+          </div>
+        ) : (
+          <>
+            {renderChart()}
+            {renderEditPanel()}
+          </>
+        )}
+      </div>
     </AppLayout>
   );
 };
