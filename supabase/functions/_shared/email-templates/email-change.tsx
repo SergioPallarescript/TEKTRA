@@ -30,7 +30,7 @@ export const EmailChangeEmail = ({
 }: EmailChangeEmailProps) => (
   <Html lang="es" dir="ltr">
     <Head />
-    <Preview>Confirma el cambio de correo en TEKTRA</Preview>
+    <Preview>Confirma tu nueva dirección de correo en TEKTRA</Preview>
     <Body style={main}>
       <Container style={container}>
         <Img src="https://tektra.es/tektra-icon-512.png" width="48" height="48" alt="TEKTRA" style={logo} />
@@ -42,10 +42,10 @@ export const EmailChangeEmail = ({
         </Text>
         <Text style={text}>Pulsa el botón para confirmar este cambio:</Text>
         <Button style={button} href={confirmationUrl}>
-          Confirmar Cambio de Correo
+          Confirmar
         </Button>
         <Text style={footer}>
-          Si no solicitaste este cambio, protege tu cuenta de inmediato.
+          Este es un correo automático de TEKTRA. No es necesario responder.
         </Text>
       </Container>
     </Body>

@@ -34,10 +34,10 @@ export const MagicLinkEmail = ({
           Pulsa el botón para acceder a TEKTRA. Este enlace expirará en breve.
         </Text>
         <Button style={button} href={confirmationUrl}>
-          Acceder a TEKTRA
+          Acceder
         </Button>
         <Text style={footer}>
-          Si no solicitaste este enlace, puedes ignorar este correo.
+          Este es un correo automático de TEKTRA. No es necesario responder.
         </Text>
       </Container>
     </Body>

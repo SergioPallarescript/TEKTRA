@@ -25,7 +25,7 @@ export const RecoveryEmail = ({
 }: RecoveryEmailProps) => (
   <Html lang="es" dir="ltr">
     <Head />
-    <Preview>Restablece tu contraseña de TEKTRA</Preview>
+    <Preview>Instrucciones para restablecer tu contraseña en TEKTRA</Preview>
     <Body style={main}>
       <Container style={container}>
         <Img src="https://tektra.es/tektra-icon-512.png" width="48" height="48" alt="TEKTRA" style={logo} />
@@ -35,10 +35,10 @@ export const RecoveryEmail = ({
           Pulsa el botón para elegir una nueva contraseña.
         </Text>
         <Button style={button} href={confirmationUrl}>
-          Restablecer Contraseña
+          Cambiar Contraseña
         </Button>
         <Text style={footer}>
-          Si no solicitaste este cambio, puedes ignorar este correo. Tu contraseña no será modificada.
+          Este es un correo automático de TEKTRA. No es necesario responder.
         </Text>
       </Container>
     </Body>

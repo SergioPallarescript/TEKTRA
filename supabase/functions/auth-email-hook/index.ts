@@ -17,12 +17,12 @@ const corsHeaders = {
 }
 
 const EMAIL_SUBJECTS: Record<string, string> = {
-  signup: '🏗️ Confirma tu acceso - TEKTRA',
-  invite: '🏗️ Invitación al Proyecto de Obra - TEKTRA',
-  magiclink: '🔐 Tu enlace de acceso - TEKTRA',
-  recovery: '🔑 Restablecer contraseña - TEKTRA',
-  email_change: '📧 Confirma el cambio de correo - TEKTRA',
-  reauthentication: '🔒 Código de verificación - TEKTRA',
+  signup: 'Confirma tu email - TEKTRA',
+  invite: 'Has sido invitado a un proyecto en TEKTRA',
+  magiclink: 'Tu enlace de acceso a TEKTRA',
+  recovery: 'Instrucciones para restablecer tu contraseña - TEKTRA',
+  email_change: 'Confirma tu nueva dirección de correo - TEKTRA',
+  reauthentication: 'Código de verificación - TEKTRA',
 }
 
 // Template mapping
@@ -256,7 +256,7 @@ async function handleWebhook(req: Request): Promise<Response> {
       run_id,
       message_id: messageId,
       to: payload.data.email,
-      from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
+      from: `TEKTRA : gestión integral de obra <noreply@${FROM_DOMAIN}>`,
       sender_domain: SENDER_DOMAIN,
       subject: EMAIL_SUBJECTS[emailType] || 'Notification',
       html,

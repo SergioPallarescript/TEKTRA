@@ -29,16 +29,10 @@ export const SignupEmail = ({
 }: SignupEmailProps) => (
   <Html lang="es" dir="ltr">
     <Head />
-    <Preview>Confirma tu acceso a TEKTRA</Preview>
+    <Preview>Confirma tu cuenta en TEKTRA</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Img
-          src="https://tektra.es/tektra-icon-512.png"
-          width="48"
-          height="48"
-          alt="TEKTRA"
-          style={logo}
-        />
+        <Img src="https://tektra.es/tektra-icon-512.png" width="48" height="48" alt="TEKTRA" style={logo} />
         <Heading style={h1}>Confirma tu cuenta</Heading>
         <Text style={text}>Hola,</Text>
         <Text style={text}>
@@ -55,10 +49,10 @@ export const SignupEmail = ({
           siguiente botón:
         </Text>
         <Button style={button} href={confirmationUrl}>
-          Confirmar Acceso a TEKTRA
+          Confirmar
         </Button>
         <Text style={footer}>
-          TEKTRA — Dirección y Ejecución de Obra Profesional.
+          Este es un correo automático de TEKTRA. No es necesario responder.
         </Text>
       </Container>
     </Body>

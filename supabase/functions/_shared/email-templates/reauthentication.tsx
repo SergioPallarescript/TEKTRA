@@ -28,7 +28,7 @@ export const ReauthenticationEmail = ({ token }: ReauthenticationEmailProps) => 
         <Text style={text}>Usa el siguiente código para confirmar tu identidad:</Text>
         <Text style={codeStyle}>{token}</Text>
         <Text style={footer}>
-          Este código expirará en breve. Si no lo solicitaste, ignora este correo.
+          Este es un correo automático de TEKTRA. No es necesario responder.
         </Text>
       </Container>
     </Body>
