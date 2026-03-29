@@ -515,6 +515,34 @@ const OrdersModule = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Cross-alert: incidents related to order content */}
+      <AlertDialog open={crossAlert.show} onOpenChange={(open) => { if (!open) setCrossAlert({ show: false, incidents: [] }); }}>
+        <AlertDialogContent className="border-destructive">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-destructive flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" /> Alerta de Coherencia Cruzada
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>Esta orden hace referencia a elementos que tienen <strong>incidencias de seguridad abiertas</strong> en el Libro de Incidencias:</p>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {crossAlert.incidents.map((inc: any) => (
+                    <div key={inc.id} className="p-2 bg-destructive/10 rounded text-xs border border-destructive/20">
+                      <span className="font-bold">#{inc.incident_number}</span> — {inc.content.substring(0, 120)}...
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs font-medium">¿Deseas continuar con el registro de la orden?</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setCrossAlert({ show: false, incidents: [] }); setSubmitting(false); }}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => setCrossAlert({ show: false, incidents: [] })} className="bg-destructive text-destructive-foreground">Continuar de todos modos</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 };
