@@ -9,11 +9,35 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { rawText, context } = await req.json();
+    const { rawText, context, structured } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const systemPrompt = `Eres un asistente de post-procesamiento de dictado de voz para la plataforma TECTRA de gestión de obras de construcción en España.
+    let systemPrompt: string;
+
+    if (structured && context === "orders") {
+      systemPrompt = `Eres un asistente de post-procesamiento de dictado de voz para la plataforma TECTRA de gestión de obras de construcción en España.
+
+Tu tarea es limpiar y estructurar el texto dictado por voz en EXACTAMENTE tres secciones. Sigue estas reglas:
+
+1. ELIMINA todas las repeticiones de palabras y frases duplicadas producidas por el reconocimiento de voz.
+2. CORRIGE la gramática, ortografía y puntuación.
+3. REESCRIBE con tono técnico, formal y profesional propio de la Dirección de Ejecución Material (DEM).
+4. Si el usuario ha hablado de forma coloquial, CONVIERTE el contenido en anotaciones técnicas.
+5. MANTÉN toda la información relevante del dictado original, no inventes datos nuevos.
+6. Usa terminología técnica de construcción cuando sea apropiado.
+
+DEVUELVE ÚNICAMENTE un JSON válido con esta estructura exacta (sin markdown, sin comentarios):
+{
+  "estado": "Resumen descriptivo de los avances físicos observados en la visita de obra.",
+  "instrucciones": "Mandatos técnicos ejecutivos dirigidos al constructor o contratas. Ejemplo: Corregir armado de pilares P3-P5. Proceder al vertido de la losa L2.",
+  "pendientes": "Tareas de seguimiento para la próxima visita. Ejemplo: Verificar curado del hormigón. Comprobar nivelación."
+}
+
+Si alguna sección no tiene contenido relevante del dictado, déjala con un texto breve indicándolo: "Sin observaciones en esta visita."
+IMPORTANTE: Devuelve SOLO el JSON, sin texto adicional, sin bloques de código.`;
+    } else {
+      systemPrompt = `Eres un asistente de post-procesamiento de dictado de voz para la plataforma TECTRA de gestión de obras de construcción en España.
 
 Tu tarea es limpiar y reescribir el texto dictado por voz siguiendo estas reglas estrictas:
 
@@ -26,6 +50,7 @@ Tu tarea es limpiar y reescribir el texto dictado por voz siguiendo estas reglas
 7. El resultado debe ser conciso, claro y profesionalmente redactado.
 
 IMPORTANTE: Devuelve ÚNICAMENTE el texto limpio y reestructurado, sin explicaciones ni comentarios adicionales.`;
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -61,9 +86,25 @@ IMPORTANTE: Devuelve ÚNICAMENTE el texto limpio y reestructurado, sin explicaci
     }
 
     const data = await response.json();
-    const cleanedText = data.choices?.[0]?.message?.content?.trim() || rawText;
+    const rawOutput = data.choices?.[0]?.message?.content?.trim() || rawText;
 
-    return new Response(JSON.stringify({ cleanedText }), {
+    if (structured && context === "orders") {
+      try {
+        // Try to parse as JSON
+        const cleaned = rawOutput.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+        const parsed = JSON.parse(cleaned);
+        return new Response(JSON.stringify({ structured: true, sections: parsed }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch {
+        // Fallback: return as plain text
+        return new Response(JSON.stringify({ structured: false, cleanedText: rawOutput }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    return new Response(JSON.stringify({ cleanedText: rawOutput }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
