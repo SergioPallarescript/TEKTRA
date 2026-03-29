@@ -5,7 +5,14 @@ import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Upload, FileText, Trash2, FolderOpen } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Trash2, FolderOpen, Loader2 } from "lucide-react";
+
+const sanitizeFileName = (name: string) =>
+  name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/_+/g, "_");
 
 const ProjectDocs = () => {
   const { id: projectId } = useParams<{ id: string }>();
@@ -33,30 +40,65 @@ const ProjectDocs = () => {
   const handleUpload = async (files: FileList) => {
     if (!projectId || !user || !canUpload) return;
     setUploading(true);
+    let successCount = 0;
+    let failCount = 0;
 
     for (const file of Array.from(files)) {
-      const path = `project-docs/${projectId}/${Date.now()}_${file.name}`;
-      const { error: uploadErr } = await supabase.storage.from("plans").upload(path, file);
-      if (uploadErr) { toast.error(`Error subiendo ${file.name}`); continue; }
+      try {
+        const safeName = sanitizeFileName(file.name);
+        const path = `project-docs/${projectId}/${Date.now()}_${safeName}`;
 
-      await supabase.from("project_documents").insert({
-        project_id: projectId,
-        uploaded_by: user.id,
-        file_name: file.name,
-        file_url: path,
-        file_size: file.size,
-        file_type: file.type,
-      });
+        const { error: uploadErr } = await supabase.storage
+          .from("plans")
+          .upload(path, file, { cacheControl: "3600", upsert: false });
 
-      await supabase.from("audit_logs").insert({
-        user_id: user.id,
-        project_id: projectId,
-        action: "project_doc_uploaded",
-        details: { file_name: file.name },
-      });
+        if (uploadErr) {
+          console.error("Storage upload error:", uploadErr);
+          toast.error(`Error subiendo ${file.name}: ${uploadErr.message}`);
+          failCount++;
+          continue;
+        }
+
+        const { error: dbErr } = await supabase.from("project_documents").insert({
+          project_id: projectId,
+          uploaded_by: user.id,
+          file_name: file.name,
+          file_url: path,
+          file_size: file.size,
+          file_type: file.type,
+        });
+
+        if (dbErr) {
+          console.error("DB insert error:", dbErr);
+          // Clean up orphan file
+          await supabase.storage.from("plans").remove([path]);
+          toast.error(`Error registrando ${file.name}`);
+          failCount++;
+          continue;
+        }
+
+        await supabase.from("audit_logs").insert({
+          user_id: user.id,
+          project_id: projectId,
+          action: "project_doc_uploaded",
+          details: { file_name: file.name },
+        });
+
+        successCount++;
+      } catch (err: any) {
+        console.error("Upload exception:", err);
+        toast.error(`Error inesperado subiendo ${file.name}`);
+        failCount++;
+      }
     }
 
-    toast.success("Documentos subidos correctamente");
+    if (successCount > 0) {
+      toast.success(`${successCount} documento${successCount > 1 ? "s" : ""} subido${successCount > 1 ? "s" : ""} correctamente`);
+    }
+    if (failCount > 0 && successCount === 0) {
+      toast.error("No se pudo subir ningún archivo. Verifica el tamaño (máx. 50 MB).");
+    }
+
     setUploading(false);
     fetchDocs();
   };
@@ -80,6 +122,12 @@ const ProjectDocs = () => {
     URL.revokeObjectURL(url);
   };
 
+  const formatSize = (bytes: number | null) => {
+    if (!bytes) return "";
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto px-4 py-8">
@@ -96,7 +144,7 @@ const ProjectDocs = () => {
           <div>
             <h1 className="font-display text-3xl font-bold tracking-tighter">Documentación</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Base de conocimiento del Cerebro de Obra. Solo DO y DEM pueden subir archivos.
+              Base de conocimiento del Cerebro de Obra. Solo DO y DEM pueden subir archivos (máx. 50 MB).
             </p>
           </div>
           {canUpload && (
@@ -110,7 +158,7 @@ const ProjectDocs = () => {
               />
               <Button asChild variant="outline" className="font-display text-xs uppercase tracking-wider gap-2" disabled={uploading}>
                 <span>
-                  <Upload className="h-4 w-4" />
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                   {uploading ? "Subiendo..." : "Subir Documentos"}
                 </span>
               </Button>
@@ -142,7 +190,7 @@ const ProjectDocs = () => {
                   <div>
                     <p className="text-sm font-medium">{doc.file_name}</p>
                     <p className="text-[10px] text-muted-foreground">
-                      {doc.file_size ? `${(doc.file_size / 1024).toFixed(0)} KB` : ""} · {new Date(doc.created_at).toLocaleDateString("es-ES")}
+                      {formatSize(doc.file_size)} · {new Date(doc.created_at).toLocaleDateString("es-ES")}
                     </p>
                   </div>
                 </button>
