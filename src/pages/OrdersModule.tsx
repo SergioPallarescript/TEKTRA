@@ -42,6 +42,8 @@ const OrdersModule = () => {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
   const [cleaning, setCleaning] = useState(false);
+  const [structuredSections, setStructuredSections] = useState<{ estado: string; instrucciones: string; pendientes: string } | null>(null);
+  const [crossAlert, setCrossAlert] = useState<{ show: boolean; incidents: any[] }>({ show: false, incidents: [] });
   const recognitionRef = useRef<any>(null);
 
   const isDEM = profile?.role === "DEM";
