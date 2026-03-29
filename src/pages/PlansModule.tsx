@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { notifyProjectMembers } from "@/lib/notifications";
+import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import {
   ArrowLeft,
   Upload,
@@ -222,11 +223,12 @@ const PlansModule = () => {
     try {
       const nextVersion = (selectedPlan.current_version || 0) + (versions.length > 0 ? 0 : -1) + 1;
       const actualVersion = versions.length > 0 ? versions[0].version_number + 1 : 1;
-      const filePath = `${projectId}/${selectedPlan.id}/v${actualVersion}_${uploadFile.name}`;
+      const filePath = `${projectId}/${selectedPlan.id}/v${actualVersion}_${sanitizeFileName(uploadFile.name)}`;
 
-      const { error: storageError } = await supabase.storage
-        .from("plans")
-        .upload(filePath, uploadFile);
+      const { error: storageError } = await uploadFileWithFallback({
+        path: filePath,
+        file: uploadFile,
+      });
 
       if (storageError) throw storageError;
 
@@ -523,8 +525,11 @@ const PlansModule = () => {
                     </Label>
                     <Input
                       type="file"
-                      accept=".pdf,.dwg,.dxf,.png,.jpg"
-                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                      accept="application/pdf,image/png,image/jpeg,.pdf,.dwg,.dxf,.png,.jpg,.jpeg"
+                      onChange={(e) => {
+                        setUploadFile(e.target.files?.[0] || null);
+                        e.currentTarget.value = "";
+                      }}
                       required
                       className="cursor-pointer"
                     />

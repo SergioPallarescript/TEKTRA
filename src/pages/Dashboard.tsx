@@ -6,7 +6,7 @@ import ProgressRing from "@/components/ProgressRing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Building2, MapPin, Users } from "lucide-react";
+import { Plus, Building2, FileSignature, MapPin, Users } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -29,6 +29,7 @@ const Dashboard = () => {
   const [newProject, setNewProject] = useState({ name: "", description: "", address: "" });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [progress, setProgress] = useState<Record<string, number>>({});
+  const [pendingSignatureDocs, setPendingSignatureDocs] = useState<any[]>([]);
   const navigate = useNavigate();
 
   const isAdmin = profile?.role === "DO" || profile?.role === "DEM";
@@ -65,10 +66,22 @@ const Dashboard = () => {
         }
         setProgress(progressMap);
       }
+
+      if (user) {
+        const { data: signatureDocs } = await (supabase.from("signature_documents" as any) as any)
+          .select("id, project_id, title")
+          .eq("recipient_id", user.id)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        setPendingSignatureDocs(signatureDocs || []);
+      }
+
       setLoading(false);
     };
     fetchProjects();
-  }, []);
+  }, [user]);
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,6 +163,23 @@ const Dashboard = () => {
             </Dialog>
           )}
         </div>
+
+        {pendingSignatureDocs.length > 0 && (
+          <button
+            onClick={() => navigate(`/project/${pendingSignatureDocs[0].project_id}/signatures`)}
+            className="mb-6 flex w-full items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4 text-left transition-colors hover:border-warning"
+          >
+            <FileSignature className="mt-0.5 h-5 w-5 text-warning shrink-0" />
+            <div>
+              <p className="font-display text-sm font-semibold uppercase tracking-wider text-foreground">
+                Documentos pendientes de firma
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Tienes {pendingSignatureDocs.length} documento{pendingSignatureDocs.length > 1 ? "s" : ""} esperando tu validación.
+              </p>
+            </div>
+          </button>
+        )}
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

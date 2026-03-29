@@ -23,7 +23,7 @@ import {
 import { toast } from "sonner";
 import {
   FileText, Brain, BookOpen, AlertTriangle, DollarSign, Ruler, ClipboardCheck,
-  UserPlus, ArrowLeft, Users, Share2, Copy, MessageCircle, FolderOpen, BarChart3, Shield,
+  UserPlus, ArrowLeft, Users, Share2, Copy, MessageCircle, FolderOpen, BarChart3, Shield, FileSignature,
 } from "lucide-react";
 import DailyBriefing from "@/components/DailyBriefing";
 
@@ -47,6 +47,7 @@ const modules = [
   { key: "dwg", label: "Metro Digital", icon: Ruler, desc: "Toma de medidas" },
   { key: "cfo", label: "Docs Finales (CFO)", icon: ClipboardCheck, desc: "16 puntos de control" },
   { key: "gantt", label: "Diagrama Gantt", icon: BarChart3, desc: "Cronología de obra" },
+  { key: "signatures", label: "Firma de Documentos", icon: FileSignature, desc: "Privado entre emisor y receptor" },
 ];
 
 const ProjectDetail = () => {

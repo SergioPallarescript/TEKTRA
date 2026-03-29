@@ -797,6 +797,68 @@ export type Database = {
         }
         Relationships: []
       }
+      signature_documents: {
+        Row: {
+          created_at: string
+          file_size: number | null
+          id: string
+          mime_type: string | null
+          original_file_name: string
+          original_file_path: string
+          project_id: string
+          recipient_id: string
+          sender_id: string
+          signed_at: string | null
+          signed_file_path: string | null
+          status: string
+          title: string
+          updated_at: string
+          validation_hash: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          original_file_name: string
+          original_file_path: string
+          project_id: string
+          recipient_id: string
+          sender_id: string
+          signed_at?: string | null
+          signed_file_path?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          validation_hash?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          original_file_name?: string
+          original_file_path?: string
+          project_id?: string
+          recipient_id?: string
+          sender_id?: string
+          signed_at?: string | null
+          signed_file_path?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          validation_hash?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signature_documents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

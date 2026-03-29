@@ -6,13 +6,7 @@ import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ArrowLeft, Upload, FileText, Trash2, FolderOpen, Loader2 } from "lucide-react";
-
-const sanitizeFileName = (name: string) =>
-  name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .replace(/_+/g, "_");
+import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 
 const ProjectDocs = () => {
   const { id: projectId } = useParams<{ id: string }>();
@@ -48,9 +42,12 @@ const ProjectDocs = () => {
         const safeName = sanitizeFileName(file.name);
         const path = `project-docs/${projectId}/${Date.now()}_${safeName}`;
 
-        const { error: uploadErr } = await supabase.storage
-          .from("plans")
-          .upload(path, file, { cacheControl: "3600", upsert: false });
+        const { error: uploadErr } = await uploadFileWithFallback({
+          path,
+          file,
+          cacheControl: "3600",
+          upsert: false,
+        });
 
         if (uploadErr) {
           console.error("Storage upload error:", uploadErr);
@@ -154,7 +151,10 @@ const ProjectDocs = () => {
                 multiple
                 className="hidden"
                 accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,text/plain,.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt"
-                onChange={(e) => e.target.files && handleUpload(e.target.files)}
+                onChange={(e) => {
+                  if (e.target.files) void handleUpload(e.target.files);
+                  e.currentTarget.value = "";
+                }}
               />
               <Button asChild variant="outline" className="font-display text-xs uppercase tracking-wider gap-2" disabled={uploading}>
                 <span>

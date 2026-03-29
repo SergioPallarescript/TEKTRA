@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import {
   ArrowLeft, CheckCircle2, Circle, Upload, FileText, AlertTriangle,
   Shield, Bell, Download, Loader2,
@@ -87,9 +88,9 @@ const CFOModule = () => {
   const handleFileUpload = async (itemId: string, file: File) => {
     if (!projectId || !user) return;
     setUploadingId(itemId);
-    const path = `cfo/${projectId}/${itemId}_${file.name}`;
-    const { error: uploadError } = await supabase.storage.from("plans").upload(path, file);
-    if (uploadError) { toast.error("Error al subir archivo"); setUploadingId(null); return; }
+    const path = `cfo/${projectId}/${itemId}_${sanitizeFileName(file.name)}`;
+    const { error: uploadError } = await uploadFileWithFallback({ path, file });
+    if (uploadError) { toast.error(uploadError.message || "Error al subir archivo"); setUploadingId(null); return; }
     const { error: updateError } = await supabase.from("cfo_items").update({
       is_completed: true, completed_at: new Date().toISOString(), completed_by: user.id,
       file_url: path, file_name: file.name,
@@ -259,7 +260,7 @@ const CFOModule = () => {
                         <div className="flex items-center gap-1 shrink-0">
                           {isPending && canUpload_ && (
                             <label className="cursor-pointer">
-                              <input type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(item.id, f); }} />
+                              <input type="file" className="hidden" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFileUpload(item.id, f); e.currentTarget.value = ""; }} />
                               <span className={`flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer ${uploadingId === item.id ? "opacity-50" : ""}`}>
                                 <Upload className="h-3 w-3" /> {uploadingId === item.id ? "Subiendo..." : "Subir"}
                               </span>
