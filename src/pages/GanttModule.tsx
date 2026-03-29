@@ -254,12 +254,15 @@ const GanttModule = () => {
   // Gantt chart rendering (reusable)
   const renderChart = () => (
     <div className="bg-card border border-border rounded-lg overflow-hidden mb-4">
-      <div className="relative h-8 border-b border-border bg-secondary/30 overflow-hidden">
-        {months.map((m, i) => (
-          <span key={i} className="absolute top-1.5 text-[10px] font-display uppercase tracking-wider text-muted-foreground" style={{ left: m.left }}>
-            {m.label}
-          </span>
-        ))}
+      <div className="flex h-8 border-b border-border bg-secondary/30">
+        <div className="w-48 md:w-64 shrink-0 border-r border-border" />
+        <div className="flex-1 relative overflow-hidden">
+          {months.map((m, i) => (
+            <span key={i} className="absolute top-1.5 text-[10px] font-display uppercase tracking-wider text-muted-foreground whitespace-nowrap" style={{ left: m.left }}>
+              {m.label}
+            </span>
+          ))}
+        </div>
       </div>
       <div className="divide-y divide-border">
         {sortedItems.map((item, idx) => (

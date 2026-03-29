@@ -140,20 +140,20 @@ const ProjectDocs = () => {
           </p>
         </div>
 
-        <div className="flex items-end justify-between mb-6">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
+          <div className="min-w-0">
             <h1 className="font-display text-3xl font-bold tracking-tighter">Documentación</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Base de conocimiento del Cerebro de Obra. Solo DO y DEM pueden subir archivos (máx. 50 MB).
             </p>
           </div>
           {canUpload && (
-            <label className="cursor-pointer">
+            <label className="cursor-pointer shrink-0">
               <input
                 type="file"
                 multiple
                 className="hidden"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.png,.txt"
+                accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,text/plain,.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt"
                 onChange={(e) => e.target.files && handleUpload(e.target.files)}
               />
               <Button asChild variant="outline" className="font-display text-xs uppercase tracking-wider gap-2" disabled={uploading}>
@@ -185,10 +185,10 @@ const ProjectDocs = () => {
                 key={doc.id}
                 className="flex items-center justify-between p-4 bg-card border border-border rounded-lg hover:border-foreground/10 transition-all"
               >
-                <button onClick={() => handleDownload(doc)} className="flex items-center gap-3 text-left flex-1">
+                <button onClick={() => handleDownload(doc)} className="flex items-center gap-3 text-left flex-1 min-w-0">
                   <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">{doc.file_name}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{doc.file_name}</p>
                     <p className="text-[10px] text-muted-foreground">
                       {formatSize(doc.file_size)} · {new Date(doc.created_at).toLocaleDateString("es-ES")}
                     </p>
