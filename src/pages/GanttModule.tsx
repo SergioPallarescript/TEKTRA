@@ -205,14 +205,22 @@ const GanttModule = () => {
   };
 
   // Month markers
-  const months: { label: string; left: string }[] = [];
+  const DAY_IN_MS = 1000 * 60 * 60 * 24;
+  const months: { label: string; center: string; start: string }[] = [];
   const cursor = new Date(minDate);
   cursor.setDate(1);
   while (cursor <= maxDate) {
-    const offset = Math.max(0, (cursor.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+    const monthStart = new Date(cursor);
+    const nextMonth = new Date(cursor);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    const startOffset = Math.max(0, (monthStart.getTime() - minDate.getTime()) / DAY_IN_MS);
+    const endOffset = Math.min(totalDays, (Math.min(nextMonth.getTime(), maxDate.getTime() + DAY_IN_MS) - minDate.getTime()) / DAY_IN_MS);
+    const centerOffset = startOffset + (endOffset - startOffset) / 2;
+
     months.push({
-      label: cursor.toLocaleDateString("es-ES", { month: "short", year: "2-digit" }),
-      left: `${(offset / totalDays) * 100}%`,
+      label: monthStart.toLocaleDateString("es-ES", { month: "short", year: "2-digit" }),
+      center: `${(centerOffset / totalDays) * 100}%`,
+      start: `${(startOffset / totalDays) * 100}%`,
     });
     cursor.setMonth(cursor.getMonth() + 1);
   }
@@ -251,29 +259,33 @@ const GanttModule = () => {
     </Dialog>
   );
 
-  // Minimum pixel width per month to prevent overlap
-  const MIN_PX_PER_MONTH = 60;
-  const chartMinWidth = Math.max(0, months.length * MIN_PX_PER_MONTH);
+  // Static chart width with enough space per month to avoid overlap
+  const TITLE_COLUMN_WIDTH = isMobilePortrait ? 220 : 320;
+  const MIN_PX_PER_MONTH = 96;
+  const chartTimelineWidth = Math.max(540, months.length * MIN_PX_PER_MONTH);
+  const chartTableWidth = TITLE_COLUMN_WIDTH + chartTimelineWidth;
 
   // Gantt chart rendering (reusable)
   const renderChart = () => (
-    <div className="bg-card border border-border rounded-lg overflow-hidden mb-4">
-      <div className="flex h-8 border-b border-border bg-secondary/30">
-        <div className="w-36 md:w-64 shrink-0 border-r border-border" />
-        <div className="flex-1 overflow-x-auto">
-          <div className="relative h-full" style={{ minWidth: `${chartMinWidth}px` }}>
+    <div className="mb-4 overflow-x-auto pb-2">
+      <div className="bg-card border border-border rounded-lg overflow-hidden" style={{ minWidth: `${chartTableWidth}px` }}>
+        <div className="flex h-10 border-b border-border bg-secondary/30">
+          <div className="shrink-0 border-r border-border" style={{ width: `${TITLE_COLUMN_WIDTH}px` }} />
+          <div className="relative h-full shrink-0" style={{ width: `${chartTimelineWidth}px` }}>
             {months.map((m, i) => (
-              <span key={i} className="absolute top-1.5 text-[10px] font-display uppercase tracking-wider text-muted-foreground whitespace-nowrap" style={{ left: m.left }}>
-                {m.label}
-              </span>
+              <div key={i}>
+                <span className="absolute inset-y-0 w-px bg-border/70" style={{ left: m.start }} />
+                <span className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap px-2 text-[10px] font-display uppercase tracking-wider text-muted-foreground" style={{ left: m.center }}>
+                  {m.label}
+                </span>
+              </div>
             ))}
           </div>
         </div>
-      </div>
-      <div className="divide-y divide-border">
-        {sortedItems.map((item, idx) => (
-          <div key={item.id} className={`flex items-center h-10 group ${isCurrentMilestone(item) ? "ring-2 ring-green-500 bg-green-500/10" : ""}`}>
-            <div className="w-36 md:w-64 shrink-0 px-2 md:px-3 flex items-center gap-1 border-r border-border">
+        <div className="divide-y divide-border">
+          {sortedItems.map((item, idx) => (
+            <div key={item.id} className={`flex items-center min-h-12 group ${isCurrentMilestone(item) ? "ring-2 ring-green-500 bg-green-500/10" : ""}`}>
+              <div className="shrink-0 px-2 md:px-3 flex items-center gap-1 border-r border-border" style={{ width: `${TITLE_COLUMN_WIDTH}px` }}>
               {isAdmin && (
                 <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
                   <button onClick={() => moveItem(item.id, -1)} className="text-muted-foreground hover:text-foreground text-[8px] leading-none">▲</button>
@@ -297,11 +309,11 @@ const GanttModule = () => {
                   {item.title}
                 </button>
               )}
-            </div>
-            <div className="flex-1 overflow-x-auto">
-              <div className="relative h-10 px-1" style={{ minWidth: `${chartMinWidth}px` }}>
+              </div>
+              <div className="relative h-12 shrink-0 px-1" style={{ width: `${chartTimelineWidth}px` }}>
+                <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border/50" />
                 <div
-                  className="absolute top-2 h-6 rounded"
+                  className="absolute top-3 h-6 rounded"
                   style={{
                     ...getBarStyle(item),
                     backgroundColor: COLORS[idx % COLORS.length],
@@ -311,8 +323,8 @@ const GanttModule = () => {
                 />
               </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

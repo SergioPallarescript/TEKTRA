@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import {
-  ArrowLeft, CheckCircle2, Circle, Upload, FileText, AlertTriangle,
-  Shield, Bell, Download, Loader2,
+  ArrowLeft, CheckCircle2, Circle, Upload, FileText,
+  Shield, Bell, Download, RefreshCw, Trash2,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -85,6 +85,11 @@ const CFOModule = () => {
     return (item.allowed_roles || []).includes(userRole);
   };
 
+  const canManageUploadedItem = (item: any): boolean => {
+    if (!user) return false;
+    return Boolean(item.is_completed && item.completed_by === user.id && !item.validated_by_deo);
+  };
+
   const handleFileUpload = async (itemId: string, file: File) => {
     if (!projectId || !user) return;
     setUploadingId(itemId);
@@ -99,6 +104,88 @@ const CFOModule = () => {
     await supabase.from("audit_logs").insert({ user_id: user.id, project_id: projectId, action: "cfo_item_completed", details: { item_id: itemId, file_name: file.name } });
     toast.success("Documento subido y marcado como completado");
     setUploadingId(null); fetchItems();
+  };
+
+  const handleReplaceFile = async (item: any, file: File) => {
+    if (!projectId || !user || !canManageUploadedItem(item)) return;
+
+    setUploadingId(item.id);
+    try {
+      const previousPath = item.file_url;
+      const nextPath = `cfo/${projectId}/${item.id}_${Date.now()}_${sanitizeFileName(file.name)}`;
+      const { error: uploadError } = await uploadFileWithFallback({ path: nextPath, file });
+
+      if (uploadError) throw uploadError;
+
+      const { error: updateError } = await supabase.from("cfo_items").update({
+        file_url: nextPath,
+        file_name: file.name,
+        completed_at: new Date().toISOString(),
+        completed_by: user.id,
+        validated_by_deo: null,
+        validated_at: null,
+      }).eq("id", item.id).eq("completed_by", user.id);
+
+      if (updateError) throw updateError;
+
+      if (previousPath && previousPath !== nextPath) {
+        await supabase.storage.from("plans").remove([previousPath]);
+      }
+
+      await supabase.from("audit_logs").insert({
+        user_id: user.id,
+        project_id: projectId,
+        action: "cfo_item_replaced",
+        details: { item_id: item.id, previous_file_name: item.file_name, new_file_name: file.name },
+      });
+
+      toast.success("Documento sustituido");
+      await fetchItems();
+    } catch (error: any) {
+      toast.error(error?.message || "Error al sustituir el documento");
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  const handleDeleteFile = async (item: any) => {
+    if (!projectId || !user || !canManageUploadedItem(item)) return;
+
+    const confirmed = window.confirm("¿Quieres eliminar este documento para poder subir una versión corregida?");
+    if (!confirmed) return;
+
+    setUploadingId(item.id);
+    try {
+      if (item.file_url) {
+        await supabase.storage.from("plans").remove([item.file_url]);
+      }
+
+      const { error: updateError } = await supabase.from("cfo_items").update({
+        is_completed: false,
+        completed_at: null,
+        completed_by: null,
+        file_url: null,
+        file_name: null,
+        validated_by_deo: null,
+        validated_at: null,
+      }).eq("id", item.id).eq("completed_by", user.id);
+
+      if (updateError) throw updateError;
+
+      await supabase.from("audit_logs").insert({
+        user_id: user.id,
+        project_id: projectId,
+        action: "cfo_item_deleted",
+        details: { item_id: item.id, file_name: item.file_name },
+      });
+
+      toast.success("Documento eliminado");
+      await fetchItems();
+    } catch (error: any) {
+      toast.error(error?.message || "Error al eliminar el documento");
+    } finally {
+      setUploadingId(null);
+    }
   };
 
   const handleAudit = async () => {
@@ -235,6 +322,7 @@ const CFOModule = () => {
                     const isValidated = item.validated_by_deo;
                     const canUpload_ = canUploadItem(item);
                     const isPending = !isCompleted;
+                    const canManageUploaded = canManageUploadedItem(item);
                     return (
                       <div key={item.id} className={`flex items-center justify-between p-3 rounded border transition-all ${
                         isValidated ? "border-success/50 bg-success/10" :
@@ -265,6 +353,19 @@ const CFOModule = () => {
                                 <Upload className="h-3 w-3" /> {uploadingId === item.id ? "Subiendo..." : "Subir"}
                               </span>
                             </label>
+                          )}
+                          {isCompleted && canManageUploaded && (
+                            <>
+                              <label className="cursor-pointer">
+                                <input type="file" className="hidden" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleReplaceFile(item, f); e.currentTarget.value = ""; }} />
+                                <span className={`flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer ${uploadingId === item.id ? "opacity-50" : ""}`}>
+                                  <RefreshCw className="h-3 w-3" /> {uploadingId === item.id ? "Sustituyendo..." : "Sustituir"}
+                                </span>
+                              </label>
+                              <Button size="sm" variant="ghost" onClick={() => void handleDeleteFile(item)} disabled={uploadingId === item.id} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive">
+                                <Trash2 className="h-3 w-3" /> Eliminar
+                              </Button>
+                            </>
                           )}
                           {isDEM && isCompleted && !isValidated && (
                             <Button size="sm" variant="outline" onClick={() => handleValidate(item.id)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7">
