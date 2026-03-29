@@ -23,29 +23,58 @@ const BrainModule = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [project, setProject] = useState<any>(null);
   const [docNames, setDocNames] = useState<string[]>([]);
+  const [ordersHistory, setOrdersHistory] = useState<string>("");
+  const [incidentsHistory, setIncidentsHistory] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!projectId) return;
     supabase.from("projects").select("*").eq("id", projectId).single().then(({ data }) => setProject(data));
 
-    // Fetch project documents and latest plans for context
-    const fetchDocs = async () => {
-      const { data: docs } = await supabase
-        .from("project_documents")
-        .select("file_name")
-        .eq("project_id", projectId);
-      const { data: plans } = await supabase
-        .from("plans")
-        .select("name, category")
-        .eq("project_id", projectId);
-
+    const fetchAllContext = async () => {
+      // 1. Documentos estáticos
+      const [{ data: docs }, { data: plans }] = await Promise.all([
+        supabase.from("project_documents").select("file_name").eq("project_id", projectId),
+        supabase.from("plans").select("name, category").eq("project_id", projectId),
+      ]);
       const names: string[] = [];
       if (docs) names.push(...docs.map((d: any) => d.file_name));
       if (plans) names.push(...plans.map((p: any) => `[Plano] ${p.name} (${p.category || "sin categoría"})`));
       setDocNames(names);
+
+      // 2. Historial dinámico de Órdenes
+      const { data: orders } = await supabase
+        .from("orders")
+        .select("order_number, content, created_at, created_by, profiles:created_by(full_name, role)")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: true });
+      if (orders && orders.length > 0) {
+        const lines = orders.map((o: any) => {
+          const profile = Array.isArray(o.profiles) ? o.profiles[0] : o.profiles;
+          const author = profile?.full_name || "Desconocido";
+          const role = profile?.role || "N/A";
+          return `[Orden #${o.order_number}] Fecha: ${new Date(o.created_at).toLocaleDateString("es-ES")} | Autor: ${author} (${role})\n${o.content}`;
+        });
+        setOrdersHistory(lines.join("\n---\n"));
+      }
+
+      // 3. Historial dinámico de Incidencias
+      const { data: incidents } = await supabase
+        .from("incidents")
+        .select("incident_number, content, severity, status, remedial_actions, created_at, created_by, profiles:created_by(full_name, role)")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: true });
+      if (incidents && incidents.length > 0) {
+        const lines = incidents.map((inc: any) => {
+          const profile = Array.isArray(inc.profiles) ? inc.profiles[0] : inc.profiles;
+          const author = profile?.full_name || "Desconocido";
+          const role = profile?.role || "N/A";
+          return `[Incidencia #${inc.incident_number}] Fecha: ${new Date(inc.created_at).toLocaleDateString("es-ES")} | Autor: ${author} (${role}) | Severidad: ${inc.severity} | Estado: ${inc.status}\n${inc.content}${inc.remedial_actions ? `\nAcciones correctoras: ${inc.remedial_actions}` : ""}`;
+        });
+        setIncidentsHistory(lines.join("\n---\n"));
+      }
     };
-    fetchDocs();
+    fetchAllContext();
   }, [projectId]);
 
   useEffect(() => {
@@ -73,7 +102,28 @@ const BrainModule = () => {
 
     try {
       const projectContext = project
-        ? `Proyecto: ${project.name}\nDirección: ${project.address || "N/A"}\nDescripción: ${project.description || "N/A"}\n\nDocumentos disponibles en el proyecto:\n${docNames.length > 0 ? docNames.map((n, i) => `${i + 1}. ${n}`).join("\n") : "No hay documentos subidos aún."}\n\nIMPORTANTE: Basa tus respuestas EXCLUSIVAMENTE en los documentos del proyecto listados arriba y en los planos subidos. Si la información no está en estos documentos, indícalo claramente.`
+        ? [
+            `Proyecto: ${project.name}`,
+            `Dirección: ${project.address || "N/A"}`,
+            `Descripción: ${project.description || "N/A"}`,
+            ``,
+            `=== FUENTE 1: DOCUMENTOS ORIGINALES DEL PROYECTO ===`,
+            docNames.length > 0
+              ? docNames.map((n, i) => `${i + 1}. ${n}`).join("\n")
+              : "No hay documentos subidos aún.",
+            ``,
+            `=== FUENTE 2: HISTORIAL DEL LIBRO DE ÓRDENES ===`,
+            ordersHistory || "No hay órdenes registradas aún.",
+            ``,
+            `=== FUENTE 3: HISTORIAL DEL LIBRO DE INCIDENCIAS ===`,
+            incidentsHistory || "No hay incidencias registradas aún.",
+            ``,
+            `REGLAS DE JERARQUÍA:`,
+            `1. Usa las tres fuentes como un cuerpo de conocimiento unificado.`,
+            `2. Si hay contradicción entre un documento original y una orden/incidencia posterior, PRIORIZA la información más reciente (la orden o incidencia), ya que representa una decisión tomada en obra.`,
+            `3. Cuando cites información, SIEMPRE indica la fuente exacta: nombre del documento, número de orden o número de incidencia.`,
+            `4. Ejemplo: "Según el plano de estructuras X, la solución era Y, pero en la Orden #15 del 20/03/2026 el Director de Obra autorizó Z."`,
+          ].join("\n")
         : undefined;
 
       const resp = await fetch(CHAT_URL, {
