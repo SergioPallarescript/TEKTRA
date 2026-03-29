@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { notifyProjectMembers } from "@/lib/notifications";
 import {
-  ArrowLeft, Plus, BookOpen, AlertTriangle, CheckCircle2, Mic, MicOff, Camera, Image, Paperclip, X, Pencil, Trash2,
+  ArrowLeft, Plus, BookOpen, AlertTriangle, CheckCircle2, Mic, MicOff, Camera, Image, Paperclip, X, Pencil, Trash2, Download,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -51,6 +51,8 @@ const OrdersModule = () => {
   const [hasDualCSS, setHasDualCSS] = useState(false);
   const canWrite = isDEM || isDO || hasDualCSS;
   const canValidate = profile?.role === "CON" || profile?.role === "PRO";
+  const canExport = isDEM || isDO;
+  const [exporting, setExporting] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -295,8 +297,40 @@ const OrdersModule = () => {
           </Button>
           <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">Libro de Órdenes</p>
         </div>
-        <div className="flex items-end justify-between mb-8">
+        <div className="flex items-end justify-between mb-8 flex-wrap gap-2">
           <h1 className="font-display text-3xl font-bold tracking-tighter">Órdenes</h1>
+          <div className="flex gap-2 flex-wrap">
+            {canExport && orders.length > 0 && (
+              <Button
+                variant="outline"
+                disabled={exporting}
+                onClick={async () => {
+                  setExporting(true);
+                  try {
+                    const { data, error } = await supabase.functions.invoke("export-orders", {
+                      body: { projectId },
+                    });
+                    if (error) throw error;
+                    const blob = new Blob([data.html], { type: "text/html" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = data.fileName || "Libro_Ordenes.html";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast.success("Libro de Órdenes exportado");
+                  } catch {
+                    toast.error("Error al exportar");
+                  } finally {
+                    setExporting(false);
+                  }
+                }}
+                className="font-display text-xs uppercase tracking-wider gap-2"
+              >
+                <Download className="h-4 w-4" />
+                {exporting ? "Exportando..." : "Exportar Libro (.docx)"}
+              </Button>
+            )}
           {canWrite && (
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>
