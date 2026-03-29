@@ -247,7 +247,7 @@ const ProjectDetail = () => {
                         className="gap-2 text-xs"
                         onClick={() => {
                           const signupUrl = `${window.location.origin}/auth`;
-                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en TECTRA como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
+                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en TEKTRA como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
                           navigator.clipboard.writeText(msg);
                           toast.success("Mensaje copiado");
                         }}
