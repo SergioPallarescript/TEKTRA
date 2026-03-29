@@ -212,8 +212,7 @@ const ProjectDetail = () => {
                         size="sm"
                         className="flex-1 gap-2 text-xs"
                         onClick={() => {
-                          const signupUrl = `${window.location.origin}/auth`;
-                          const msg = `¡Hola! Te invito al proyecto "${project?.name}" en TEKTRA como ${inviteSuccess.role} (${roleLabels[inviteSuccess.role]}).${project?.address ? `\n📍 ${project.address}` : ""}\n\nRegístrate con tu email ${inviteSuccess.email} aquí:\n${signupUrl}`;
+                          const msg = `¡Hola! 👋\n\nTe escribo para invitarte a participar como agente en nuestro proyecto de obra gestionado a través de TEKTRA. 🏗️\n\nDesde esta plataforma centralizaremos la dirección, ejecución, el libro de órdenes y las firmas digitales de forma segura.\n\nPara acceder a tu panel y revisar la documentación, solo tienes que confirmar tu cuenta aquí:\n🔗 https://tektra.es\n\nSistema de gestión profesional para la trazabilidad y seguridad jurídica de los agentes.`;
                           const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
                           window.open(waUrl, "_blank");
                         }}
