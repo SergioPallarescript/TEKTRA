@@ -40,8 +40,16 @@ const OrdersModule = () => {
   const [editOrder, setEditOrder] = useState<any | null>(null);
   const [editContent, setEditContent] = useState("");
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editPhotos, setEditPhotos] = useState<File[]>([]);
+  const [editRemovedPhotos, setEditRemovedPhotos] = useState<string[]>([]);
+  const [editRecording, setEditRecording] = useState(false);
+  const [editCleaning, setEditCleaning] = useState(false);
+  const [editStructuredSections, setEditStructuredSections] = useState<{ estado: string; instrucciones: string; pendientes: string } | null>(null);
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
   const [cleaning, setCleaning] = useState(false);
+  const editCameraRef = useRef<HTMLInputElement>(null);
+  const editGalleryRef = useRef<HTMLInputElement>(null);
+  const editRecognitionRef = useRef<any>(null);
   const [structuredSections, setStructuredSections] = useState<{ estado: string; instrucciones: string; pendientes: string } | null>(null);
   const [crossAlert, setCrossAlert] = useState<{ show: boolean; incidents: any[] }>({ show: false, incidents: [] });
   const recognitionRef = useRef<any>(null);
@@ -151,12 +159,30 @@ const OrdersModule = () => {
     e.preventDefault();
     if (!editOrder || !user) return;
     setEditSubmitting(true);
+
+    // Upload new photos
+    const newPhotoUrls: string[] = [];
+    for (const photo of editPhotos) {
+      const path = `orders/${projectId}/${Date.now()}_${photo.name}`;
+      const { error } = await supabase.storage.from("plans").upload(path, photo);
+      if (!error) newPhotoUrls.push(path);
+    }
+
+    // Remove deleted photos from storage
+    if (editRemovedPhotos.length > 0) {
+      await supabase.storage.from("plans").remove(editRemovedPhotos);
+    }
+
+    const existingPhotos = (editOrder.photos || []).filter((p: string) => !editRemovedPhotos.includes(p));
+    const finalPhotos = [...existingPhotos, ...newPhotoUrls];
+
     const flags = detectChanges(editContent);
     const requiresValidation = flags.length > 0;
     const { error } = await supabase.from("orders").update({
       content: editContent,
       requires_validation: requiresValidation,
       ai_flags: { keywords: flags },
+      photos: finalPhotos,
     }).eq("id", editOrder.id);
     if (error) { toast.error("Error al editar la orden"); setEditSubmitting(false); return; }
     await supabase.from("audit_logs").insert({
@@ -171,7 +197,58 @@ const OrdersModule = () => {
       type: "info",
     });
     toast.success("Orden actualizada");
-    setEditOrder(null); setEditContent(""); setEditSubmitting(false); fetchOrders();
+    setEditOrder(null); setEditContent(""); setEditPhotos([]); setEditRemovedPhotos([]); setEditStructuredSections(null); setEditSubmitting(false); fetchOrders();
+  };
+
+  const cleanEditDictation = async (rawText: string) => {
+    setEditCleaning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("clean-dictation", {
+        body: { rawText, context: "orders", structured: true },
+      });
+      if (error) throw error;
+      if (data.structured && data.sections) {
+        setEditStructuredSections(data.sections);
+        const combined = `**ESTADO DE LA OBRA:**\n${data.sections.estado}\n\n**INSTRUCCIONES Y ÓRDENES:**\n${data.sections.instrucciones}\n\n**PENDIENTES:**\n${data.sections.pendientes}`;
+        setEditContent(combined);
+        toast.success("Dictado estructurado por IA en 3 secciones");
+      } else {
+        setEditContent(data.cleanedText || rawText);
+        toast.success("Dictado procesado por IA");
+      }
+    } catch {
+      toast.error("Error al procesar el dictado");
+    } finally {
+      setEditCleaning(false);
+    }
+  };
+
+  const toggleEditRecording = () => {
+    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+      toast.error("Tu navegador no soporta reconocimiento de voz"); return;
+    }
+    if (editRecording) {
+      editRecognitionRef.current?.stop();
+      setEditRecording(false);
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    editRecognitionRef.current = recognition;
+    recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
+    let finalTranscript = "";
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+      finalTranscript = transcript;
+      setEditContent(transcript);
+    };
+    recognition.onerror = () => { setEditRecording(false); toast.error("Error en reconocimiento de voz"); };
+    recognition.onend = () => {
+      setEditRecording(false);
+      if (finalTranscript.trim()) cleanEditDictation(finalTranscript);
+    };
+    recognition.start(); setEditRecording(true);
   };
 
   const handleDelete = async () => {
@@ -484,7 +561,7 @@ const OrdersModule = () => {
                       )}
                       {isOwner && (
                         <>
-                          <Button size="sm" variant="ghost" onClick={() => { setEditOrder(order); setEditContent(order.content); }} className="gap-1 text-xs text-muted-foreground">
+                          <Button size="sm" variant="ghost" onClick={() => { setEditOrder(order); setEditContent(order.content); setEditPhotos([]); setEditRemovedPhotos([]); setEditStructuredSections(null); }} className="gap-1 text-xs text-muted-foreground">
                             <Pencil className="h-3.5 w-3.5" /> Editar
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => setDeleteOrderId(order.id)} className="gap-1 text-xs text-destructive">
@@ -501,18 +578,80 @@ const OrdersModule = () => {
         )}
       </div>
 
-      {/* Edit dialog */}
-      <Dialog open={!!editOrder} onOpenChange={(open) => { if (!open) setEditOrder(null); }}>
-        <DialogContent>
+      {/* Edit dialog — full flow with dictation, structured IA, and photo replacement */}
+      <Dialog open={!!editOrder} onOpenChange={(open) => { if (!open) { setEditOrder(null); setEditPhotos([]); setEditStructuredSections(null); } }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="font-display">Editar Orden</DialogTitle></DialogHeader>
           <form onSubmit={handleEdit} className="space-y-4 mt-4">
             <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Contenido</Label>
-              <Textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={6} required />
+              <div className="flex items-center justify-between">
+                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Contenido</Label>
+                <Button type="button" variant={editRecording ? "destructive" : "outline"} size="sm" onClick={toggleEditRecording} disabled={editCleaning} className="gap-1 text-xs">
+                  {editCleaning ? <><span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> Procesando...</> : editRecording ? <><MicOff className="h-3 w-3" /> Parar</> : <><Mic className="h-3 w-3" /> Dictar</>}
+                </Button>
+              </div>
+              <Textarea value={editContent} onChange={(e) => { setEditContent(e.target.value); setEditStructuredSections(null); }} rows={6} required />
+              {editStructuredSections && (
+                <div className="space-y-2 mt-2 p-3 bg-secondary/30 rounded-lg border border-border">
+                  <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-1">Vista previa estructurada por IA</p>
+                  <div className="space-y-1.5">
+                    {["Estado de la Obra", "Instrucciones y Órdenes", "Pendientes"].map((t, si) => {
+                      const keys = ["estado", "instrucciones", "pendientes"] as const;
+                      const colors = ["text-emerald-600 dark:text-emerald-400", "text-blue-600 dark:text-blue-400", "text-amber-600 dark:text-amber-400"];
+                      return (
+                        <div key={si} className="p-2 bg-background rounded border border-border">
+                          <p className={`text-[10px] font-display font-bold uppercase tracking-wider mb-0.5 ${colors[si]}`}>{t}</p>
+                          <p className="text-xs">{editStructuredSections[keys[si]]}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {editContent && detectChanges(editContent).length > 0 && (
                 <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 px-3 py-2 rounded">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   Palabras clave detectadas: {detectChanges(editContent).join(", ")}.
+                </div>
+              )}
+            </div>
+            {/* Current photos with remove option */}
+            {editOrder?.photos && editOrder.photos.length > 0 && (
+              <div className="space-y-2">
+                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Fotos actuales</Label>
+                <div className="flex flex-wrap gap-2">
+                  {(editOrder.photos as string[]).filter((p: string) => !editRemovedPhotos.includes(p)).map((p: string, i: number) => (
+                    <span key={i} className="flex items-center gap-1 px-2 py-1 text-xs bg-muted rounded">
+                      Foto {i + 1}
+                      <button type="button" onClick={() => setEditRemovedPhotos(prev => [...prev, p])} className="text-destructive hover:text-destructive/80"><X className="h-3 w-3" /></button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Add new photos */}
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Añadir fotos / documentos</Label>
+              <div className="flex gap-2">
+                <input ref={editCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files) setEditPhotos(prev => [...prev, ...Array.from(e.target.files!)]); if (e.target) e.target.value = ""; }} />
+                <input ref={editGalleryRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { if (e.target.files) setEditPhotos(prev => [...prev, ...Array.from(e.target.files!)]); if (e.target) e.target.value = ""; }} />
+                {isMobile ? (
+                  <>
+                    <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => editCameraRef.current?.click()}><Camera className="h-3.5 w-3.5" /> Foto</Button>
+                    <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => editGalleryRef.current?.click()}><Image className="h-3.5 w-3.5" /> Galería</Button>
+                  </>
+                ) : (
+                  <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => editGalleryRef.current?.click()}><Camera className="h-3.5 w-3.5" /> Foto</Button>
+                )}
+              </div>
+              {editPhotos.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {editPhotos.map((f, i) => (
+                    <span key={i} className="flex items-center gap-1 px-2 py-1 text-xs bg-muted rounded">
+                      {f.name.length > 20 ? f.name.slice(0, 17) + "..." : f.name}
+                      <button type="button" onClick={() => setEditPhotos(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+                    </span>
+                  ))}
                 </div>
               )}
             </div>

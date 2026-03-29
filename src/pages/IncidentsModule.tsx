@@ -20,7 +20,7 @@ import {
 import { toast } from "sonner";
 import { notifyProjectMembers } from "@/lib/notifications";
 import {
-  ArrowLeft, Plus, ShieldAlert, CheckCircle2, Mic, MicOff, Camera, Image, Paperclip, Pencil, Trash2,
+  ArrowLeft, Plus, ShieldAlert, CheckCircle2, Mic, MicOff, Camera, Image, Paperclip, Pencil, Trash2, X,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -57,7 +57,14 @@ const IncidentsModule = () => {
   const [editSeverity, setEditSeverity] = useState("medium");
   const [editRemedial, setEditRemedial] = useState("");
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editPhotos, setEditPhotos] = useState<File[]>([]);
+  const [editRemovedPhotos, setEditRemovedPhotos] = useState<string[]>([]);
+  const [editRecording, setEditRecording] = useState(false);
+  const [editCleaning, setEditCleaning] = useState(false);
   const [deleteIncidentId, setDeleteIncidentId] = useState<string | null>(null);
+  const editCameraRef = useRef<HTMLInputElement>(null);
+  const editGalleryRef = useRef<HTMLInputElement>(null);
+  const editRecognitionRef = useRef<any>(null);
 
   const isCSS = profile?.role === "CSS";
   const [hasDualCSS, setHasDualCSS] = useState(false);
@@ -124,9 +131,25 @@ const IncidentsModule = () => {
     e.preventDefault();
     if (!editIncident || !user) return;
     setEditSubmitting(true);
+
+    // Upload new photos
+    const newPhotoUrls: string[] = [];
+    for (const photo of editPhotos) {
+      const path = `incidents/${projectId}/${Date.now()}_${photo.name}`;
+      const { error } = await supabase.storage.from("plans").upload(path, photo);
+      if (!error) newPhotoUrls.push(path);
+    }
+    // Remove deleted photos
+    if (editRemovedPhotos.length > 0) {
+      await supabase.storage.from("plans").remove(editRemovedPhotos);
+    }
+    const existingPhotos = (editIncident.photos || []).filter((p: string) => !editRemovedPhotos.includes(p));
+    const finalPhotos = [...existingPhotos, ...newPhotoUrls];
+
     const { error } = await supabase.from("incidents").update({
       content: editContent, severity: editSeverity,
       remedial_actions: editRemedial || null,
+      photos: finalPhotos,
     }).eq("id", editIncident.id);
     if (error) { toast.error("Error al editar incidencia"); setEditSubmitting(false); return; }
     await supabase.from("audit_logs").insert({
@@ -141,7 +164,51 @@ const IncidentsModule = () => {
       type: "info",
     });
     toast.success("Incidencia actualizada");
-    setEditIncident(null); setEditSubmitting(false); fetchIncidents();
+    setEditIncident(null); setEditPhotos([]); setEditRemovedPhotos([]); setEditSubmitting(false); fetchIncidents();
+  };
+
+  const cleanEditDictation = async (rawText: string) => {
+    setEditCleaning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("clean-dictation", {
+        body: { rawText, context: "incidents" },
+      });
+      if (error) throw error;
+      setEditContent(data.cleanedText || rawText);
+      toast.success("Dictado procesado por IA");
+    } catch {
+      toast.error("Error al procesar el dictado");
+    } finally {
+      setEditCleaning(false);
+    }
+  };
+
+  const toggleEditRecording = () => {
+    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+      toast.error("Tu navegador no soporta reconocimiento de voz"); return;
+    }
+    if (editRecording) {
+      editRecognitionRef.current?.stop();
+      setEditRecording(false);
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    editRecognitionRef.current = recognition;
+    recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
+    let finalTranscript = "";
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+      finalTranscript = transcript;
+      setEditContent(transcript);
+    };
+    recognition.onerror = () => { setEditRecording(false); toast.error("Error en reconocimiento de voz"); };
+    recognition.onend = () => {
+      setEditRecording(false);
+      if (finalTranscript.trim()) cleanEditDictation(finalTranscript);
+    };
+    recognition.start(); setEditRecording(true);
   };
 
   const handleDelete = async () => {
@@ -342,7 +409,7 @@ const IncidentsModule = () => {
                     </div>
                     {isOwner && (
                       <div className="flex flex-col gap-1 shrink-0">
-                        <Button size="sm" variant="ghost" onClick={() => { setEditIncident(inc); setEditContent(inc.content); setEditSeverity(inc.severity); setEditRemedial(inc.remedial_actions || ""); }} className="gap-1 text-xs text-muted-foreground">
+                        <Button size="sm" variant="ghost" onClick={() => { setEditIncident(inc); setEditContent(inc.content); setEditSeverity(inc.severity); setEditRemedial(inc.remedial_actions || ""); setEditPhotos([]); setEditRemovedPhotos([]); }} className="gap-1 text-xs text-muted-foreground">
                           <Pencil className="h-3.5 w-3.5" /> Editar
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setDeleteIncidentId(inc.id)} className="gap-1 text-xs text-destructive">
@@ -358,8 +425,8 @@ const IncidentsModule = () => {
         )}
       </div>
 
-      {/* Edit dialog */}
-      <Dialog open={!!editIncident} onOpenChange={(open) => { if (!open) setEditIncident(null); }}>
+      {/* Edit dialog — full flow with dictation and photo replacement */}
+      <Dialog open={!!editIncident} onOpenChange={(open) => { if (!open) { setEditIncident(null); setEditPhotos([]); setEditRemovedPhotos([]); } }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="font-display">Editar Incidencia</DialogTitle></DialogHeader>
           <form onSubmit={handleEdit} className="space-y-4 mt-4">
@@ -375,12 +442,48 @@ const IncidentsModule = () => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Descripción del Riesgo</Label>
+              <div className="flex items-center justify-between">
+                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Descripción del Riesgo</Label>
+                <Button type="button" variant={editRecording ? "destructive" : "outline"} size="sm" onClick={toggleEditRecording} disabled={editCleaning} className="gap-1 text-xs">
+                  {editCleaning ? <><span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> Procesando...</> : editRecording ? <><MicOff className="h-3 w-3" /> Parar</> : <><Mic className="h-3 w-3" /> Dictar</>}
+                </Button>
+              </div>
               <Textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={5} required />
             </div>
             <div className="space-y-2">
               <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Acciones Correctoras</Label>
               <Textarea value={editRemedial} onChange={(e) => setEditRemedial(e.target.value)} rows={3} />
+            </div>
+            {/* Current photos */}
+            {editIncident?.photos && editIncident.photos.length > 0 && (
+              <div className="space-y-2">
+                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Fotos actuales</Label>
+                <div className="flex flex-wrap gap-2">
+                  {(editIncident.photos as string[]).filter((p: string) => !editRemovedPhotos.includes(p)).map((p: string, i: number) => (
+                    <span key={i} className="flex items-center gap-1 px-2 py-1 text-xs bg-muted rounded">
+                      Foto {i + 1}
+                      <button type="button" onClick={() => setEditRemovedPhotos(prev => [...prev, p])} className="text-destructive hover:text-destructive/80"><X className="h-3 w-3" /></button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Add new photos */}
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Añadir fotos</Label>
+              <input ref={editCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files) setEditPhotos(prev => [...prev, ...Array.from(e.target.files!)]); if (e.target) e.target.value = ""; }} />
+              <input ref={editGalleryRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { if (e.target.files) setEditPhotos(prev => [...prev, ...Array.from(e.target.files!)]); if (e.target) e.target.value = ""; }} />
+              <div className="flex gap-2">
+                {isMobile ? (
+                  <>
+                    <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => editCameraRef.current?.click()}><Camera className="h-3.5 w-3.5" /> Foto</Button>
+                    <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => editGalleryRef.current?.click()}><Image className="h-3.5 w-3.5" /> Galería</Button>
+                  </>
+                ) : (
+                  <Button type="button" variant="outline" size="sm" className="gap-1 text-xs" onClick={() => editGalleryRef.current?.click()}><Camera className="h-3.5 w-3.5" /> Foto</Button>
+                )}
+              </div>
+              {editPhotos.length > 0 && <p className="text-xs text-muted-foreground">{editPhotos.length} archivo(s) nuevo(s)</p>}
             </div>
             <Button type="submit" disabled={editSubmitting} className="w-full font-display text-xs uppercase tracking-wider">
               {editSubmitting ? "Guardando..." : "Guardar Cambios"}
