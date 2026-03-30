@@ -22,25 +22,23 @@ export const RecoveryEmail = ({
   siteName,
   confirmationUrl,
 }: RecoveryEmailProps) => (
-  <Html lang="es" dir="ltr">
-    <Head>
-      <meta charSet="utf-8" />
-    </Head>
-    <Preview>Restablecer contrase&ntilde;a en TEKTRA</Preview>
+  <Html lang="en" dir="ltr">
+    <Head />
+    <Preview>Reset your password for {siteName}</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Heading style={h1}>Restablecer contrase&ntilde;a</Heading>
+        <Heading style={h1}>Reset your password</Heading>
         <Text style={text}>
-          Hemos recibido una solicitud para cambiar tu contrase&ntilde;a en TEKTRA.
-          Haz clic abajo para elegir una nueva:
+          We received a request to reset your password for {siteName}. Click
+          the button below to choose a new password.
         </Text>
         <Button style={button} href={confirmationUrl}>
-          Restablecer Contrase&ntilde;a
+          Reset Password
         </Button>
         <Text style={footer}>
-          Si no solicitaste este cambio, tu cuenta est&aacute; segura. Ignora este mensaje.
+          If you didn't request a password reset, you can safely ignore this
+          email. Your password will not be changed.
         </Text>
-        <Text style={brand}>TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional</Text>
       </Container>
     </Body>
   </Html>
@@ -48,7 +46,7 @@ export const RecoveryEmail = ({
 
 export default RecoveryEmail
 
-const main = { backgroundColor: '#ffffff', fontFamily: "'Montserrat', Arial, sans-serif" }
+const main = { backgroundColor: '#ffffff', fontFamily: 'Arial, sans-serif' }
 const container = { padding: '20px 25px' }
 const h1 = {
   fontSize: '22px',
@@ -71,4 +69,3 @@ const button = {
   textDecoration: 'none',
 }
 const footer = { fontSize: '12px', color: '#999999', margin: '30px 0 0' }
-const brand = { fontSize: '10px', color: '#bbbbbb', margin: '10px 0 0', textAlign: 'center' as const }

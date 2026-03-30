@@ -9,6 +9,7 @@ import {
   Head,
   Heading,
   Html,
+  Link,
   Preview,
   Text,
 } from 'npm:@react-email/components@0.0.22'
@@ -17,39 +18,34 @@ interface InviteEmailProps {
   siteName: string
   siteUrl: string
   confirmationUrl: string
-  projectName?: string
 }
 
 export const InviteEmail = ({
   siteName,
   siteUrl,
   confirmationUrl,
-  projectName,
 }: InviteEmailProps) => (
-  <Html lang="es" dir="ltr">
-    <Head>
-      <meta charSet="utf-8" />
-    </Head>
-    <Preview>&#127959;&#65039; Invitaci&oacute;n al proyecto{projectName ? `: ${projectName}` : ''} en TEKTRA</Preview>
+  <Html lang="en" dir="ltr">
+    <Head />
+    <Preview>You've been invited to join {siteName}</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Heading style={h1}>Has sido invitado a un proyecto en TEKTRA</Heading>
+        <Heading style={h1}>You've been invited</Heading>
         <Text style={text}>
-          Has sido invitado a participar en el proyecto{' '}
-          {projectName ? <strong>{projectName}</strong> : 'de obra'}{' '}
-          dentro de la plataforma TEKTRA.
-        </Text>
-        <Text style={text}>
-          Se te ha asignado un rol profesional para la direcci&oacute;n y ejecuci&oacute;n de esta obra.
-          Para configurar tu acceso y ver los detalles del proyecto, pulsa aqu&iacute;:
+          You've been invited to join{' '}
+          <Link href={siteUrl} style={link}>
+            <strong>{siteName}</strong>
+          </Link>
+          . Click the button below to accept the invitation and create your
+          account.
         </Text>
         <Button style={button} href={confirmationUrl}>
-          Aceptar Invitaci&oacute;n
+          Accept Invitation
         </Button>
         <Text style={footer}>
-          Este es un correo autom&aacute;tico de TEKTRA. No es necesario responder.
+          If you weren't expecting this invitation, you can safely ignore this
+          email.
         </Text>
-        <Text style={brand}>TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional</Text>
       </Container>
     </Body>
   </Html>
@@ -57,7 +53,7 @@ export const InviteEmail = ({
 
 export default InviteEmail
 
-const main = { backgroundColor: '#ffffff', fontFamily: "'Montserrat', Arial, sans-serif" }
+const main = { backgroundColor: '#ffffff', fontFamily: 'Arial, sans-serif' }
 const container = { padding: '20px 25px' }
 const h1 = {
   fontSize: '22px',
@@ -71,6 +67,7 @@ const text = {
   lineHeight: '1.5',
   margin: '0 0 25px',
 }
+const link = { color: 'inherit', textDecoration: 'underline' }
 const button = {
   backgroundColor: '#000000',
   color: '#ffffff',
@@ -80,4 +77,3 @@ const button = {
   textDecoration: 'none',
 }
 const footer = { fontSize: '12px', color: '#999999', margin: '30px 0 0' }
-const brand = { fontSize: '10px', color: '#bbbbbb', margin: '10px 0 0', textAlign: 'center' as const }
