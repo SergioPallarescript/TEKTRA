@@ -187,17 +187,27 @@ const Auth = () => {
               <button
                 type="button"
                 onClick={async () => {
-                  if (!email) { toast.error("Introduce tu correo electrónico primero"); return; }
-                  const { data: existingProfile } = await supabase
-                    .from("profiles")
-                    .select("id")
-                    .eq("email", email)
-                    .maybeSingle();
-                  if (!existingProfile) {
+                  const normalizedEmail = email.trim().toLowerCase();
+                  if (!normalizedEmail) {
+                    toast.error("Introduce tu correo electrónico primero");
+                    return;
+                  }
+
+                  const { data: isRegistered, error: verifyError } = await supabase.rpc("is_registered_email", {
+                    _email: normalizedEmail,
+                  });
+
+                  if (verifyError) {
+                    toast.error("No se pudo verificar el correo. Inténtalo de nuevo.");
+                    return;
+                  }
+
+                  if (!isRegistered) {
                     toast.error("No se encontró ningún usuario con ese correo electrónico");
                     return;
                   }
-                  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+
+                  const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
                     redirectTo: `${window.location.origin}/reset-password`,
                   });
                   if (error) toast.error(error.message);

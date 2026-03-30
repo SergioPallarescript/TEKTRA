@@ -1,0 +1,1 @@
+grant execute on function public.is_registered_email(text) to service_role;
