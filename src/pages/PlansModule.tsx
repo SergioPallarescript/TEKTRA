@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,7 +91,7 @@ const PlansModule = () => {
   const [deletePlanId, setDeletePlanId] = useState<string | null>(null);
   const [deletePlanSubmitting, setDeletePlanSubmitting] = useState(false);
 
-  // Will be overridden below after useProjectRole import
+  const { isAdmin } = useProjectRole(projectId);
 
   const fetchPlans = useCallback(async () => {
     if (!projectId) return;
