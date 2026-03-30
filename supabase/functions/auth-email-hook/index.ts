@@ -17,12 +17,12 @@ const corsHeaders = {
 }
 
 const EMAIL_SUBJECTS: Record<string, string> = {
-  signup: 'Confirm your email',
-  invite: "You've been invited",
-  magiclink: 'Your login link',
-  recovery: 'Reset your password',
-  email_change: 'Confirm your new email',
-  reauthentication: 'Your verification code',
+  signup: 'Bienvenido a TEKTRA — Confirma tu cuenta',
+  invite: '🏗️ Has sido invitado a un proyecto en TEKTRA',
+  magiclink: 'Tu enlace de acceso a TEKTRA',
+  recovery: 'Restablecer contraseña en TEKTRA',
+  email_change: 'Confirma tu nueva dirección de correo — TEKTRA',
+  reauthentication: 'Tu código de verificación — TEKTRA',
 }
 
 // Template mapping
