@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { ArrowLeft, Brain, Send, Bot, User, Loader2, FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { syncProjectMemory } from "@/lib/projectMemory";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -25,6 +26,7 @@ const BrainModule = () => {
   const [docNames, setDocNames] = useState<string[]>([]);
   const [ordersHistory, setOrdersHistory] = useState<string>("");
   const [incidentsHistory, setIncidentsHistory] = useState<string>("");
+  const [dynamicMemory, setDynamicMemory] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,6 +75,13 @@ const BrainModule = () => {
         });
         setIncidentsHistory(lines.join("\n---\n"));
       }
+
+      try {
+        const memory = await syncProjectMemory(projectId);
+        setDynamicMemory(memory.content || "");
+      } catch {
+        setDynamicMemory("");
+      }
     };
     fetchAllContext();
   }, [projectId]);
@@ -101,6 +110,17 @@ const BrainModule = () => {
     };
 
     try {
+      let freshDynamicMemory = dynamicMemory;
+      if (projectId) {
+        try {
+          const memory = await syncProjectMemory(projectId);
+          freshDynamicMemory = memory.content || "";
+          setDynamicMemory(freshDynamicMemory);
+        } catch {
+          freshDynamicMemory = dynamicMemory;
+        }
+      }
+
       const projectContext = project
         ? [
             `Proyecto: ${project.name}`,
@@ -117,6 +137,9 @@ const BrainModule = () => {
             ``,
             `=== FUENTE 3: HISTORIAL DEL LIBRO DE INCIDENCIAS ===`,
             incidentsHistory || "No hay incidencias registradas aún.",
+            ``,
+            `=== HISTORIAL DE EJECUCIÓN ACTUALIZADO ===`,
+            freshDynamicMemory || "No hay historial de ejecución actualizado disponible todavía.",
             ``,
             `REGLAS DE JERARQUÍA:`,
             `1. Usa las tres fuentes como un cuerpo de conocimiento unificado.`,
@@ -135,6 +158,8 @@ const BrainModule = () => {
         body: JSON.stringify({
           messages: [...messages, userMsg],
           projectContext,
+          projectId,
+          dynamicContext: freshDynamicMemory,
         }),
       });
 

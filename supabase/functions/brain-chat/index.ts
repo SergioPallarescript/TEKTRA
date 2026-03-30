@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,16 +10,49 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, projectContext } = await req.json();
+    const { messages, projectContext, projectId, dynamicContext } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Backend no configurado correctamente");
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) throw new Error("No autorizado");
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const token = authHeader.replace("Bearer ", "").trim();
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !authData.user) throw new Error("No autorizado");
+
+    let updatedExecutionHistory = typeof dynamicContext === "string" ? dynamicContext.trim() : "";
+
+    if (projectId) {
+      const [{ data: project }, { data: member }] = await Promise.all([
+        supabase.from("projects").select("id, created_by").eq("id", projectId).single(),
+        supabase.from("project_members").select("id").eq("project_id", projectId).eq("user_id", authData.user.id).eq("status", "accepted").maybeSingle(),
+      ]);
+
+      if (!project || (project.created_by !== authData.user.id && !member)) {
+        throw new Error("Acceso denegado al proyecto");
+      }
+
+      const memoryPath = `project-memory/${projectId}/memoria_dinamica_${projectId}.txt`;
+      const { data: memoryFile } = await supabase.storage.from("plans").download(memoryPath);
+      if (memoryFile) {
+        updatedExecutionHistory = await memoryFile.text();
+      }
+    }
 
     const systemPrompt = `Eres el "Cerebro de Obra" de TEKTRA, un asistente inteligente especializado en gestión de obras de construcción en España.
 
-REGLA FUNDAMENTAL: Tus respuestas deben basarse ÚNICA Y EXCLUSIVAMENTE en las tres fuentes de datos del proyecto que se te proporcionan en el contexto:
+REGLA FUNDAMENTAL: Tu base de conocimiento se compone de documentos estáticos Y el Historial de Ejecución Actualizado. Si una orden de ejecución contradice un documento de diseño anterior, la orden de ejecución más reciente tiene prioridad absoluta. Debes basar tu respuesta en la suma de ambas fuentes, nunca solo en una.
+
+Fuentes obligatorias a consultar de manera unificada:
 1. Documentos Originales (Planos, Memorias, Pliegos, Proyectos Básicos).
-2. Historial del Libro de Órdenes (actividad diaria registrada por el DEM).
-3. Historial del Libro de Incidencias (registros del CSS).
+2. Historial del Libro de Órdenes.
+3. Historial del Libro de Incidencias.
+4. HISTORIAL DE EJECUCIÓN ACTUALIZADO.
 
 NO inventes información. NO uses conocimiento general. Si la información solicitada no está en ninguna de las tres fuentes, indica claramente: "Esta información no se encuentra en los documentos ni en el historial de actividad del proyecto."
 
@@ -35,6 +69,9 @@ Tu rol es:
 - Detectar contradicciones entre el proyecto original y las decisiones posteriores
 - Identificar documentos faltantes para el cierre de obra
 - Ofrecer un contexto completo que integre diseño original + ejecución real
+
+=== HISTORIAL DE EJECUCIÓN ACTUALIZADO ===
+${updatedExecutionHistory || "No hay historial de ejecución actualizado disponible todavía."}
 
 ${projectContext ? `\n${projectContext}` : 'No hay documentos ni historial de proyecto disponibles. Indica al usuario que suba documentos desde "Documentación de Proyecto" y que registre órdenes e incidencias.'}
 
