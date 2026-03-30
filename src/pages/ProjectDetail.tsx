@@ -113,6 +113,21 @@ const ProjectDetail = () => {
       details: { email: inviteEmail, role: inviteRole },
     });
 
+    // Send invite email
+    try {
+      await supabase.functions.invoke("manage-project", {
+        body: {
+          action: "send_invite_email",
+          projectId: id,
+          email: inviteEmail,
+          role: inviteRole,
+          projectName: project?.name || "",
+        },
+      });
+    } catch (emailErr) {
+      console.error("Error sending invite email:", emailErr);
+    }
+
     setInviteSuccess({ email: inviteEmail, role: inviteRole });
     setInviteEmail("");
 
