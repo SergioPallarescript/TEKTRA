@@ -9,7 +9,6 @@ import {
   Head,
   Heading,
   Html,
-  Img,
   Link,
   Preview,
   Text,
@@ -28,24 +27,32 @@ export const EmailChangeEmail = ({
   newEmail,
   confirmationUrl,
 }: EmailChangeEmailProps) => (
-  <Html lang="es" dir="ltr">
+  <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Confirma tu nueva dirección de correo en TEKTRA</Preview>
+    <Preview>Confirm your email change for {siteName}</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Img src="https://tektra.es/tektra-icon-512.png" width="48" height="48" alt="TEKTRA" style={logo} />
-        <Heading style={h1}>Cambio de correo electrónico</Heading>
+        <Heading style={h1}>Confirm your email change</Heading>
         <Text style={text}>
-          Has solicitado cambiar tu correo en TEKTRA de{' '}
-          <Link href={`mailto:${email}`} style={link}>{email}</Link> a{' '}
-          <Link href={`mailto:${newEmail}`} style={link}>{newEmail}</Link>.
+          You requested to change your email address for {siteName} from{' '}
+          <Link href={`mailto:${email}`} style={link}>
+            {email}
+          </Link>{' '}
+          to{' '}
+          <Link href={`mailto:${newEmail}`} style={link}>
+            {newEmail}
+          </Link>
+          .
         </Text>
-        <Text style={text}>Pulsa el botón para confirmar este cambio:</Text>
+        <Text style={text}>
+          Click the button below to confirm this change:
+        </Text>
         <Button style={button} href={confirmationUrl}>
-          Confirmar
+          Confirm Email Change
         </Button>
         <Text style={footer}>
-          Este es un correo automático de TEKTRA. No es necesario responder.
+          If you didn't request this change, please secure your account
+          immediately.
         </Text>
       </Container>
     </Body>
@@ -54,11 +61,27 @@ export const EmailChangeEmail = ({
 
 export default EmailChangeEmail
 
-const main = { backgroundColor: '#ffffff', fontFamily: 'Montserrat, Arial, sans-serif' }
-const container = { padding: '32px 28px' }
-const logo = { margin: '0 0 24px' }
-const h1 = { fontSize: '22px', fontWeight: 'bold' as const, color: '#262626', margin: '0 0 20px' }
-const text = { fontSize: '14px', color: '#525252', lineHeight: '1.6', margin: '0 0 16px' }
+const main = { backgroundColor: '#ffffff', fontFamily: 'Arial, sans-serif' }
+const container = { padding: '20px 25px' }
+const h1 = {
+  fontSize: '22px',
+  fontWeight: 'bold' as const,
+  color: '#000000',
+  margin: '0 0 20px',
+}
+const text = {
+  fontSize: '14px',
+  color: '#55575d',
+  lineHeight: '1.5',
+  margin: '0 0 25px',
+}
 const link = { color: 'inherit', textDecoration: 'underline' }
-const button = { backgroundColor: '#262626', color: '#fafafa', fontSize: '14px', fontWeight: '600' as const, borderRadius: '4px', padding: '12px 24px', textDecoration: 'none', margin: '8px 0 0' }
-const footer = { fontSize: '12px', color: '#999999', margin: '32px 0 0', borderTop: '1px solid #e5e5e5', paddingTop: '16px' }
+const button = {
+  backgroundColor: '#000000',
+  color: '#ffffff',
+  fontSize: '14px',
+  borderRadius: '8px',
+  padding: '12px 20px',
+  textDecoration: 'none',
+}
+const footer = { fontSize: '12px', color: '#999999', margin: '30px 0 0' }
