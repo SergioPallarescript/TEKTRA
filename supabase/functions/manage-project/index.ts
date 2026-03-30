@@ -177,6 +177,49 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "send_invite_email") {
+      const email = typeof body.email === "string" ? body.email.trim() : "";
+      const role = typeof body.role === "string" ? body.role : "";
+      const projectName = typeof body.projectName === "string" ? body.projectName : "";
+
+      if (!email) {
+        return new Response(JSON.stringify({ error: "Email obligatorio" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Check if user exists
+      const { data: existingProfile } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .eq("email", email)
+        .maybeSingle();
+
+      // Use Supabase Auth invite for new users (triggers auth-email-hook with invite template)
+      if (!existingProfile) {
+        const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
+          data: { invited_role: role, project_name: projectName },
+          redirectTo: `https://tektra.es/auth`,
+        });
+
+        if (inviteError) {
+          console.error("Invite error:", inviteError);
+          // If user already exists in auth but no profile, still ok
+          if (!inviteError.message.includes("already been registered")) {
+            return new Response(JSON.stringify({ error: inviteError.message }), {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, userExists: !!existingProfile }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Acción no soportada" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
