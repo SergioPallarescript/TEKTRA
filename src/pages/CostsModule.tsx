@@ -51,7 +51,8 @@ function getStatusInfo(claim: any) {
 
 const CostsModule = () => {
   const { id: projectId } = useParams<{ id: string }>();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
+  const { isDO, isDEM, isCON, isPRO, projectRole } = useProjectRole(projectId);
   const navigate = useNavigate();
   const signatureRef = useRef<SignatureCanvasHandle | null>(null);
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
@@ -80,10 +81,6 @@ const CostsModule = () => {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [deleteClaim, setDeleteClaim] = useState<string | null>(null);
 
-  const isCON = profile?.role === "CON";
-  const isDO = profile?.role === "DO";
-  const isDEM = profile?.role === "DEM";
-  const isPRO = profile?.role === "PRO";
   const canSubmit = isCON;
 
   const fetchClaims = useCallback(async () => {
@@ -237,7 +234,7 @@ const CostsModule = () => {
       const sigImg = await pdfDoc.embedPng(sigDataUrl);
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-      const roleName = profile?.role || "?";
+      const roleName = projectRole || "?";
       const existingSignatures = [(selectedClaim as any).dem_signed_by, (selectedClaim as any).do_signed_by, (selectedClaim as any).pro_signed_by].filter(Boolean).length;
       const boxX = 36 + existingSignatures * 260;
       const boxY = 36;
