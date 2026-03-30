@@ -31,7 +31,8 @@ export const MagicLinkEmail = ({
       <Container style={container}>
         <Heading style={h1}>Tu enlace de acceso</Heading>
         <Text style={text}>
-          Pulsa el bot&oacute;n inferior para acceder a TEKTRA. Este enlace caducar&aacute; en breve.
+          Pulsa el bot&oacute;n inferior para acceder a TEKTRA. Este enlace
+          caducar&aacute; en breve.
         </Text>
         <Button style={button} href={confirmationUrl}>
           Acceder
@@ -39,7 +40,9 @@ export const MagicLinkEmail = ({
         <Text style={footer}>
           Si no has solicitado este enlace, ignora este mensaje.
         </Text>
-        <Text style={brand}>TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional</Text>
+        <Text style={brand}>
+          TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional
+        </Text>
       </Container>
     </Body>
   </Html>

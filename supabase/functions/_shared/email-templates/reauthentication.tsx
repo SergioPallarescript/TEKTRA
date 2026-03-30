@@ -21,16 +21,21 @@ export const ReauthenticationEmail = ({ token }: ReauthenticationEmailProps) => 
     <Head>
       <meta charSet="utf-8" />
     </Head>
-    <Preview>Tu c&oacute;digo de verificaci&oacute;n &mdash; TEKTRA</Preview>
+    <Preview>Tu código de verificación — TEKTRA</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Heading style={h1}>C&oacute;digo de verificaci&oacute;n</Heading>
-        <Text style={text}>Usa el siguiente c&oacute;digo para confirmar tu identidad:</Text>
+        <Heading style={h1}>Código de verificación</Heading>
+        <Text style={text}>
+          Usa el siguiente código para confirmar tu identidad:
+        </Text>
         <Text style={codeStyle}>{token}</Text>
         <Text style={footer}>
-          Este c&oacute;digo caducar&aacute; en breve. Si no lo has solicitado, ignora este mensaje.
+          Este código caducará en breve. Si no lo has solicitado,
+          ignora este mensaje.
         </Text>
-        <Text style={brand}>TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional</Text>
+        <Text style={brand}>
+          TEKTRA &mdash; Dirección y Ejecución de Obra Profesional
+        </Text>
       </Container>
     </Body>
   </Html>

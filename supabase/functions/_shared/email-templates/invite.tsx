@@ -17,31 +17,29 @@ interface InviteEmailProps {
   siteName: string
   siteUrl: string
   confirmationUrl: string
-  projectName?: string
 }
 
 export const InviteEmail = ({
   siteName,
   siteUrl,
   confirmationUrl,
-  projectName,
 }: InviteEmailProps) => (
   <Html lang="es" dir="ltr">
     <Head>
       <meta charSet="utf-8" />
     </Head>
-    <Preview>&#127959;&#65039; Invitaci&oacute;n al proyecto{projectName ? `: ${projectName}` : ''} en TEKTRA</Preview>
+    <Preview>🏗️ Invitaci&oacute;n al proyecto en TEKTRA</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>Has sido invitado a un proyecto en TEKTRA</Heading>
         <Text style={text}>
-          Has sido invitado a participar en el proyecto{' '}
-          {projectName ? <strong>{projectName}</strong> : 'de obra'}{' '}
-          dentro de la plataforma TEKTRA.
+          Has sido invitado a participar en un proyecto dentro de la plataforma
+          TEKTRA. Se te ha asignado un rol profesional para la direcci&oacute;n
+          y ejecuci&oacute;n de esta obra.
         </Text>
         <Text style={text}>
-          Se te ha asignado un rol profesional para la direcci&oacute;n y ejecuci&oacute;n de esta obra.
-          Para configurar tu acceso y ver los detalles del proyecto, pulsa aqu&iacute;:
+          Para configurar tu acceso y ver los detalles del proyecto, pulsa
+          aqu&iacute;:
         </Text>
         <Button style={button} href={confirmationUrl}>
           Aceptar Invitaci&oacute;n
@@ -49,7 +47,9 @@ export const InviteEmail = ({
         <Text style={footer}>
           Este es un correo autom&aacute;tico de TEKTRA. No es necesario responder.
         </Text>
-        <Text style={brand}>TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional</Text>
+        <Text style={brand}>
+          TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional
+        </Text>
       </Container>
     </Body>
   </Html>

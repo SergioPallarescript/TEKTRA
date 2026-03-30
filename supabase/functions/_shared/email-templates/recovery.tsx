@@ -26,21 +26,23 @@ export const RecoveryEmail = ({
     <Head>
       <meta charSet="utf-8" />
     </Head>
-    <Preview>Restablecer contrase&ntilde;a en TEKTRA</Preview>
+    <Preview>Restablecer contraseña en TEKTRA</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Heading style={h1}>Restablecer contrase&ntilde;a</Heading>
+        <Heading style={h1}>Restablecer contraseña</Heading>
         <Text style={text}>
-          Hemos recibido una solicitud para cambiar tu contrase&ntilde;a en TEKTRA.
+          Hemos recibido una solicitud para cambiar tu contraseña en TEKTRA.
           Haz clic abajo para elegir una nueva:
         </Text>
         <Button style={button} href={confirmationUrl}>
-          Restablecer Contrase&ntilde;a
+          Restablecer Contraseña
         </Button>
         <Text style={footer}>
           Si no solicitaste este cambio, tu cuenta est&aacute; segura. Ignora este mensaje.
         </Text>
-        <Text style={brand}>TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional</Text>
+        <Text style={brand}>
+          TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional
+        </Text>
       </Container>
     </Body>
   </Html>

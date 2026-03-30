@@ -36,7 +36,7 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 }
 
 // Configuration
-const SITE_NAME = "TEKTRA"
+const SITE_NAME = "TEKTRA : gestión integral de obra"
 const SENDER_DOMAIN = "notify.tektra.es"
 const ROOT_DOMAIN = "tektra.es"
 const FROM_DOMAIN = "tektra.es" // Domain shown in From address (may be root or sender subdomain)

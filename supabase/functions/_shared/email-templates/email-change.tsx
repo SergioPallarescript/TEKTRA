@@ -31,26 +31,33 @@ export const EmailChangeEmail = ({
     <Head>
       <meta charSet="utf-8" />
     </Head>
-    <Preview>Confirma tu nueva direcci&oacute;n de correo &mdash; TEKTRA</Preview>
+    <Preview>Confirma tu nueva direcci&oacute;n de correo — TEKTRA</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>Confirma el cambio de correo</Heading>
         <Text style={text}>
           Has solicitado cambiar tu direcci&oacute;n de correo en TEKTRA de{' '}
-          <Link href={`mailto:${email}`} style={link}>{email}</Link>{' '}
+          <Link href={`mailto:${email}`} style={link}>
+            {email}
+          </Link>{' '}
           a{' '}
-          <Link href={`mailto:${newEmail}`} style={link}>{newEmail}</Link>.
+          <Link href={`mailto:${newEmail}`} style={link}>
+            {newEmail}
+          </Link>
+          .
         </Text>
         <Text style={text}>
-          Pulsa el bot&oacute;n inferior para confirmar este cambio:
+          Haz clic en el bot&oacute;n inferior para confirmar este cambio:
         </Text>
         <Button style={button} href={confirmationUrl}>
-          Confirmar Cambio
+          Confirmar cambio de correo
         </Button>
         <Text style={footer}>
-          Si no has solicitado este cambio, protege tu cuenta de inmediato.
+          Si no solicitaste este cambio, protege tu cuenta inmediatamente.
         </Text>
-        <Text style={brand}>TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional</Text>
+        <Text style={brand}>
+          TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional
+        </Text>
       </Container>
     </Body>
   </Html>

@@ -25,6 +25,7 @@ import SignatureDocuments from "./pages/SignatureDocuments";
 import NotificationsHistory from "./pages/NotificationsHistory";
 import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
+import Unsubscribe from "./pages/Unsubscribe";
 
 const queryClient = new QueryClient();
 
@@ -99,6 +100,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
+            <Route path="/unsubscribe" element={<Unsubscribe />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/project/:id" element={<ProtectedRoute><ProjectDetail /></ProtectedRoute>} />

@@ -30,13 +30,14 @@ export const SignupEmail = ({
     <Head>
       <meta charSet="utf-8" />
     </Head>
-    <Preview>Bienvenido a TEKTRA &mdash; Confirma tu cuenta</Preview>
+    <Preview>Bienvenido a TEKTRA — Confirma tu cuenta</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>Bienvenido a TEKTRA</Heading>
         <Text style={text}>
-          Gracias por registrarte en la plataforma profesional de gesti&oacute;n de obra.
-          Para activar tu cuenta, haz clic en el bot&oacute;n inferior:
+          Gracias por registrarte en la plataforma profesional de
+          gesti&oacute;n de obra. Para activar tu cuenta, haz clic en el
+          bot&oacute;n inferior:
         </Text>
         <Button style={button} href={confirmationUrl}>
           Confirmar mi cuenta
@@ -44,7 +45,9 @@ export const SignupEmail = ({
         <Text style={footer}>
           Si no has creado esta cuenta, ignora este mensaje.
         </Text>
-        <Text style={brand}>TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional</Text>
+        <Text style={brand}>
+          TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional
+        </Text>
       </Container>
     </Body>
   </Html>
