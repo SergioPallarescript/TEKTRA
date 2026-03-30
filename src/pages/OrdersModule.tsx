@@ -4,6 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import AttachmentThumbnails from "@/components/AttachmentThumbnails";
+import StructuredSectionsEditor from "@/components/StructuredSectionsEditor";
+import { formatOrderSections } from "@/lib/bookFormatting";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,11 +19,15 @@ import {
 import { toast } from "sonner";
 import { notifyProjectMembers } from "@/lib/notifications";
 import {
-  ArrowLeft, Plus, BookOpen, AlertTriangle, CheckCircle2, Mic, MicOff, Camera, Image, Paperclip, X, Pencil, Trash2, Download,
+  ArrowLeft, Plus, BookOpen, AlertTriangle, Mic, MicOff, Camera, Image, Paperclip, X, Pencil, Trash2, Download,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const CHANGE_KEYWORDS = ["modificar", "mover", "cambiar", "sustituir", "demoler", "ampliar", "reducir", "eliminar", "añadir", "reemplazar"];
+const ORDER_FIELDS = [
+  { key: "estado", label: "Estado de la Obra", placeholder: "Describa el estado actual de la obra..." },
+  { key: "instrucciones", label: "Instrucciones y Órdenes", placeholder: "Instrucciones dadas en esta visita..." },
+  { key: "pendientes", label: "Pendientes", placeholder: "Tareas pendientes de resolver..." },
+];
 
 const OrdersModule = () => {
   const { id: projectId } = useParams<{ id: string }>();
@@ -29,14 +35,12 @@ const OrdersModule = () => {
   const navigate = useNavigate();
 
   const [orders, setOrders] = useState<any[]>([]);
-  const [validations, setValidations] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [recording, setRecording] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
-  const [confirmValidate, setConfirmValidate] = useState<string | null>(null);
   const [editOrder, setEditOrder] = useState<any | null>(null);
   const [editContent, setEditContent] = useState("");
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -44,13 +48,13 @@ const OrdersModule = () => {
   const [editRemovedPhotos, setEditRemovedPhotos] = useState<string[]>([]);
   const [editRecording, setEditRecording] = useState(false);
   const [editCleaning, setEditCleaning] = useState(false);
-  const [editStructuredSections, setEditStructuredSections] = useState<{ estado: string; instrucciones: string; pendientes: string } | null>(null);
+  const [editStructuredSections, setEditStructuredSections] = useState<Record<string, string> | null>(null);
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
   const [cleaning, setCleaning] = useState(false);
   const editCameraRef = useRef<HTMLInputElement>(null);
   const editGalleryRef = useRef<HTMLInputElement>(null);
   const editRecognitionRef = useRef<any>(null);
-  const [structuredSections, setStructuredSections] = useState<{ estado: string; instrucciones: string; pendientes: string } | null>(null);
+  const [structuredSections, setStructuredSections] = useState<Record<string, string> | null>(null);
   const [crossAlert, setCrossAlert] = useState<{ show: boolean; incidents: any[] }>({ show: false, incidents: [] });
   const recognitionRef = useRef<any>(null);
 
@@ -58,7 +62,6 @@ const OrdersModule = () => {
   const isDO = profile?.role === "DO";
   const [hasDualCSS, setHasDualCSS] = useState(false);
   const canWrite = isDEM || isDO || hasDualCSS;
-  const canValidate = profile?.role === "CON" || profile?.role === "PRO";
   const canExport = isDEM || isDO;
   const [exporting, setExporting] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -86,40 +89,23 @@ const OrdersModule = () => {
       .select("*")
       .eq("project_id", projectId)
       .order("created_at", { ascending: false });
-    if (data) {
-      setOrders(data);
-      const flagged = data.filter((o: any) => o.requires_validation);
-      if (flagged.length > 0) {
-        const { data: vals } = await supabase
-          .from("order_validations")
-          .select("*")
-          .in("order_id", flagged.map((o: any) => o.id));
-        if (vals) {
-          const grouped: Record<string, any[]> = {};
-          vals.forEach((v: any) => {
-            if (!grouped[v.order_id]) grouped[v.order_id] = [];
-            grouped[v.order_id].push(v);
-          });
-          setValidations(grouped);
-        }
-      }
-    }
+    if (data) setOrders(data);
     setLoading(false);
   }, [projectId]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  const detectChanges = (text: string) => {
-    const lower = text.toLowerCase();
-    return CHANGE_KEYWORDS.filter((kw) => lower.includes(kw));
-  };
-
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectId || !user) return;
 
+    // Build final content from structured sections if available
+    const finalContent = structuredSections
+      ? formatOrderSections({ estado: structuredSections.estado || "", instrucciones: structuredSections.instrucciones || "", pendientes: structuredSections.pendientes || "" })
+      : content;
+
     // Check cross-alerts before submitting
-    await checkCrossAlerts(content);
+    await checkCrossAlerts(finalContent);
 
     setSubmitting(true);
     const photoUrls: string[] = [];
@@ -128,29 +114,23 @@ const OrdersModule = () => {
       const { error } = await supabase.storage.from("plans").upload(path, photo);
       if (!error) photoUrls.push(path);
     }
-    const flags = detectChanges(content);
-    const requiresValidation = flags.length > 0;
     const { error } = await supabase.from("orders").insert({
-      project_id: projectId, content, created_by: user.id,
-      requires_validation: requiresValidation, ai_flags: { keywords: flags },
+      project_id: projectId, content: finalContent, created_by: user.id,
+      requires_validation: false, ai_flags: {},
       photos: photoUrls.length > 0 ? photoUrls : [],
     });
     if (error) { toast.error("Error al crear la orden"); setSubmitting(false); return; }
     await supabase.from("audit_logs").insert({
       user_id: user.id, project_id: projectId,
-      action: "order_created", details: { requires_validation: requiresValidation, ai_flags: flags, has_photos: photoUrls.length > 0 },
+      action: "order_created", details: { has_photos: photoUrls.length > 0 },
     });
-    if (requiresValidation) {
-      toast.warning(`⚠️ Orden marcada para validación — palabras clave detectadas: ${flags.join(", ")}`);
-    } else {
-      toast.success("Orden registrada");
-    }
+    toast.success("Orden registrada");
     await notifyProjectMembers({
       projectId,
       actorId: user.id,
       title: "Nueva orden registrada",
       message: `Se ha registrado una nueva orden en el Libro de Órdenes`,
-      type: requiresValidation ? "warning" : "info",
+      type: "info",
     });
     setContent(""); setPhotos([]); setStructuredSections(null); setCreateOpen(false); setSubmitting(false); fetchOrders();
   };
@@ -160,28 +140,26 @@ const OrdersModule = () => {
     if (!editOrder || !user) return;
     setEditSubmitting(true);
 
-    // Upload new photos
+    const finalContent = editStructuredSections
+      ? formatOrderSections({ estado: editStructuredSections.estado || "", instrucciones: editStructuredSections.instrucciones || "", pendientes: editStructuredSections.pendientes || "" })
+      : editContent;
+
     const newPhotoUrls: string[] = [];
     for (const photo of editPhotos) {
       const path = `orders/${projectId}/${Date.now()}_${photo.name}`;
       const { error } = await supabase.storage.from("plans").upload(path, photo);
       if (!error) newPhotoUrls.push(path);
     }
-
-    // Remove deleted photos from storage
     if (editRemovedPhotos.length > 0) {
       await supabase.storage.from("plans").remove(editRemovedPhotos);
     }
-
     const existingPhotos = (editOrder.photos || []).filter((p: string) => !editRemovedPhotos.includes(p));
     const finalPhotos = [...existingPhotos, ...newPhotoUrls];
 
-    const flags = detectChanges(editContent);
-    const requiresValidation = flags.length > 0;
     const { error } = await supabase.from("orders").update({
-      content: editContent,
-      requires_validation: requiresValidation,
-      ai_flags: { keywords: flags },
+      content: finalContent,
+      requires_validation: false,
+      ai_flags: {},
       photos: finalPhotos,
     }).eq("id", editOrder.id);
     if (error) { toast.error("Error al editar la orden"); setEditSubmitting(false); return; }
@@ -209,12 +187,12 @@ const OrdersModule = () => {
       if (error) throw error;
       if (data.structured && data.sections) {
         setEditStructuredSections(data.sections);
-        const combined = `**ESTADO DE LA OBRA:**\n${data.sections.estado}\n\n**INSTRUCCIONES Y ÓRDENES:**\n${data.sections.instrucciones}\n\n**PENDIENTES:**\n${data.sections.pendientes}`;
+        const combined = formatOrderSections(data.sections);
         setEditContent(combined);
-        toast.success("Dictado estructurado por IA en 3 secciones");
+        toast.success("Dictado estructurado por IA — edita las secciones antes de guardar");
       } else {
         setEditContent(data.cleanedText || rawText);
-        toast.success("Dictado procesado por IA");
+        toast.success("Dictado procesado por IA — revisa antes de guardar");
       }
     } catch {
       toast.error("Error al procesar el dictado");
@@ -270,30 +248,6 @@ const OrdersModule = () => {
     setDeleteOrderId(null); fetchOrders();
   };
 
-  const handleValidate = async (orderId: string) => {
-    if (!user || !profile) return;
-    let geoString = "unavailable";
-    try {
-      const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-      );
-      geoString = `${pos.coords.latitude},${pos.coords.longitude}`;
-    } catch {}
-    const { error } = await supabase.from("order_validations").insert({
-      order_id: orderId, user_id: user.id, role: profile.role || "CON", geo_location: geoString,
-    });
-    if (error) {
-      toast.info(error.message.includes("duplicate") ? "Ya has validado esta orden" : "Error al validar");
-    } else {
-      toast.success("Validación registrada");
-      await supabase.from("audit_logs").insert({
-        user_id: user.id, project_id: projectId!,
-        action: "order_validated", details: { order_id: orderId, role: profile.role },
-      });
-    }
-    setConfirmValidate(null); fetchOrders();
-  };
-
   const cleanDictation = async (rawText: string) => {
     setCleaning(true);
     try {
@@ -303,9 +257,9 @@ const OrdersModule = () => {
       if (error) throw error;
       if (data.structured && data.sections) {
         setStructuredSections(data.sections);
-        const combined = `**ESTADO DE LA OBRA:**\n${data.sections.estado}\n\n**INSTRUCCIONES Y ÓRDENES:**\n${data.sections.instrucciones}\n\n**PENDIENTES:**\n${data.sections.pendientes}`;
+        const combined = formatOrderSections(data.sections);
         setContent(combined);
-        toast.success("Dictado estructurado por IA en 3 secciones — revisa antes de guardar");
+        toast.success("Dictado estructurado por IA — edita las secciones antes de guardar");
       } else {
         setContent(data.cleanedText || rawText);
         toast.success("Dictado procesado por IA — revisa el texto antes de guardar");
@@ -317,7 +271,6 @@ const OrdersModule = () => {
     }
   };
 
-  // Cross-alert: check if content mentions elements with open incidents
   const checkCrossAlerts = async (text: string) => {
     if (!projectId) return;
     const { data: openIncidents } = await supabase
@@ -326,7 +279,6 @@ const OrdersModule = () => {
       .eq("project_id", projectId)
       .eq("status", "open");
     if (!openIncidents || openIncidents.length === 0) return;
-
     const lower = text.toLowerCase();
     const matching = openIncidents.filter((inc: any) => {
       const words = inc.content.toLowerCase().split(/\s+/).filter((w: string) => w.length > 4);
@@ -413,7 +365,7 @@ const OrdersModule = () => {
               <DialogTrigger asChild>
                 <Button className="font-display text-xs uppercase tracking-wider gap-2"><Plus className="h-4 w-4" />Nueva Orden</Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <DialogHeader><DialogTitle className="font-display">Registrar Orden</DialogTitle></DialogHeader>
                 <form onSubmit={handleCreate} className="space-y-4 mt-4">
                   <div className="space-y-2">
@@ -423,31 +375,15 @@ const OrdersModule = () => {
                         {cleaning ? <><span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> Procesando...</> : recording ? <><MicOff className="h-3 w-3" /> Parar</> : <><Mic className="h-3 w-3" /> Dictar</>}
                       </Button>
                     </div>
-                    <Textarea value={content} onChange={(e) => { setContent(e.target.value); setStructuredSections(null); }} placeholder="Describa la orden de obra..." rows={6} required />
-                    {structuredSections && (
-                      <div className="space-y-2 mt-2 p-3 bg-secondary/30 rounded-lg border border-border">
-                        <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-1">Vista previa estructurada por IA</p>
-                        <div className="space-y-1.5">
-                          <div className="p-2 bg-background rounded border border-border">
-                            <p className="text-[10px] font-display font-bold uppercase tracking-wider text-primary mb-0.5">Estado de la Obra</p>
-                            <p className="text-xs">{structuredSections.estado}</p>
-                          </div>
-                          <div className="p-2 bg-background rounded border border-border">
-                            <p className="text-[10px] font-display font-bold uppercase tracking-wider text-primary mb-0.5">Instrucciones y Órdenes</p>
-                            <p className="text-xs">{structuredSections.instrucciones}</p>
-                          </div>
-                          <div className="p-2 bg-background rounded border border-border">
-                            <p className="text-[10px] font-display font-bold uppercase tracking-wider text-primary mb-0.5">Pendientes</p>
-                            <p className="text-xs">{structuredSections.pendientes}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {content && detectChanges(content).length > 0 && (
-                      <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 px-3 py-2 rounded">
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                        Palabras clave detectadas: {detectChanges(content).join(", ")}. Se requerirá validación de CON y PRO.
-                      </div>
+                    {structuredSections ? (
+                      <StructuredSectionsEditor
+                        fields={ORDER_FIELDS}
+                        title="Vista previa editable — revisa antes de guardar"
+                        values={structuredSections}
+                        onChange={(key, value) => setStructuredSections(prev => prev ? { ...prev, [key]: value } : prev)}
+                      />
+                    ) : (
+                      <Textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Describa la orden de obra o use el dictado por voz..." rows={6} required={!structuredSections} />
                     )}
                   </div>
                   <div className="space-y-2">
@@ -510,18 +446,13 @@ const OrdersModule = () => {
         ) : (
           <div className="space-y-3">
             {orders.map((order, i) => {
-              const orderVals = validations[order.id] || [];
-              const userValidated = orderVals.some((v: any) => v.user_id === user?.id);
               const isOwner = order.created_by === user?.id;
               return (
-                <div key={order.id} className={`bg-card border rounded-lg p-5 animate-fade-in ${order.requires_validation ? "border-warning/40" : "border-border"}`} style={{ animationDelay: `${i * 60}ms` }}>
+                <div key={order.id} className="bg-card border border-border rounded-lg p-5 animate-fade-in" style={{ animationDelay: `${i * 60}ms` }}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-xs font-display font-bold text-muted-foreground">#{order.order_number}</span>
-                        {order.requires_validation && (
-                          <span className="px-2 py-0.5 text-[10px] font-display uppercase tracking-widest bg-warning/10 text-warning rounded">Requiere validación</span>
-                        )}
                       </div>
                       {order.content.includes("**ESTADO DE LA OBRA:**") ? (
                         <div className="space-y-2 mt-1">
@@ -545,20 +476,8 @@ const OrdersModule = () => {
                       <p className="text-xs text-muted-foreground mt-2">
                         {new Date(order.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </p>
-                      {order.requires_validation && orderVals.length > 0 && (
-                        <div className="flex gap-2 mt-2">
-                          {orderVals.map((v: any) => (
-                            <span key={v.id} className="flex items-center gap-1 text-xs text-success"><CheckCircle2 className="h-3 w-3" /> {v.role}</span>
-                          ))}
-                        </div>
-                      )}
                     </div>
                     <div className="flex flex-col gap-1 shrink-0">
-                      {order.requires_validation && canValidate && !userValidated && (
-                        <Button size="sm" variant="outline" onClick={() => setConfirmValidate(order.id)} className="font-display text-xs uppercase tracking-wider gap-1">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Validar
-                        </Button>
-                      )}
                       {isOwner && (
                         <>
                           <Button size="sm" variant="ghost" onClick={() => { setEditOrder(order); setEditContent(order.content); setEditPhotos([]); setEditRemovedPhotos([]); setEditStructuredSections(null); }} className="gap-1 text-xs text-muted-foreground">
@@ -578,7 +497,7 @@ const OrdersModule = () => {
         )}
       </div>
 
-      {/* Edit dialog — full flow with dictation, structured IA, and photo replacement */}
+      {/* Edit dialog — full flow with dictation, editable structured preview, and photo replacement */}
       <Dialog open={!!editOrder} onOpenChange={(open) => { if (!open) { setEditOrder(null); setEditPhotos([]); setEditStructuredSections(null); } }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="font-display">Editar Orden</DialogTitle></DialogHeader>
@@ -590,29 +509,15 @@ const OrdersModule = () => {
                   {editCleaning ? <><span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> Procesando...</> : editRecording ? <><MicOff className="h-3 w-3" /> Parar</> : <><Mic className="h-3 w-3" /> Dictar</>}
                 </Button>
               </div>
-              <Textarea value={editContent} onChange={(e) => { setEditContent(e.target.value); setEditStructuredSections(null); }} rows={6} required />
-              {editStructuredSections && (
-                <div className="space-y-2 mt-2 p-3 bg-secondary/30 rounded-lg border border-border">
-                  <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground mb-1">Vista previa estructurada por IA</p>
-                  <div className="space-y-1.5">
-                    {["Estado de la Obra", "Instrucciones y Órdenes", "Pendientes"].map((t, si) => {
-                      const keys = ["estado", "instrucciones", "pendientes"] as const;
-                      const colors = ["text-emerald-600 dark:text-emerald-400", "text-blue-600 dark:text-blue-400", "text-amber-600 dark:text-amber-400"];
-                      return (
-                        <div key={si} className="p-2 bg-background rounded border border-border">
-                          <p className={`text-[10px] font-display font-bold uppercase tracking-wider mb-0.5 ${colors[si]}`}>{t}</p>
-                          <p className="text-xs">{editStructuredSections[keys[si]]}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {editContent && detectChanges(editContent).length > 0 && (
-                <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 px-3 py-2 rounded">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  Palabras clave detectadas: {detectChanges(editContent).join(", ")}.
-                </div>
+              {editStructuredSections ? (
+                <StructuredSectionsEditor
+                  fields={ORDER_FIELDS}
+                  title="Vista previa editable — revisa antes de guardar"
+                  values={editStructuredSections}
+                  onChange={(key, value) => setEditStructuredSections(prev => prev ? { ...prev, [key]: value } : prev)}
+                />
+              ) : (
+                <Textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={6} required={!editStructuredSections} />
               )}
             </div>
             {/* Current photos with remove option */}
@@ -661,20 +566,6 @@ const OrdersModule = () => {
           </form>
         </DialogContent>
       </Dialog>
-
-      {/* Validate confirm */}
-      <AlertDialog open={!!confirmValidate} onOpenChange={() => setConfirmValidate(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-display">Confirmar Validación</AlertDialogTitle>
-            <AlertDialogDescription>Esta acción quedará registrada legalmente con su firma digital, geolocalización y marca temporal.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => confirmValidate && handleValidate(confirmValidate)}>Validar Orden</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Delete confirm */}
       <AlertDialog open={!!deleteOrderId} onOpenChange={() => setDeleteOrderId(null)}>
