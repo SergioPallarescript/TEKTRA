@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -53,8 +54,8 @@ const CFOModule = () => {
   const [auditing, setAuditing] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  const userRole = profile?.role as AppRole | undefined;
-  const isDEM = userRole === "DEM";
+  const { isDEM, projectRole } = useProjectRole(projectId);
+  const userRole = projectRole as AppRole | undefined;
 
   useEffect(() => { if (profile !== undefined) setProfileLoading(false); }, [profile]);
 
