@@ -30,7 +30,7 @@ export const SignupEmail = ({
     <Head>
       <meta charSet="utf-8" />
     </Head>
-    <Preview>Bienvenido a TEKTRA — Confirma tu cuenta</Preview>
+    <Preview>Bienvenido a TEKTRA &mdash; Confirma tu cuenta</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>Bienvenido a TEKTRA</Heading>

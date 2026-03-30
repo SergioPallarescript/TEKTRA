@@ -28,7 +28,7 @@ export const ReauthenticationEmail = ({ token }: ReauthenticationEmailProps) => 
         <Text style={text}>Usa el siguiente c&oacute;digo para confirmar tu identidad:</Text>
         <Text style={codeStyle}>{token}</Text>
         <Text style={footer}>
-          Este c&oacute;digo caducar&aacute; en breve. Si no lo has solicitado, puedes ignorar este mensaje.
+          Este c&oacute;digo caducar&aacute; en breve. Si no lo has solicitado, ignora este mensaje.
         </Text>
         <Text style={brand}>TEKTRA &mdash; Direcci&oacute;n y Ejecuci&oacute;n de Obra Profesional</Text>
       </Container>
