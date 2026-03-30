@@ -294,7 +294,7 @@ const PlansModule = () => {
       );
       geoString = `${pos.coords.latitude},${pos.coords.longitude}`;
     } catch {}
-    const memberRole = members.find((m: any) => m.user_id === user.id)?.role || profile.role || "DO";
+    const memberRole = projectRole || "DO";
     const { error } = await supabase.from("plan_conformities").insert({
       plan_version_id: latestVersion.id, user_id: user.id, role: memberRole, geo_location: geoString,
     });
