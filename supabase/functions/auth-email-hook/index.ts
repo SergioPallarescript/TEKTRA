@@ -17,12 +17,12 @@ const corsHeaders = {
 }
 
 const EMAIL_SUBJECTS: Record<string, string> = {
-  signup: 'Confirma tu email - TEKTRA',
-  invite: 'Has sido invitado a un proyecto en TEKTRA',
-  magiclink: 'Tu enlace de acceso a TEKTRA',
-  recovery: 'Instrucciones para restablecer tu contraseña - TEKTRA',
-  email_change: 'Confirma tu nueva dirección de correo - TEKTRA',
-  reauthentication: 'Código de verificación - TEKTRA',
+  signup: 'Confirm your email',
+  invite: "You've been invited",
+  magiclink: 'Your login link',
+  recovery: 'Reset your password',
+  email_change: 'Confirm your new email',
+  reauthentication: 'Your verification code',
 }
 
 // Template mapping
@@ -36,10 +36,10 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 }
 
 // Configuration
-const SITE_NAME = "TEKTRA"
+const SITE_NAME = "gescon-legal-flow"
 const SENDER_DOMAIN = "notify.tektra.es"
 const ROOT_DOMAIN = "tektra.es"
-const FROM_DOMAIN = "tektra.es" // Root domain shown in From: header
+const FROM_DOMAIN = "tektra.es" // Domain shown in From address (may be root or sender subdomain)
 
 // Sample data for preview mode ONLY (not used in actual email sending).
 // URLs are baked in at scaffold time from the project's real data.
@@ -256,7 +256,7 @@ async function handleWebhook(req: Request): Promise<Response> {
       run_id,
       message_id: messageId,
       to: payload.data.email,
-      from: `TEKTRA : gestión integral de obra <noreply@${FROM_DOMAIN}>`,
+      from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
       sender_domain: SENDER_DOMAIN,
       subject: EMAIL_SUBJECTS[emailType] || 'Notification',
       html,
