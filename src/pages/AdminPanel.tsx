@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,7 +50,7 @@ const AdminPanel = () => {
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
-  const isAdmin = profile?.role === "DO" || profile?.role === "DEM";
+  const { isAdmin } = useProjectRole(projectId);
 
   const fetchMembers = useCallback(async () => {
     if (!projectId) return;

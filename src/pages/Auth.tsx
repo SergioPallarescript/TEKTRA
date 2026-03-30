@@ -188,6 +188,15 @@ const Auth = () => {
                 type="button"
                 onClick={async () => {
                   if (!email) { toast.error("Introduce tu correo electrónico primero"); return; }
+                  const { data: existingProfile } = await supabase
+                    .from("profiles")
+                    .select("id")
+                    .eq("email", email)
+                    .maybeSingle();
+                  if (!existingProfile) {
+                    toast.error("No se encontró ningún usuario con ese correo electrónico");
+                    return;
+                  }
                   const { error } = await supabase.auth.resetPasswordForEmail(email, {
                     redirectTo: `${window.location.origin}/reset-password`,
                   });

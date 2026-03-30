@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -10,13 +11,12 @@ import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 
 const ProjectDocs = () => {
   const { id: projectId } = useParams<{ id: string }>();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
+  const { isAdmin: canUpload } = useProjectRole(projectId);
   const navigate = useNavigate();
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-
-  const canUpload = profile?.role === "DO" || profile?.role === "DEM";
 
   const fetchDocs = useCallback(async () => {
     if (!projectId) return;
