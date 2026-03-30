@@ -32,7 +32,8 @@ const ORDER_FIELDS = [
 
 const OrdersModule = () => {
   const { id: projectId } = useParams<{ id: string }>();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
+  const { isDEM, isDO, hasDualCSS, isAdmin } = useProjectRole(projectId);
   const navigate = useNavigate();
 
   const [orders, setOrders] = useState<any[]>([]);
@@ -59,9 +60,6 @@ const OrdersModule = () => {
   const [crossAlert, setCrossAlert] = useState<{ show: boolean; incidents: any[] }>({ show: false, incidents: [] });
   const recognitionRef = useRef<any>(null);
 
-  const isDEM = profile?.role === "DEM";
-  const isDO = profile?.role === "DO";
-  const [hasDualCSS, setHasDualCSS] = useState(false);
   const canWrite = isDEM || isDO || hasDualCSS;
   const canExport = isDEM || isDO;
   const [exporting, setExporting] = useState(false);
@@ -69,19 +67,6 @@ const OrdersModule = () => {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
-
-  useEffect(() => {
-    if (!user || !projectId) return;
-    supabase
-      .from("project_members")
-      .select("secondary_role")
-      .eq("project_id", projectId)
-      .eq("user_id", user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.secondary_role === "CSS") setHasDualCSS(true);
-      });
-  }, [user, projectId]);
 
   const fetchOrders = useCallback(async () => {
     if (!projectId) return;

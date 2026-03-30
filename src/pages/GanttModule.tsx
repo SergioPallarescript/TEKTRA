@@ -30,7 +30,8 @@ const COLORS = [
 
 const GanttModule = () => {
   const { id: projectId } = useParams<{ id: string }>();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
+  const { isAdmin, isCON } = useProjectRole(projectId);
   const navigate = useNavigate();
 
   const [items, setItems] = useState<GanttItem[]>([]);
@@ -44,9 +45,7 @@ const GanttModule = () => {
   const [startDateInput, setStartDateInput] = useState(new Date().toISOString().split("T")[0]);
 
   // Permissions: only DO/DEM can generate/regenerate and add/delete milestones
-  const isAdmin = profile?.role === "DEM" || profile?.role === "DO";
-  // DO, DEM and CON can edit dates/titles of existing milestones
-  const canEditExisting = isAdmin || profile?.role === "CON";
+  const canEditExisting = isAdmin || isCON;
 
   // Load milestones from database
   useEffect(() => {

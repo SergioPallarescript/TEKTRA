@@ -34,7 +34,8 @@ const severityLabels: Record<string, { label: string; color: string }> = {
 
 const IncidentsModule = () => {
   const { id: projectId } = useParams<{ id: string }>();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
+  const { isCSS, hasDualCSS } = useProjectRole(projectId);
   const navigate = useNavigate();
 
   const [incidents, setIncidents] = useState<any[]>([]);
@@ -67,22 +68,7 @@ const IncidentsModule = () => {
   const editGalleryRef = useRef<HTMLInputElement>(null);
   const editRecognitionRef = useRef<any>(null);
 
-  const isCSS = profile?.role === "CSS";
-  const [hasDualCSS, setHasDualCSS] = useState(false);
   const canWrite = isCSS || hasDualCSS;
-
-  useEffect(() => {
-    if (!user || !projectId) return;
-    supabase
-      .from("project_members")
-      .select("secondary_role")
-      .eq("project_id", projectId)
-      .eq("user_id", user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.secondary_role === "CSS") setHasDualCSS(true);
-      });
-  }, [user, projectId]);
 
   const fetchIncidents = useCallback(async () => {
     if (!projectId) return;
