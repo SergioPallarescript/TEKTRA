@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +53,8 @@ const modules = [
 
 const ProjectDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
+  const { isAdmin } = useProjectRole(id);
   const navigate = useNavigate();
   const [project, setProject] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
@@ -371,7 +373,7 @@ const ProjectDetail = () => {
           ))}
 
           {/* Admin Panel - only for DO/DEM */}
-          {(profile?.role === "DO" || profile?.role === "DEM") && (
+          {isAdmin && (
             <button
               onClick={() => navigate(`/project/${id}/admin`)}
               className="bg-card border border-primary/20 rounded-lg p-5 text-left hover:border-primary/40 transition-all group animate-fade-in"
