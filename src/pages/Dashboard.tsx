@@ -179,14 +179,14 @@ const Dashboard = () => {
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex items-end justify-between mb-8">
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-8">
           <div>
             <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">Bienvenido</p>
             <h1 className="font-display text-3xl font-bold tracking-tighter mt-1">
               {profile?.full_name || "Panel Principal"}
             </h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {isAdmin && projects.length > 0 && (
               <Button
                 variant={manageMode ? "default" : "outline"}
