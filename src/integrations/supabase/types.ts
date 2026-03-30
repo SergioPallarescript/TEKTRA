@@ -166,64 +166,91 @@ export type Database = {
           amount: number
           claim_number: number
           created_at: string
+          dem_signed_at: string | null
+          dem_signed_by: string | null
           description: string | null
+          do_signed_at: string | null
+          do_signed_by: string | null
+          doc_type: string | null
           file_name: string | null
           file_url: string | null
           id: string
           payment_authorized_at: string | null
           payment_authorized_by: string | null
+          pro_signed_at: string | null
+          pro_signed_by: string | null
           project_id: string
           rejected_at: string | null
           rejected_by: string | null
           rejection_reason: string | null
+          signed_file_path: string | null
           status: string
           submitted_by: string
           technical_approved_at: string | null
           technical_approved_by: string | null
           title: string
           updated_at: string
+          validation_hash: string | null
         }
         Insert: {
           amount: number
           claim_number?: number
           created_at?: string
+          dem_signed_at?: string | null
+          dem_signed_by?: string | null
           description?: string | null
+          do_signed_at?: string | null
+          do_signed_by?: string | null
+          doc_type?: string | null
           file_name?: string | null
           file_url?: string | null
           id?: string
           payment_authorized_at?: string | null
           payment_authorized_by?: string | null
+          pro_signed_at?: string | null
+          pro_signed_by?: string | null
           project_id: string
           rejected_at?: string | null
           rejected_by?: string | null
           rejection_reason?: string | null
+          signed_file_path?: string | null
           status?: string
           submitted_by: string
           technical_approved_at?: string | null
           technical_approved_by?: string | null
           title: string
           updated_at?: string
+          validation_hash?: string | null
         }
         Update: {
           amount?: number
           claim_number?: number
           created_at?: string
+          dem_signed_at?: string | null
+          dem_signed_by?: string | null
           description?: string | null
+          do_signed_at?: string | null
+          do_signed_by?: string | null
+          doc_type?: string | null
           file_name?: string | null
           file_url?: string | null
           id?: string
           payment_authorized_at?: string | null
           payment_authorized_by?: string | null
+          pro_signed_at?: string | null
+          pro_signed_by?: string | null
           project_id?: string
           rejected_at?: string | null
           rejected_by?: string | null
           rejection_reason?: string | null
+          signed_file_path?: string | null
           status?: string
           submitted_by?: string
           technical_approved_at?: string | null
           technical_approved_by?: string | null
           title?: string
           updated_at?: string
+          validation_hash?: string | null
         }
         Relationships: [
           {
