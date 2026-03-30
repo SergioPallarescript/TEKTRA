@@ -159,7 +159,16 @@ const CostsModule = () => {
       submitted_by: user.id, doc_type: docType,
     } as any);
     if (error) { toast.error("Error al enviar"); setSubmitting(false); return; }
-    toast.success(`${docType === "presupuesto" ? "Presupuesto" : "Certificación"} enviado`);
+    const docLabel = docType === "presupuesto" ? "Presupuesto" : "Certificación";
+    toast.success(`${docLabel} enviado`);
+    // Notify project members about new economic document
+    await notifyProjectMembers({
+      projectId: projectId!,
+      actorId: user.id,
+      title: `Nueva ${docLabel}: ${title}`,
+      message: `Se ha subido ${docLabel === "Certificación" ? "una nueva Certificación" : "un nuevo Presupuesto"} pendiente de validación: "${title}"`,
+      type: "cost",
+    });
     setTitle(""); setDescription(""); setAmount(""); setFile(null); setDocType("certificacion");
     setCreateOpen(false); setSubmitting(false); fetchClaims();
   };
