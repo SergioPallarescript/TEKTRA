@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { X, AlertTriangle } from "lucide-react";
+import { X, AlertTriangle, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -38,6 +38,7 @@ const NotificationPanel = ({ onClose }: { onClose: () => void }) => {
       const { data } = await supabase
         .from("notifications")
         .select("*")
+        .eq("is_read", false)
         .order("created_at", { ascending: false })
         .limit(20);
       if (data) setNotifications(data);
@@ -54,6 +55,8 @@ const NotificationPanel = ({ onClose }: { onClose: () => void }) => {
     if (t.includes("gantt") || t.includes("hito")) return `/project/${notif.project_id}/gantt`;
     if (t.includes("rol") || t.includes("agente") || t.includes("eliminado del proyecto")) return `/project/${notif.project_id}/admin`;
     if (t.includes("cfo") || t.includes("reclamación") || t.includes("documento")) return `/project/${notif.project_id}/cfo`;
+    if (t.includes("certificaci") || t.includes("presupuesto") || t.includes("pago")) return `/project/${notif.project_id}/costs`;
+    if (t.includes("firma")) return `/project/${notif.project_id}/signatures`;
     return `/project/${notif.project_id}`;
   };
 
@@ -98,9 +101,8 @@ const NotificationPanel = ({ onClose }: { onClose: () => void }) => {
       geo_location: geoString,
     } as any);
 
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === selectedNotif.id ? { ...n, is_read: true } : n))
-    );
+    // Remove from list (only unread shown)
+    setNotifications((prev) => prev.filter((n) => n.id !== selectedNotif.id));
     setShowAckDialog(false);
     toast.success("Lectura registrada legalmente");
 
@@ -116,9 +118,16 @@ const NotificationPanel = ({ onClose }: { onClose: () => void }) => {
     <>
       <div className="absolute right-0 top-12 w-80 bg-card border border-border rounded-lg shadow-lg z-50 animate-fade-in">
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="font-display text-sm font-semibold uppercase tracking-wider">
+          <button
+            onClick={() => {
+              onClose();
+              navigate("/notifications");
+            }}
+            className="font-display text-sm font-semibold uppercase tracking-wider hover:text-primary transition-colors flex items-center gap-1.5"
+          >
+            <History className="h-3.5 w-3.5" />
             Notificaciones
-          </h3>
+          </button>
           <Button variant="ghost" size="icon" onClick={onClose} className="h-6 w-6">
             <X className="h-4 w-4" />
           </Button>
@@ -126,21 +135,17 @@ const NotificationPanel = ({ onClose }: { onClose: () => void }) => {
         <div className="max-h-80 overflow-y-auto">
           {notifications.length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground text-center">
-              Sin notificaciones
+              Sin notificaciones pendientes
             </p>
           ) : (
             notifications.map((n) => (
               <button
                 key={n.id}
                 onClick={() => handleNotificationClick(n)}
-                className={`w-full text-left p-4 border-b border-border last:border-0 transition-colors hover:bg-secondary/50 ${
-                  !n.is_read ? "bg-secondary/30" : ""
-                }`}
+                className="w-full text-left p-4 border-b border-border last:border-0 transition-colors hover:bg-secondary/50 bg-secondary/30"
               >
                 <div className="flex items-start gap-2">
-                  {!n.is_read && (
-                    <span className="mt-1.5 h-2 w-2 rounded-full bg-destructive flex-shrink-0" />
-                  )}
+                  <span className="mt-1.5 h-2 w-2 rounded-full bg-destructive flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{n.title}</p>
                     <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
