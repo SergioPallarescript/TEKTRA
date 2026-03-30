@@ -113,15 +113,25 @@ const ProjectDetail = () => {
       details: { email: inviteEmail, role: inviteRole },
     });
 
-    // Send invite email
+    // Send invite email via transactional email
     try {
-      await supabase.functions.invoke("manage-project", {
+      const inviterProfile = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("user_id", user.id)
+        .single();
+
+      await supabase.functions.invoke("send-transactional-email", {
         body: {
-          action: "send_invite_email",
-          projectId: id,
-          email: inviteEmail,
-          role: inviteRole,
-          projectName: project?.name || "",
+          templateName: "project-invitation",
+          recipientEmail: inviteEmail,
+          idempotencyKey: `project-invite-${id}-${inviteEmail}-${Date.now()}`,
+          templateData: {
+            projectName: project?.name || "",
+            roleName: `${inviteRole} — ${roleLabels[inviteRole]}`,
+            inviterName: inviterProfile.data?.full_name || "",
+            siteUrl: `${window.location.origin}/auth`,
+          },
         },
       });
     } catch (emailErr) {
