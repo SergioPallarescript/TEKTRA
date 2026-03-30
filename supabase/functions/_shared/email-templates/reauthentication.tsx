@@ -17,17 +17,24 @@ interface ReauthenticationEmailProps {
 }
 
 export const ReauthenticationEmail = ({ token }: ReauthenticationEmailProps) => (
-  <Html lang="en" dir="ltr">
-    <Head />
-    <Preview>Your verification code</Preview>
+  <Html lang="es" dir="ltr">
+    <Head>
+      <meta charSet="utf-8" />
+    </Head>
+    <Preview>Tu código de verificación — TEKTRA</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Heading style={h1}>Confirm reauthentication</Heading>
-        <Text style={text}>Use the code below to confirm your identity:</Text>
+        <Heading style={h1}>Código de verificación</Heading>
+        <Text style={text}>
+          Usa el siguiente código para confirmar tu identidad:
+        </Text>
         <Text style={codeStyle}>{token}</Text>
         <Text style={footer}>
-          This code will expire shortly. If you didn't request this, you can
-          safely ignore this email.
+          Este código caducará en breve. Si no lo has solicitado,
+          ignora este mensaje.
+        </Text>
+        <Text style={brand}>
+          TEKTRA &mdash; Dirección y Ejecución de Obra Profesional
         </Text>
       </Container>
     </Body>
@@ -36,7 +43,7 @@ export const ReauthenticationEmail = ({ token }: ReauthenticationEmailProps) => 
 
 export default ReauthenticationEmail
 
-const main = { backgroundColor: '#ffffff', fontFamily: 'Arial, sans-serif' }
+const main = { backgroundColor: '#ffffff', fontFamily: "'Montserrat', Arial, sans-serif" }
 const container = { padding: '20px 25px' }
 const h1 = {
   fontSize: '22px',
@@ -58,3 +65,4 @@ const codeStyle = {
   margin: '0 0 30px',
 }
 const footer = { fontSize: '12px', color: '#999999', margin: '30px 0 0' }
+const brand = { fontSize: '10px', color: '#bbbbbb', margin: '10px 0 0', textAlign: 'center' as const }
