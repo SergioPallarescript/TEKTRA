@@ -734,6 +734,12 @@ const CostsModule = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <FiscalDataModal
+        open={fiscalModalOpen}
+        onComplete={handleFiscalComplete}
+        onCancel={() => setFiscalModalOpen(false)}
+      />
     </AppLayout>
   );
 };
