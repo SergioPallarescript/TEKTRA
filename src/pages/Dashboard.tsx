@@ -27,6 +27,7 @@ interface Project {
   status: string;
   created_at: string;
   created_by: string | null;
+  cover_image_url: string | null;
 }
 
 const Dashboard = () => {
