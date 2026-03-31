@@ -232,20 +232,23 @@ const CostsModule = () => {
     }
   };
 
-  /* ───── Signature (for Certificación: DEM/DO; for Presupuesto: PRO) ───── */
-  const canSignHere = useMemo(() => {
-    if (!selectedClaim || !user) return false;
-    const dt = (selectedClaim as any).doc_type || "certificacion";
-    const s = selectedClaim.status;
-    if (dt === "certificacion" && s === "pending_technical") {
-      if (isDEM && !(selectedClaim as any).dem_signed_by) return true;
-      if (isDO && !(selectedClaim as any).do_signed_by) return true;
+  /* ───── Signature with fiscal data check ───── */
+  const initiateSign = async () => {
+    if (!user) return;
+    const { data: prof } = await supabase.from("profiles").select("full_name, dni_cif").eq("user_id", user.id).single();
+    if ((prof as any)?.dni_cif) {
+      performSign(prof?.full_name || "", (prof as any).dni_cif || "");
+    } else {
+      setFiscalModalOpen(true);
     }
-    if (dt === "presupuesto" && s === "pending_payment" && isPRO) return true;
-    return false;
-  }, [selectedClaim, user, isDEM, isDO, isPRO]);
+  };
 
-  const handleSign = async () => {
+  const handleFiscalComplete = (data: { full_name: string; dni_cif: string; fiscal_address: string }) => {
+    setFiscalModalOpen(false);
+    performSign(data.full_name, data.dni_cif);
+  };
+
+  const performSign = async (signerName: string, signerDni: string) => {
     if (!selectedClaim || !user || !pdfBlobUrl || !signatureRef.current) return;
     if (signatureRef.current.isEmpty()) { toast.error("Dibuja tu firma"); return; }
     setSigning(true);
@@ -278,13 +281,15 @@ const CostsModule = () => {
       const boxX = 36 + existingSignatures * 260;
       const boxY = 36;
 
-      lastPage.drawRectangle({ x: boxX, y: boxY, width: 250, height: 110, color: rgb(0.97, 0.97, 0.97), borderColor: rgb(0.2, 0.2, 0.2), borderWidth: 1 });
-      lastPage.drawText(`Firma ${roleName} — TEKTRA`, { x: boxX + 12, y: boxY + 90, size: 9, font });
-      lastPage.drawText(`Hash: ${hash}`, { x: boxX + 12, y: boxY + 76, size: 8, font });
-      lastPage.drawText(`Fecha: ${new Date(signedAt).toLocaleString("es-ES")}`, { x: boxX + 12, y: boxY + 64, size: 8, font });
-      lastPage.drawText(`Usuario: ${user.id.slice(0, 8)}… | Rol: ${roleName} | Geo: ${geo || "N/A"}`, { x: boxX + 12, y: boxY + 52, size: 7, font, color: rgb(0.4, 0.4, 0.4) });
-      const sigW = 160, sigH = Math.min((sigImg.height / sigImg.width) * sigW, 36);
-      lastPage.drawImage(sigImg, { x: boxX + 12, y: boxY + 8, width: sigW, height: sigH });
+      lastPage.drawRectangle({ x: boxX, y: boxY, width: 250, height: 120, color: rgb(0.97, 0.97, 0.97), borderColor: rgb(0.2, 0.2, 0.2), borderWidth: 1 });
+      lastPage.drawText(`Firma ${roleName} — TEKTRA`, { x: boxX + 12, y: boxY + 102, size: 9, font });
+      lastPage.drawText(signerName, { x: boxX + 12, y: boxY + 90, size: 8, font, color: rgb(0.1, 0.1, 0.1) });
+      lastPage.drawText(`DNI/CIF: ${signerDni}`, { x: boxX + 12, y: boxY + 78, size: 8, font, color: rgb(0.1, 0.1, 0.1) });
+      lastPage.drawText(`Hash: ${hash}`, { x: boxX + 12, y: boxY + 66, size: 7, font, color: rgb(0.4, 0.4, 0.4) });
+      lastPage.drawText(`Fecha: ${new Date(signedAt).toLocaleString("es-ES")}`, { x: boxX + 12, y: boxY + 56, size: 7, font, color: rgb(0.4, 0.4, 0.4) });
+      lastPage.drawText(`Rol: ${roleName} | Geo: ${geo || "N/A"}`, { x: boxX + 12, y: boxY + 46, size: 6, font, color: rgb(0.5, 0.5, 0.5) });
+      const sigW = 160, sigH = Math.min((sigImg.height / sigImg.width) * sigW, 32);
+      lastPage.drawImage(sigImg, { x: boxX + 12, y: boxY + 6, width: sigW, height: sigH });
 
       const signedBytes = await pdfDoc.save();
       const signedBlob = new Blob([Uint8Array.from(signedBytes)], { type: "application/pdf" });
@@ -300,7 +305,6 @@ const CostsModule = () => {
       if (dt === "certificacion") {
         if (isDEM) { updates.dem_signed_by = user.id; updates.dem_signed_at = signedAt; }
         if (isDO) { updates.do_signed_by = user.id; updates.do_signed_at = signedAt; }
-        // Check if both will be signed after this
         const demDone = isDEM ? true : !!(selectedClaim as any).dem_signed_by;
         const doDone = isDO ? true : !!(selectedClaim as any).do_signed_by;
         if (demDone && doDone) updates.status = "pending_payment";
@@ -313,14 +317,13 @@ const CostsModule = () => {
       await supabase.from("cost_claims").update(updates).eq("id", selectedClaim.id);
       await supabase.from("audit_logs").insert({
         user_id: user.id, project_id: projectId, action: "cost_document_signed",
-        details: { claim_id: selectedClaim.id, hash, role: roleName, geo_location: geo },
+        details: { claim_id: selectedClaim.id, hash, role: roleName, geo_location: geo, signer_name: signerName, signer_dni: signerDni },
         geo_location: geo,
       });
 
       signatureRef.current.clear();
       toast.success("Documento firmado");
       await fetchClaims();
-      // Refresh selected
       const { data: refreshed } = await supabase.from("cost_claims").select("*").eq("id", selectedClaim.id).single();
       if (refreshed) setSelectedClaim(refreshed);
     } catch (err: any) {
