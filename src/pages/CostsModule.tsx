@@ -586,7 +586,7 @@ const CostsModule = () => {
                       <SignatureCanvas ref={signatureRef} />
                       <div className="flex flex-wrap gap-2">
                         <Button variant="outline" onClick={() => signatureRef.current?.clear()}>Limpiar firma</Button>
-                        <Button onClick={handleSign} disabled={signing} className="gap-2 font-display text-xs uppercase tracking-wider">
+                        <Button onClick={initiateSign} disabled={signing} className="gap-2 font-display text-xs uppercase tracking-wider">
                           {signing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSignature className="h-4 w-4" />}
                           {signing ? "Firmando..." : "Firmar y Validar"}
                         </Button>
