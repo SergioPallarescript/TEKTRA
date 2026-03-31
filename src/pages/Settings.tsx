@@ -67,6 +67,14 @@ const Settings = () => {
               <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Correo Electrónico</Label>
               <Input value={profile?.email || user?.email || ""} disabled className="opacity-60" />
             </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">DNI / CIF</Label>
+              <Input value={dniCif} onChange={(e) => setDniCif(e.target.value)} placeholder="12345678A o B12345678" />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Dirección Fiscal</Label>
+              <Input value={fiscalAddress} onChange={(e) => setFiscalAddress(e.target.value)} placeholder="Calle Mayor 1, 28001 Madrid" />
+            </div>
             <Button type="submit" disabled={saving} className="font-display text-xs uppercase tracking-wider">
               {saving ? "Guardando..." : "Guardar Cambios"}
             </Button>
