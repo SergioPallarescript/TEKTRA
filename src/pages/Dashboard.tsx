@@ -144,6 +144,17 @@ const Dashboard = () => {
     if (!editProject || !user) return;
     setEditSubmitting(true);
     try {
+      let coverImageUrl = editProject.cover_image_url;
+
+      // Upload cover image if provided
+      if (coverFile) {
+        const safeName = sanitizeFileName(coverFile.name);
+        const path = `project-covers/${editProject.id}/${Date.now()}_${safeName}`;
+        const { error: upErr } = await uploadFileWithFallback({ path, file: coverFile });
+        if (upErr) throw new Error("Error al subir la imagen de portada");
+        coverImageUrl = path;
+      }
+
       const { data: session } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("manage-project", {
         body: {
@@ -153,6 +164,7 @@ const Dashboard = () => {
           description: editData.description,
           address: editData.address,
           status: editData.status,
+          cover_image_url: coverImageUrl,
         },
         headers: { Authorization: `Bearer ${session.session?.access_token}` },
       });
@@ -160,6 +172,7 @@ const Dashboard = () => {
       if (res.data?.error) throw new Error(res.data.error);
       toast.success("Proyecto actualizado");
       setEditProject(null);
+      setCoverFile(null);
       fetchProjects();
     } catch (err: any) {
       toast.error(err.message || "Error al editar el proyecto");
