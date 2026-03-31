@@ -79,12 +79,16 @@ Deno.serve(async (req) => {
     }
 
     if (action === "update") {
-      const payload = {
+      const payload: any = {
         name: typeof body.name === "string" ? body.name.trim() : "",
         description: typeof body.description === "string" && body.description.trim() ? body.description.trim() : null,
         address: typeof body.address === "string" && body.address.trim() ? body.address.trim() : null,
         status: typeof body.status === "string" && body.status.trim() ? body.status.trim() : "active",
       };
+
+      if (body.cover_image_url !== undefined) {
+        payload.cover_image_url = typeof body.cover_image_url === "string" && body.cover_image_url.trim() ? body.cover_image_url.trim() : null;
+      }
 
       if (!payload.name) {
         return new Response(JSON.stringify({ error: "El nombre del proyecto es obligatorio" }), {

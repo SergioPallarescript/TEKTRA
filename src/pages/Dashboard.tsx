@@ -366,6 +366,15 @@ const Dashboard = () => {
               <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Estado</Label>
               <Input value={editData.status} onChange={(e) => setEditData(prev => ({ ...prev, status: e.target.value }))} placeholder="active, completed, cancelled" />
             </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <ImagePlus className="h-3.5 w-3.5" /> Imagen de Portada
+              </Label>
+              <Input type="file" accept="image/*" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} className="cursor-pointer" />
+              {editProject?.cover_image_url && !coverFile && (
+                <p className="text-xs text-muted-foreground">Ya tiene imagen de portada</p>
+              )}
+            </div>
             <Button type="submit" disabled={editSubmitting} className="w-full font-display text-xs uppercase tracking-wider">
               {editSubmitting ? "Guardando..." : "Guardar Cambios"}
             </Button>
