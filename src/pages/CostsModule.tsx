@@ -82,6 +82,7 @@ const CostsModule = () => {
   const [editFile, setEditFile] = useState<File | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [deleteClaim, setDeleteClaim] = useState<string | null>(null);
+  const [fiscalModalOpen, setFiscalModalOpen] = useState(false);
 
   const canSubmit = isCON;
 
