@@ -232,6 +232,19 @@ const CostsModule = () => {
     }
   };
 
+  /* ───── Signature (for Certificación: DEM/DO; for Presupuesto: PRO) ───── */
+  const canSignHere = useMemo(() => {
+    if (!selectedClaim || !user) return false;
+    const dt = (selectedClaim as any).doc_type || "certificacion";
+    const s = selectedClaim.status;
+    if (dt === "certificacion" && s === "pending_technical") {
+      if (isDEM && !(selectedClaim as any).dem_signed_by) return true;
+      if (isDO && !(selectedClaim as any).do_signed_by) return true;
+    }
+    if (dt === "presupuesto" && s === "pending_payment" && isPRO) return true;
+    return false;
+  }, [selectedClaim, user, isDEM, isDO, isPRO]);
+
   /* ───── Signature with fiscal data check ───── */
   const initiateSign = async () => {
     if (!user) return;
