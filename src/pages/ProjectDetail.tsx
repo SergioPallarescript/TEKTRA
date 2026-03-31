@@ -117,9 +117,13 @@ const ProjectDetail = () => {
     try {
       const inviterProfile = await supabase
         .from("profiles")
-        .select("full_name")
+        .select("full_name, role")
         .eq("user_id", user.id)
         .single();
+
+      const inviterRoleLabel = inviterProfile.data?.role
+        ? `${inviterProfile.data.role} — ${roleLabels[inviterProfile.data.role as AppRole] || inviterProfile.data.role}`
+        : "";
 
       await supabase.functions.invoke("send-transactional-email", {
         body: {
@@ -130,6 +134,7 @@ const ProjectDetail = () => {
             projectName: project?.name || "",
             roleName: `${inviteRole} — ${roleLabels[inviteRole]}`,
             inviterName: inviterProfile.data?.full_name || "",
+            inviterRole: inviterRoleLabel,
             siteUrl: `${window.location.origin}/auth`,
           },
         },

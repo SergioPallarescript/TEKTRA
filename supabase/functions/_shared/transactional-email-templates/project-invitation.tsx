@@ -20,6 +20,7 @@ interface ProjectInvitationProps {
   projectName?: string
   roleName?: string
   inviterName?: string
+  inviterRole?: string
   siteUrl?: string
 }
 
@@ -27,6 +28,7 @@ const ProjectInvitationEmail = ({
   projectName,
   roleName,
   inviterName,
+  inviterRole,
   siteUrl = 'https://tektra.es',
 }: ProjectInvitationProps) => (
   <Html lang="es" dir="ltr">
@@ -42,8 +44,16 @@ const ProjectInvitationEmail = ({
           Has sido invitado a un proyecto en TEKTRA
         </Heading>
         <Text style={text}>
-          {inviterName ? `${inviterName} te ha` : 'Se te ha'} invitado a
-          participar en el proyecto{' '}
+          {inviterName ? (
+            <>
+              <strong>{inviterName}</strong>
+              {inviterRole ? <> ({inviterRole})</> : null}
+              {' '}te ha
+            </>
+          ) : (
+            'Se te ha'
+          )}{' '}
+          invitado a participar en el proyecto{' '}
           {projectName ? <strong>{projectName}</strong> : 'de obra'} dentro de
           la plataforma TEKTRA.
         </Text>
@@ -82,6 +92,7 @@ export const template = {
     projectName: 'Residencial Los Olivos',
     roleName: 'Director de Obra (DO)',
     inviterName: 'Juan Pérez',
+    inviterRole: 'DEM — Dir. Ejecución Material (Arq. Técnico)',
     siteUrl: 'https://tektra.es',
   },
 } satisfies TemplateEntry
