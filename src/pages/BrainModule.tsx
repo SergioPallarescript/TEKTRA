@@ -6,7 +6,7 @@ import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { ArrowLeft, Brain, Send, Bot, User, Loader2, FileText } from "lucide-react";
+import { ArrowLeft, Brain, Send, Bot, User, Loader2, FileText, Mic, MicOff } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { syncProjectMemory } from "@/lib/projectMemory";
 
