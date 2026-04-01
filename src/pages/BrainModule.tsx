@@ -28,6 +28,8 @@ const BrainModule = () => {
   const [incidentsHistory, setIncidentsHistory] = useState<string>("");
   const [dynamicMemory, setDynamicMemory] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const voiceRecognitionRef = useRef<any>(null);
 
   useEffect(() => {
     if (!projectId) return;
