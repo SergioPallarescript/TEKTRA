@@ -30,6 +30,40 @@ interface Project {
   cover_image_url: string | null;
 }
 
+/** Compress image to max 1000px WebP at 80% quality */
+const compressCoverImage = (file: File): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const MAX = 1000;
+      let w = img.width, h = img.height;
+      if (w > MAX || h > MAX) {
+        const ratio = Math.min(MAX / w, MAX / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { reject(new Error("Canvas not supported")); return; }
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { reject(new Error("Compression failed")); return; }
+          resolve(new File([blob], "cover.webp", { type: "image/webp" }));
+        },
+        "image/webp",
+        0.8
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
+    img.src = url;
+  });
+};
+
+
 const Dashboard = () => {
   const { user, profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -146,11 +180,11 @@ const Dashboard = () => {
     try {
       let coverImageUrl = editProject.cover_image_url;
 
-      // Upload cover image if provided
+      // Upload cover image if provided (compress to WebP first)
       if (coverFile) {
-        const safeName = sanitizeFileName(coverFile.name);
-        const path = `project-covers/${editProject.id}/${Date.now()}_${safeName}`;
-        const { error: upErr } = await uploadFileWithFallback({ path, file: coverFile });
+        const compressed = await compressCoverImage(coverFile);
+        const path = `project-covers/${editProject.id}/${Date.now()}_cover.webp`;
+        const { error: upErr } = await uploadFileWithFallback({ path, file: compressed });
         if (upErr) throw new Error("Error al subir la imagen de portada");
         coverImageUrl = path;
       }

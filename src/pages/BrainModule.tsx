@@ -6,7 +6,7 @@ import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { ArrowLeft, Brain, Send, Bot, User, Loader2, FileText } from "lucide-react";
+import { ArrowLeft, Brain, Send, Bot, User, Loader2, FileText, Mic, MicOff } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { syncProjectMemory } from "@/lib/projectMemory";
 
@@ -28,6 +28,8 @@ const BrainModule = () => {
   const [incidentsHistory, setIncidentsHistory] = useState<string>("");
   const [dynamicMemory, setDynamicMemory] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const voiceRecognitionRef = useRef<any>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -206,6 +208,42 @@ const BrainModule = () => {
     }
   };
 
+  const toggleVoiceRecording = () => {
+    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+      toast.error("Tu navegador no soporta reconocimiento de voz"); return;
+    }
+    if (voiceRecording) {
+      voiceRecognitionRef.current?.stop();
+      voiceRecognitionRef.current = null;
+      setVoiceRecording(false);
+      return;
+    }
+    const startRecognition = () => {
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SR();
+      voiceRecognitionRef.current = recognition;
+      recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+        setInput(transcript);
+      };
+      recognition.onerror = (e: any) => {
+        if (e.error === "no-speech" || e.error === "aborted") return;
+        setVoiceRecording(false); voiceRecognitionRef.current = null;
+        toast.error("Error en reconocimiento de voz");
+      };
+      recognition.onend = () => {
+        if (voiceRecognitionRef.current) {
+          try { recognition.start(); } catch { /* already started */ }
+        }
+      };
+      recognition.start();
+    };
+    startRecognition();
+    setVoiceRecording(true);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
@@ -307,7 +345,19 @@ const BrainModule = () => {
 
         {/* Input */}
         <div className="border-t border-border px-4 py-3">
-          <div className="flex gap-2 max-w-3xl mx-auto">
+          <div className="flex gap-2 max-w-3xl mx-auto items-end">
+            <Button
+              type="button"
+              variant={voiceRecording ? "destructive" : "outline"}
+              size="icon"
+              onClick={toggleVoiceRecording}
+              className="shrink-0 relative"
+            >
+              {voiceRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              {voiceRecording && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full animate-pulse" />
+              )}
+            </Button>
             <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Pregunta sobre los documentos del proyecto..." rows={1} className="resize-none min-h-[40px] max-h-[120px]" />
             <Button onClick={sendMessage} disabled={!input.trim() || isLoading} size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
           </div>

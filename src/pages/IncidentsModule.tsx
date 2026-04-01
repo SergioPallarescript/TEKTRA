@@ -176,26 +176,35 @@ const IncidentsModule = () => {
     }
     if (editRecording) {
       editRecognitionRef.current?.stop();
+      editRecognitionRef.current = null;
       setEditRecording(false);
+      if (editContent.trim()) cleanEditDictation(editContent);
       return;
     }
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    editRecognitionRef.current = recognition;
-    recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
-    let finalTranscript = "";
-    recognition.onresult = (event: any) => {
-      let transcript = "";
-      for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
-      finalTranscript = transcript;
-      setEditContent(transcript);
+    const startRecognition = () => {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      editRecognitionRef.current = recognition;
+      recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+        setEditContent(transcript);
+      };
+      recognition.onerror = (e: any) => {
+        if (e.error === "no-speech" || e.error === "aborted") return;
+        setEditRecording(false); editRecognitionRef.current = null;
+        toast.error("Error en reconocimiento de voz");
+      };
+      recognition.onend = () => {
+        if (editRecognitionRef.current) {
+          try { recognition.start(); } catch { /* already started */ }
+        }
+      };
+      recognition.start();
     };
-    recognition.onerror = () => { setEditRecording(false); toast.error("Error en reconocimiento de voz"); };
-    recognition.onend = () => {
-      setEditRecording(false);
-      if (finalTranscript.trim()) cleanEditDictation(finalTranscript);
-    };
-    recognition.start(); setEditRecording(true);
+    startRecognition();
+    setEditRecording(true);
   };
 
   const handleDelete = async () => {
@@ -239,26 +248,35 @@ const IncidentsModule = () => {
     }
     if (recording) {
       recognitionRef.current?.stop();
+      recognitionRef.current = null;
       setRecording(false);
+      if (content.trim()) cleanDictation(content);
       return;
     }
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
-    recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
-    let finalTranscript = "";
-    recognition.onresult = (event: any) => {
-      let transcript = "";
-      for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
-      finalTranscript = transcript;
-      setContent(transcript);
+    const startRecognition = () => {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+      recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+        setContent(transcript);
+      };
+      recognition.onerror = (e: any) => {
+        if (e.error === "no-speech" || e.error === "aborted") return;
+        setRecording(false); recognitionRef.current = null;
+        toast.error("Error en reconocimiento de voz");
+      };
+      recognition.onend = () => {
+        if (recognitionRef.current) {
+          try { recognition.start(); } catch { /* already started */ }
+        }
+      };
+      recognition.start();
     };
-    recognition.onerror = () => { setRecording(false); toast.error("Error en reconocimiento de voz"); };
-    recognition.onend = () => {
-      setRecording(false);
-      if (finalTranscript.trim()) cleanDictation(finalTranscript);
-    };
-    recognition.start(); setRecording(true);
+    startRecognition();
+    setRecording(true);
   };
 
   return (
