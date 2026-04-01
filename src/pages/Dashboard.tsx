@@ -64,6 +64,7 @@ const compressCoverImage = (file: File): Promise<File> => {
 };
 
 
+const Dashboard = () => {
   const { user, profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
