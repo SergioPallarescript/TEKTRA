@@ -345,7 +345,19 @@ const BrainModule = () => {
 
         {/* Input */}
         <div className="border-t border-border px-4 py-3">
-          <div className="flex gap-2 max-w-3xl mx-auto">
+          <div className="flex gap-2 max-w-3xl mx-auto items-end">
+            <Button
+              type="button"
+              variant={voiceRecording ? "destructive" : "outline"}
+              size="icon"
+              onClick={toggleVoiceRecording}
+              className="shrink-0 relative"
+            >
+              {voiceRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              {voiceRecording && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full animate-pulse" />
+              )}
+            </Button>
             <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Pregunta sobre los documentos del proyecto..." rows={1} className="resize-none min-h-[40px] max-h-[120px]" />
             <Button onClick={sendMessage} disabled={!input.trim() || isLoading} size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
           </div>
