@@ -216,7 +216,7 @@ const ProjectDetail = () => {
               if (!open) setInviteSuccess(null);
             }}>
               <DialogTrigger asChild>
-                <Button variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
+                <Button data-tour="invite-agent" variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
                   <UserPlus className="h-4 w-4" />
                   Invitar Agente
                 </Button>
