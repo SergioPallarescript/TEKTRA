@@ -62,10 +62,12 @@ Deno.serve(async (req) => {
   let templateData: Record<string, any> = {}
   try {
     const body = await req.json()
-    templateName = body.templateName || body.template_name
-    recipientEmail = body.recipientEmail || body.recipient_email
+    templateName = body.templateName || body.template_name || body.template
+    recipientEmail = body.recipientEmail || body.recipient_email || body.to
     if (body.templateData && typeof body.templateData === 'object') {
       templateData = body.templateData
+    } else if (body.data && typeof body.data === 'object') {
+      templateData = body.data
     }
   } catch {
     return new Response(

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import OnboardingManager from "@/components/admin/OnboardingManager";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
@@ -18,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Shield, ArrowLeft, Save, Users, FolderPlus, Search, Trash2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -176,21 +178,27 @@ const GlobalAdmin = () => {
           </p>
         </div>
 
-        <div className="flex items-end justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Shield className="h-7 w-7 text-primary" />
-            <h1 className="font-display text-3xl font-bold tracking-tighter">Gestión de Usuarios</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por nombre o email..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-64 h-9 text-sm"
-            />
-          </div>
+        <div className="flex items-center gap-3 mb-6">
+          <Shield className="h-7 w-7 text-primary" />
+          <h1 className="font-display text-3xl font-bold tracking-tighter">Administración</h1>
         </div>
+
+        <Tabs defaultValue="users" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="users" className="gap-1"><Users className="h-3.5 w-3.5" /> Usuarios</TabsTrigger>
+            <TabsTrigger value="tutorials" className="gap-1">Tutoriales</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="users" className="space-y-4">
+            <div className="flex items-center gap-2 justify-end">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nombre o email..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-64 h-9 text-sm"
+              />
+            </div>
 
         <div className="rounded-lg border border-border bg-card overflow-hidden">
           <Table>
@@ -249,6 +257,12 @@ const GlobalAdmin = () => {
             </TableBody>
           </Table>
         </div>
+          </TabsContent>
+
+          <TabsContent value="tutorials">
+            <OnboardingManager />
+          </TabsContent>
+        </Tabs>
 
         {/* Edit User Dialog */}
         <Dialog open={!!editingUser} onOpenChange={(o) => !o && setEditingUser(null)}>

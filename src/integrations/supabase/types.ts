@@ -531,6 +531,45 @@ export type Database = {
           },
         ]
       }
+      onboarding_steps: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          is_active: boolean
+          page_route: string
+          role: string
+          step_order: number
+          target_element: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          page_route: string
+          role: string
+          step_order?: number
+          target_element?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          page_route?: string
+          role?: string
+          step_order?: number
+          target_element?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       order_validations: {
         Row: {
           geo_location: string | null
@@ -1006,6 +1045,27 @@ export type Database = {
           id?: string
           metadata?: Json | null
           reason?: string
+        }
+        Relationships: []
+      }
+      user_onboarding_status: {
+        Row: {
+          completed_at: string
+          id: string
+          page_route: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string
+          id?: string
+          page_route: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string
+          id?: string
+          page_route?: string
+          user_id?: string
         }
         Relationships: []
       }
