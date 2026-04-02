@@ -1014,6 +1014,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_delete_auth_user: { Args: { _user_id: string }; Returns: undefined }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
