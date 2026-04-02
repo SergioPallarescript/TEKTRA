@@ -71,6 +71,16 @@ const GlobalAdmin = () => {
   const [assignRole, setAssignRole] = useState<AppRole>("CON");
   const [userMemberships, setUserMemberships] = useState<MembershipInfo[]>([]);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+  const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
+
+  const deleteUser = async () => {
+    if (!deletingUser) return;
+    const { error } = await supabase.rpc("admin_delete_auth_user" as any, { _user_id: deletingUser.user_id });
+    if (error) { toast.error("Error al eliminar: " + error.message); return; }
+    toast.success("Usuario eliminado por completo");
+    setDeletingUser(null);
+    fetchData();
+  };
 
   const isAdmin = ADMIN_EMAILS.includes(profile?.email?.toLowerCase() || "");
 
