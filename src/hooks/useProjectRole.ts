@@ -38,7 +38,7 @@ export function useProjectRole(projectId: string | undefined): ProjectRoleResult
         // 1. Try by user_id first
         const { data: membership } = await supabase
           .from("project_members")
-          .select("role, secondary_role")
+          .select("role, secondary_role, status")
           .eq("project_id", projectId)
           .eq("user_id", user.id)
           .maybeSingle();
