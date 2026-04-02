@@ -17,7 +17,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Shield, ArrowLeft, Save, Users, FolderPlus, Search } from "lucide-react";
+import { Shield, ArrowLeft, Save, Users, FolderPlus, Search, Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type AppRole = "DO" | "DEM" | "CON" | "PRO" | "CSS";
 
@@ -67,6 +71,16 @@ const GlobalAdmin = () => {
   const [assignRole, setAssignRole] = useState<AppRole>("CON");
   const [userMemberships, setUserMemberships] = useState<MembershipInfo[]>([]);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+  const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
+
+  const deleteUser = async () => {
+    if (!deletingUser) return;
+    const { error } = await supabase.rpc("admin_delete_auth_user" as any, { _user_id: deletingUser.user_id });
+    if (error) { toast.error("Error al eliminar: " + error.message); return; }
+    toast.success("Usuario eliminado por completo");
+    setDeletingUser(null);
+    fetchData();
+  };
 
   const isAdmin = ADMIN_EMAILS.includes(profile?.email?.toLowerCase() || "");
 
@@ -225,6 +239,9 @@ const GlobalAdmin = () => {
                       <Button variant="outline" size="sm" className="text-xs gap-1" onClick={() => openAssign(u)}>
                         <FolderPlus className="h-3 w-3" /> Proyectos
                       </Button>
+                      <Button variant="destructive" size="sm" className="text-xs gap-1" onClick={() => setDeletingUser(u)}>
+                        <Trash2 className="h-3 w-3" /> Eliminar
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))
@@ -320,6 +337,25 @@ const GlobalAdmin = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Delete User Confirmation */}
+        <AlertDialog open={!!deletingUser} onOpenChange={(o) => !o && setDeletingUser(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Eliminar usuario</AlertDialogTitle>
+              <AlertDialogDescription>
+                ¿Estás seguro de que deseas eliminar a <strong>{deletingUser?.full_name || deletingUser?.email}</strong>? 
+                Se borrarán todos sus datos, membresías y su cuenta de autenticación. Esta acción no se puede deshacer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={deleteUser} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Eliminar permanentemente
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
