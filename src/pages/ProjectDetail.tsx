@@ -365,7 +365,7 @@ const ProjectDetail = () => {
 
         {/* Team */}
         <div className="mb-8">
-          <h2 className="font-display text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3 flex items-center gap-2">
+        <h2 data-tour="project-team" className="font-display text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3 flex items-center gap-2">
             <Users className="h-3.5 w-3.5" />
             Equipo del Proyecto
           </h2>
