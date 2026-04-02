@@ -624,10 +624,10 @@ const DWGViewer = () => {
             </div>
 
             {/* Toolbar */}
-            <div className="flex items-center gap-1 mb-3 bg-card border border-border rounded-lg p-1.5 flex-wrap">
+            <div data-tour="dwg-toolbar" className="flex items-center gap-1 mb-3 bg-card border border-border rounded-lg p-1.5 flex-wrap">
               <Button variant={tool === "move" ? "default" : "ghost"} size="sm" onClick={() => setTool("move")} className="gap-1 text-xs"><Move className="h-3.5 w-3.5" /> Mover</Button>
               <div className="w-px h-6 bg-border mx-1" />
-              <Button variant={tool === "calibrate" ? "default" : "ghost"} size="sm"
+              <Button data-tour="dwg-calibrate" variant={tool === "calibrate" ? "default" : "ghost"} size="sm"
                 onClick={() => { setTool("calibrate"); setCalibPoints([]); setCurrentPoints([]); }}
                 className="gap-1 text-xs">
                 <Target className="h-3.5 w-3.5" /> {calibration ? "Recalibrar" : "① Calibrar"}
