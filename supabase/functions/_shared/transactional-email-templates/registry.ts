@@ -10,7 +10,9 @@ export interface TemplateEntry {
 }
 
 import { template as projectInvitation } from './project-invitation.tsx'
+import { template as supportQuery } from './support-query.tsx'
 
 export const TEMPLATES: Record<string, TemplateEntry> = {
   'project-invitation': projectInvitation,
+  'support-query': supportQuery,
 }
