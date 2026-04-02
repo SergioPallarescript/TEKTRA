@@ -261,7 +261,7 @@ const Dashboard = () => {
             {isAdmin && (
               <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button className="font-display text-xs uppercase tracking-wider gap-2">
+                  <Button data-tour="new-project" className="font-display text-xs uppercase tracking-wider gap-2">
                     <Plus className="h-4 w-4" />Nuevo Proyecto
                   </Button>
                 </DialogTrigger>
