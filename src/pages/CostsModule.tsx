@@ -85,6 +85,11 @@ const CostsModule = () => {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [deleteClaim, setDeleteClaim] = useState<string | null>(null);
   const [fiscalModalOpen, setFiscalModalOpen] = useState(false);
+  const [signMethod, setSignMethod] = useState<string>(() => {
+    const saved = localStorage.getItem("tektra_sign_method");
+    return saved === "autofirma" ? "certificate" : (saved || "certificate");
+  });
+  const [originalPdfBuffer, setOriginalPdfBuffer] = useState<ArrayBuffer | null>(null);
 
   const canSubmit = isCON;
 
