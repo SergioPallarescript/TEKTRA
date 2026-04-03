@@ -183,7 +183,7 @@ export async function signPdfWithP12(
   const stampedBytes = await addVisualStamp(new Uint8Array(originalPdfBytes), signer);
 
   // Step 2: Add signature placeholder to the PDF
-  const pdfWithPlaceholder = addSignaturePlaceholder(stampedBytes);
+  const pdfWithPlaceholder = addSignaturePlaceholder(stampedBytes, signer.geo);
 
   // Step 3: Calculate hash of ByteRange segments
   const { byteRange, contentsStart, contentsEnd } = findByteRange(pdfWithPlaceholder);
