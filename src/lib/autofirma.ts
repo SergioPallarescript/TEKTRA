@@ -8,25 +8,34 @@
  *  1. Intentar conectar con el servidor local de AutoFirma (localhost:63117-63120)
  *  2. Si no disponible, lanzar protocolo afirma://
  *  3. Si tampoco funciona, indicar al usuario que instale AutoFirma
- *
- * El servidor local de AutoFirma escucha en HTTPS en localhost y acepta
- * peticiones de firma con datos en Base64.
  */
 
 const AUTOFIRMA_PORTS = [63117, 63118, 63119, 63120];
-const AUTOFIRMA_TIMEOUT = 4000;
+const AUTOFIRMA_TIMEOUT = 3000;
 
 export interface AutoFirmaStatus {
   available: boolean;
   port?: number;
   method: "local-server" | "protocol" | "unavailable";
+  isMobile: boolean;
+}
+
+function detectMobile(): boolean {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
 /**
  * Detecta si AutoFirma está disponible en el sistema.
  */
 export async function detectAutoFirma(): Promise<AutoFirmaStatus> {
-  // Try local server first
+  const isMobile = detectMobile();
+
+  // On mobile, AutoFirma local server doesn't run — only protocol handler
+  if (isMobile) {
+    return { available: false, method: "protocol", isMobile: true };
+  }
+
+  // Try local server on desktop
   for (const port of AUTOFIRMA_PORTS) {
     try {
       const controller = new AbortController();
@@ -41,24 +50,19 @@ export async function detectAutoFirma(): Promise<AutoFirmaStatus> {
       clearTimeout(timeout);
 
       if (response.ok || response.status === 200) {
-        return { available: true, port, method: "local-server" };
+        return { available: true, port, method: "local-server", isMobile: false };
       }
     } catch {
       // Port not listening, try next
     }
   }
 
-  // Check if protocol handler might be registered
-  // We can't reliably detect this, so we offer it as an option
-  return { available: false, method: "protocol" };
+  // Desktop but no local server found — offer protocol as fallback
+  return { available: false, method: "protocol", isMobile: false };
 }
 
 /**
  * Firma un PDF usando el servidor local de AutoFirma.
- *
- * @param pdfBase64 - PDF en Base64
- * @param port - Puerto del servidor local
- * @returns PDF firmado en Base64
  */
 export async function signWithLocalServer(
   pdfBase64: string,
@@ -81,7 +85,7 @@ export async function signWithLocalServer(
   };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120000); // 2 min for user interaction
+  const timeout = setTimeout(() => controller.abort(), 120000);
 
   try {
     const response = await fetch(`https://127.0.0.1:${port}/afirma`, {
@@ -110,13 +114,20 @@ export async function signWithLocalServer(
 
 /**
  * Lanza AutoFirma vía protocolo URL (afirma://).
- * Este método abre la aplicación AutoFirma instalada localmente.
+ * Works on both desktop (if AutoFirma installed) and Android.
  *
- * Limitación: no podemos recibir el resultado directamente en el navegador.
- * Se usa como fallback cuando el servidor local no está activo.
+ * On Android, the AutoFirma app registers as handler for this scheme.
+ * On desktop, the OS protocol handler opens the installed AutoFirma app.
  */
-export function launchAutoFirmaProtocol(pdfBase64: string): void {
-  // The afirma:// protocol format
+export function launchAutoFirmaProtocol(pdfBase64: string): boolean {
+  const isMobile = detectMobile();
+
+  // For large PDFs, the protocol URL may be too long.
+  // AutoFirma protocol has a practical limit of ~2MB in the URL.
+  if (pdfBase64.length > 2_000_000) {
+    return false; // Caller should show an error about file size
+  }
+
   const params = new URLSearchParams({
     op: "sign",
     algorithm: "SHA256withRSA",
@@ -126,28 +137,33 @@ export function launchAutoFirmaProtocol(pdfBase64: string): void {
 
   const url = `afirma://sign?${params.toString()}`;
 
-  // Create a hidden iframe to trigger the protocol without navigating away
-  const iframe = document.createElement("iframe");
-  iframe.style.display = "none";
-  iframe.src = url;
-  document.body.appendChild(iframe);
+  if (isMobile) {
+    // On mobile, use window.location for better app switching
+    window.location.href = url;
+  } else {
+    // On desktop, use window.open which is less disruptive
+    const w = window.open(url, "_blank");
+    // Some browsers block window.open for custom protocols; fallback to location
+    if (!w) {
+      window.location.href = url;
+    }
+  }
 
-  // Clean up after a delay
-  setTimeout(() => {
-    document.body.removeChild(iframe);
-  }, 5000);
+  return true;
 }
 
 /**
- * Convierte ArrayBuffer a Base64.
+ * Convierte ArrayBuffer a Base64 sin desbordar la pila.
  */
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const CHUNK = 8192;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+    parts.push(String.fromCharCode.apply(null, slice as unknown as number[]));
   }
-  return btoa(binary);
+  return btoa(parts.join(""));
 }
 
 /**
