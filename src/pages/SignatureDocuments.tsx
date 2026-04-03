@@ -334,7 +334,52 @@ const SignatureDocuments = () => {
     }
   };
 
-  const handleDownload = () => {
+  const handleCertSign = useCallback(async (signedPdfBytes: Uint8Array, metadata: CertSignMetadata) => {
+    if (!projectId || !selectedDocument || !user) return;
+    const signedAt = new Date().toISOString();
+    const signedBlob = new Blob([signedPdfBytes], { type: "application/pdf" });
+    const signedFile = new File([signedBlob], `firmado_${sanitizeFileName(selectedDocument.original_file_name)}`, { type: "application/pdf" });
+    const signedPath = `signature-documents/${projectId}/signed/${selectedDocument.id}_${Date.now()}.pdf`;
+    const { error: uploadError } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
+    if (uploadError) throw uploadError;
+
+    await (supabase.from("signature_documents" as any) as any)
+      .update({
+        status: "signed", signed_file_path: signedPath, signed_at: signedAt,
+        validation_hash: metadata.validationHash, signature_type: "p12",
+        certificate_cn: metadata.certificateCN, certificate_serial: metadata.certificateSerial,
+      })
+      .eq("id", selectedDocument.id);
+
+    await supabase.from("audit_logs").insert({
+      user_id: user.id, project_id: projectId,
+      action: "signature_document_signed_p12",
+      details: {
+        document_id: selectedDocument.id, hash: metadata.validationHash,
+        geo_location: metadata.geo, signer_name: metadata.signerName, signer_dni: metadata.signerDni,
+        certificate_cn: metadata.certificateCN, certificate_serial: metadata.certificateSerial,
+      },
+      geo_location: metadata.geo,
+    });
+
+    // Trigger download
+    const downloadUrl = URL.createObjectURL(signedBlob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = `${selectedDocument.original_file_name.replace(/\.pdf$/i, "")}_FIRMADO.pdf`;
+    a.click();
+    URL.revokeObjectURL(downloadUrl);
+
+    toast.success("Documento firmado con certificado digital");
+    await fetchDocuments();
+    setSelectedDocument(null);
+  }, [projectId, selectedDocument, user]);
+
+  const handleSignMethodChange = (method: string) => {
+    setSignMethod(method);
+    localStorage.setItem("tektra_sign_method", method);
+  };
+
     if (!pdfBlobUrl || !selectedDocument) return;
     const a = document.createElement("a");
     a.href = pdfBlobUrl;
