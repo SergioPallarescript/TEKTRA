@@ -7,6 +7,7 @@ import AppLayout from "@/components/AppLayout";
 import FiscalDataModal from "@/components/FiscalDataModal";
 import SignatureCanvas, { type SignatureCanvasHandle } from "@/components/SignatureCanvas";
 import CertificateSignature, { type CertSignMetadata } from "@/components/CertificateSignature";
+import AutoFirmaSignature, { type AutoFirmaMetadata } from "@/components/AutoFirmaSignature";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
