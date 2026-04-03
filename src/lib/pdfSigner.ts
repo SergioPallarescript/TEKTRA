@@ -428,21 +428,6 @@ function findByteRange(pdfBytes: Uint8Array): {
 /* ------------------------------------------------------------------ */
 
 function generatePKCS7(dataToSign: Uint8Array, p12: P12ParseResult): string {
-  const md = forge.md.sha256.create();
-  md.update(forge.util.binary.raw.encode(dataToSign));
-  const digest = md.digest();
-
-  // Create PKCS#7 signed data
-  const p7 = forge.pkcs7.createSignedData();
-
-  p7.content = forge.util.createBuffer("");
-
-  // Add certificate
-  p7.addCertificate(p12.certificate);
-  for (const cert of p12.chain) {
-    p7.addCertificate(cert);
-  }
-
   // Build the PKCS#7 signed data with the actual ByteRange content
   const p7Final = forge.pkcs7.createSignedData();
   p7Final.content = forge.util.createBuffer(forge.util.binary.raw.encode(dataToSign));
