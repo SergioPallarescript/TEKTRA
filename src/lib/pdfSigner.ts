@@ -474,7 +474,7 @@ function generatePKCS7(dataToSign: Uint8Array, p12: P12ParseResult): string {
   p7Final.sign({ detached: true });
 
   // Get DER bytes
-  const asn1 = p7_2.toAsn1();
+  const asn1 = p7Final.toAsn1();
   const der = forge.asn1.toDer(asn1);
   const derBytes = der.getBytes();
 
