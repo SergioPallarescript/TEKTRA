@@ -122,36 +122,20 @@ async function addVisualStamp(
     borderWidth: 0.75,
   });
 
-  // Left: Name in large bold
-  const nameLines = splitText(signer.name, 18);
-  nameLines.forEach((line, i) => {
-    lastPage.drawText(line, {
-      x: x + 8, y: y + stampH - 20 - i * 14,
-      size: 11, font: fontBold, color: rgb(0.1, 0.1, 0.1),
-    });
-  });
-
-  // Right block
-  const rightX = x + 140;
+  // Compact layout for smaller stamp
   const lines = [
-    `Firmado digitalmente por`,
-    signer.name,
-    `ID: ${signer.dni}`,
-    `Fecha: ${new Date(signer.timestamp).toLocaleString("es-ES")} +01'00'`,
-    `Localización: ${signer.geo || "N/A"}`,
-    `Rol: ${signer.role}`,
+    { text: signer.name, size: 6, f: fontBold, c: rgb(0.1, 0.1, 0.1) },
+    { text: `ID: ${signer.dni} | ${signer.role}`, size: 5, f: font, c: rgb(0.25, 0.25, 0.25) },
+    { text: `${new Date(signer.timestamp).toLocaleString("es-ES")}`, size: 5, f: font, c: rgb(0.25, 0.25, 0.25) },
+    { text: `Geo: ${signer.geo || "N/A"}`, size: 4.5, f: font, c: rgb(0.4, 0.4, 0.4) },
+    { text: "Firma PAdES — TEKTRA", size: 4, f: font, c: rgb(0.5, 0.5, 0.5) },
   ];
   lines.forEach((line, i) => {
-    lastPage.drawText(line, {
-      x: rightX, y: y + stampH - 16 - i * 12,
-      size: 7, font, color: rgb(0.25, 0.25, 0.25),
-      maxWidth: stampW - 148,
+    lastPage.drawText(line.text, {
+      x: x + 5, y: y + stampH - 12 - i * 9,
+      size: line.size, font: line.f, color: line.c,
+      maxWidth: stampW - 10,
     });
-  });
-
-  // Footer
-  lastPage.drawText("Firma PAdES — TEKTRA", {
-    x: x + 8, y: y + 4, size: 6, font, color: rgb(0.5, 0.5, 0.5),
   });
 
   return pdfDoc.save();

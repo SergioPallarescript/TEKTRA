@@ -547,18 +547,9 @@ const SignatureDocuments = () => {
                   <div className="space-y-4 rounded-lg border border-border bg-background p-4">
                     <Tabs value={signMethod} onValueChange={handleSignMethodChange}>
                       <TabsList className="w-full">
-                        <TabsTrigger value="autofirma" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">AutoFirma</TabsTrigger>
                         <TabsTrigger value="certificate" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Certificado .p12</TabsTrigger>
                         <TabsTrigger value="manual" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Firma Manual</TabsTrigger>
                       </TabsList>
-
-                      <TabsContent value="autofirma" className="mt-4">
-                        <AutoFirmaSignature
-                          disabled={signing}
-                          onSign={handleAutoFirmaSign}
-                          originalPdfBytes={originalPdfBuffer}
-                        />
-                      </TabsContent>
 
                       <TabsContent value="certificate" className="mt-4">
                         <CertificateSignature
