@@ -586,7 +586,7 @@ const CostsModule = () => {
                       <Button data-tour="cost-download" variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
                         <Download className="h-3.5 w-3.5" /> Descargar
                       </Button>
-                      <Button variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
+                      <Button data-tour="cost-open" variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
                         <ExternalLink className="h-3.5 w-3.5" /> Abrir
                       </Button>
                       <span className={`inline-flex items-center rounded px-2 py-1 text-[10px] font-display uppercase tracking-widest ${st.color}`}>
