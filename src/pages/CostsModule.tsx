@@ -356,6 +356,60 @@ const CostsModule = () => {
     } finally { setSigning(false); }
   };
 
+  /* ───── Certificate Sign ───── */
+  const handleCertSign = useCallback(async (signedPdfBytes: Uint8Array, metadata: CertSignMetadata) => {
+    if (!selectedClaim || !user || !projectId) return;
+    const signedAt = new Date().toISOString();
+    const signedBlob = new Blob([new Uint8Array(Array.from(signedPdfBytes))], { type: "application/pdf" });
+    const signedFile = new File([signedBlob], `firmado_${sanitizeFileName(selectedClaim.file_name || "doc.pdf")}`, { type: "application/pdf" });
+    const signedPath = `costs/${projectId}/signed/${selectedClaim.id}_${Date.now()}.pdf`;
+    const { error: upErr } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
+    if (upErr) throw upErr;
+
+    const dt = (selectedClaim as any).doc_type || "certificacion";
+    const updates: any = { signed_file_path: signedPath, validation_hash: metadata.validationHash };
+    if (dt === "certificacion") {
+      if (isDEM) { updates.dem_signed_by = user.id; updates.dem_signed_at = signedAt; }
+      if (isDO) { updates.do_signed_by = user.id; updates.do_signed_at = signedAt; }
+      const demDone = isDEM ? true : !!(selectedClaim as any).dem_signed_by;
+      const doDone = isDO ? true : !!(selectedClaim as any).do_signed_by;
+      if (demDone && doDone) updates.status = "pending_payment";
+    } else if (dt === "presupuesto" && isPRO) {
+      updates.pro_signed_by = user.id;
+      updates.pro_signed_at = signedAt;
+      updates.status = "approved";
+    }
+
+    await supabase.from("cost_claims").update(updates).eq("id", selectedClaim.id);
+    await supabase.from("audit_logs").insert({
+      user_id: user.id, project_id: projectId, action: "cost_document_signed_p12",
+      details: {
+        claim_id: selectedClaim.id, hash: metadata.validationHash, role: projectRole,
+        geo_location: metadata.geo, signer_name: metadata.signerName, signer_dni: metadata.signerDni,
+        certificate_cn: metadata.certificateCN, certificate_serial: metadata.certificateSerial,
+      },
+      geo_location: metadata.geo,
+    });
+
+    // Trigger download
+    const downloadUrl = URL.createObjectURL(signedBlob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = `${(selectedClaim.file_name || "doc").replace(/\.pdf$/i, "")}_FIRMADO.pdf`;
+    a.click();
+    URL.revokeObjectURL(downloadUrl);
+
+    toast.success("Documento firmado con certificado digital");
+    await fetchClaims();
+    const { data: refreshed } = await supabase.from("cost_claims").select("*").eq("id", selectedClaim.id).single();
+    if (refreshed) setSelectedClaim(refreshed);
+  }, [selectedClaim, user, projectId, isDEM, isDO, isPRO, projectRole, fetchClaims]);
+
+  const handleSignMethodChange = (method: string) => {
+    setSignMethod(method);
+    localStorage.setItem("tektra_sign_method", method);
+  };
+
   /* ───── Edit / Delete ───── */
   const isEditable = (claim: any) => claim.submitted_by === user?.id && claim.status === "pending_technical";
 
