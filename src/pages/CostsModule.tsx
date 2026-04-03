@@ -124,12 +124,17 @@ const CostsModule = () => {
     if (!selectedClaim?.file_url) {
       setPdfBlobUrl(c => { if (c) URL.revokeObjectURL(c); return null; });
       setPdfPages([]);
+      setOriginalPdfBuffer(null);
       return;
     }
     const load = async () => {
       const targetPath = (selectedClaim as any).signed_file_path || selectedClaim.file_url;
       const { data, error } = await supabase.storage.from("plans").download(targetPath);
       if (error || !data) { toast.error("No se pudo abrir el PDF"); return; }
+      // Store raw bytes for certificate signing
+      if (canSignHere) {
+        setOriginalPdfBuffer(await data.arrayBuffer());
+      }
       const url = URL.createObjectURL(data);
       setPdfBlobUrl(c => { if (c) URL.revokeObjectURL(c); return url; });
       await renderPdf(url);
