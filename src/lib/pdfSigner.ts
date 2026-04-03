@@ -443,43 +443,17 @@ function generatePKCS7(dataToSign: Uint8Array, p12: P12ParseResult): string {
     p7.addCertificate(cert);
   }
 
-  // Add signer
-  p7.addSigner({
-    key: p12.privateKey,
-    certificate: p12.certificate,
-    digestAlgorithm: forge.pki.oids.sha256,
-    authenticatedAttributes: [
-      {
-        type: forge.pki.oids.contentType,
-        value: forge.pki.oids.data,
-      },
-      {
-        type: forge.pki.oids.signingTime,
-        value: new Date(),
-      },
-      {
-        type: forge.pki.oids.messageDigest,
-        // Will be auto-calculated from content
-      },
-    ],
-  });
+  // Build the PKCS#7 signed data with the actual ByteRange content
+  const p7Final = forge.pkcs7.createSignedData();
+  p7Final.content = forge.util.createBuffer(forge.util.binary.raw.encode(dataToSign));
 
-  // Detached mode: sign external data digest
-  // Override the content digest with our pre-computed one
-  p7.sign({ detached: true });
-
-  // Manual override: we need to sign the actual ByteRange data
-  // Re-do with the correct digest
-  const p7_2 = forge.pkcs7.createSignedData();
-  p7_2.content = forge.util.createBuffer(forge.util.binary.raw.encode(dataToSign));
-
-  p7_2.addCertificate(p12.certificate);
+  p7Final.addCertificate(p12.certificate);
   for (const cert of p12.chain) {
-    p7_2.addCertificate(cert);
+    p7Final.addCertificate(cert);
   }
 
-  p7_2.addSigner({
-    key: p12.privateKey,
+  p7Final.addSigner({
+    key: p12.privateKey as any,
     certificate: p12.certificate,
     digestAlgorithm: forge.pki.oids.sha256,
     authenticatedAttributes: [
@@ -489,7 +463,7 @@ function generatePKCS7(dataToSign: Uint8Array, p12: P12ParseResult): string {
       },
       {
         type: forge.pki.oids.signingTime,
-        value: new Date(),
+        value: new Date().toISOString(),
       },
       {
         type: forge.pki.oids.messageDigest,
@@ -497,7 +471,7 @@ function generatePKCS7(dataToSign: Uint8Array, p12: P12ParseResult): string {
     ],
   });
 
-  p7_2.sign({ detached: true });
+  p7Final.sign({ detached: true });
 
   // Get DER bytes
   const asn1 = p7_2.toAsn1();
