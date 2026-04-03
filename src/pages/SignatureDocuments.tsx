@@ -7,7 +7,7 @@ import AppLayout from "@/components/AppLayout";
 import FiscalDataModal from "@/components/FiscalDataModal";
 import SignatureCanvas, { type SignatureCanvasHandle } from "@/components/SignatureCanvas";
 import CertificateSignature, { type CertSignMetadata } from "@/components/CertificateSignature";
-import AutoFirmaSignature, { type AutoFirmaMetadata } from "@/components/AutoFirmaSignature";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,7 +66,10 @@ const SignatureDocuments = () => {
   const [replacing, setReplacing] = useState(false);
   const [fiscalModalOpen, setFiscalModalOpen] = useState(false);
   const [fiscalData, setFiscalData] = useState<{ full_name: string; dni_cif: string } | null>(null);
-  const [signMethod, setSignMethod] = useState<string>(() => localStorage.getItem("tektra_sign_method") || "manual");
+  const [signMethod, setSignMethod] = useState<string>(() => {
+    const saved = localStorage.getItem("tektra_sign_method");
+    return saved === "autofirma" ? "certificate" : (saved || "certificate");
+  });
   const [originalPdfBuffer, setOriginalPdfBuffer] = useState<ArrayBuffer | null>(null);
 
   const fetchDocuments = async () => {
@@ -376,44 +379,6 @@ const SignatureDocuments = () => {
     setSelectedDocument(null);
   }, [projectId, selectedDocument, user]);
 
-  const handleAutoFirmaSign = useCallback(async (signedPdfBytes: Uint8Array, metadata: AutoFirmaMetadata) => {
-    if (!projectId || !selectedDocument || !user) return;
-    const signedAt = new Date().toISOString();
-    const signedBlob = new Blob([new Uint8Array(Array.from(signedPdfBytes))], { type: "application/pdf" });
-    const signedFile = new File([signedBlob], `firmado_${sanitizeFileName(selectedDocument.original_file_name)}`, { type: "application/pdf" });
-    const signedPath = `signature-documents/${projectId}/signed/${selectedDocument.id}_${Date.now()}.pdf`;
-    const { error: uploadError } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
-    if (uploadError) throw uploadError;
-
-    await (supabase.from("signature_documents" as any) as any)
-      .update({
-        status: "signed", signed_file_path: signedPath, signed_at: signedAt,
-        validation_hash: metadata.validationHash, signature_type: "autofirma",
-      })
-      .eq("id", selectedDocument.id);
-
-    await supabase.from("audit_logs").insert({
-      user_id: user.id, project_id: projectId,
-      action: "signature_document_signed_autofirma",
-      details: {
-        document_id: selectedDocument.id, hash: metadata.validationHash,
-        geo_location: metadata.geo, signer_name: metadata.signerName,
-      },
-      geo_location: metadata.geo,
-    });
-
-    // Trigger download
-    const downloadUrl = URL.createObjectURL(signedBlob);
-    const a = document.createElement("a");
-    a.href = downloadUrl;
-    a.download = `${selectedDocument.original_file_name.replace(/\.pdf$/i, "")}_FIRMADO.pdf`;
-    a.click();
-    URL.revokeObjectURL(downloadUrl);
-
-    toast.success("Documento firmado con AutoFirma");
-    await fetchDocuments();
-    setSelectedDocument(null);
-  }, [projectId, selectedDocument, user]);
 
   const handleSignMethodChange = (method: string) => {
     setSignMethod(method);
@@ -582,18 +547,9 @@ const SignatureDocuments = () => {
                   <div className="space-y-4 rounded-lg border border-border bg-background p-4">
                     <Tabs value={signMethod} onValueChange={handleSignMethodChange}>
                       <TabsList className="w-full">
-                        <TabsTrigger value="autofirma" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">AutoFirma</TabsTrigger>
                         <TabsTrigger value="certificate" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Certificado .p12</TabsTrigger>
                         <TabsTrigger value="manual" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Firma Manual</TabsTrigger>
                       </TabsList>
-
-                      <TabsContent value="autofirma" className="mt-4">
-                        <AutoFirmaSignature
-                          disabled={signing}
-                          onSign={handleAutoFirmaSign}
-                          originalPdfBytes={originalPdfBuffer}
-                        />
-                      </TabsContent>
 
                       <TabsContent value="certificate" className="mt-4">
                         <CertificateSignature

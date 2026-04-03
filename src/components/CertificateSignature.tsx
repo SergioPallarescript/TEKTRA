@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from "react";
-import { ShieldCheck, Upload, Loader2, Eye, EyeOff, FileKey } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { ShieldCheck, Upload, Loader2, Eye, EyeOff, FileKey, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +23,29 @@ export interface CertSignMetadata {
   certificateSerial: string;
 }
 
+// Key for localStorage password store
+const CERT_PASSWORDS_KEY = "tektra_cert_passwords";
+
+function getSavedPasswords(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(CERT_PASSWORDS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function savePassword(fileName: string, fileSize: number, password: string) {
+  const saved = getSavedPasswords();
+  // Use fileName + size as key to identify unique certificates
+  saved[`${fileName}__${fileSize}`] = password;
+  localStorage.setItem(CERT_PASSWORDS_KEY, JSON.stringify(saved));
+}
+
+function findSavedPassword(fileName: string, fileSize: number): string | null {
+  const saved = getSavedPasswords();
+  return saved[`${fileName}__${fileSize}`] || null;
+}
+
 export default function CertificateSignature({ disabled, userRole, onSign, originalPdfBytes }: CertificateSignatureProps) {
   const [p12File, setP12File] = useState<File | null>(null);
   const [password, setPassword] = useState("");
@@ -30,6 +53,7 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
   const [parsedCert, setParsedCert] = useState<P12ParseResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
+  const [passwordRemembered, setPasswordRemembered] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -37,6 +61,29 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
     setP12File(file);
     setParsedCert(null);
     setParseError(null);
+    setPasswordRemembered(false);
+
+    if (file) {
+      const saved = findSavedPassword(file.name, file.size);
+      if (saved) {
+        setPassword(saved);
+        setPasswordRemembered(true);
+        // Auto-parse with saved password
+        file.arrayBuffer().then((buffer) => {
+          try {
+            const result = parseP12(buffer, saved);
+            setParsedCert(result);
+            toast.success("Certificado reconocido automáticamente");
+          } catch {
+            // Saved password no longer valid
+            setPassword("");
+            setPasswordRemembered(false);
+          }
+        });
+      } else {
+        setPassword("");
+      }
+    }
   }, []);
 
   const handleParseCertificate = useCallback(async () => {
@@ -49,6 +96,9 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
       const result = parseP12(buffer, password);
       setParsedCert(result);
       setParseError(null);
+      // Save password for this certificate
+      savePassword(p12File.name, p12File.size, password);
+      setPasswordRemembered(true);
       toast.success("Certificado cargado correctamente");
     } catch (err: any) {
       setParsedCert(null);
@@ -122,36 +172,46 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
         />
       </div>
 
-      {/* Password */}
-      <div className="space-y-2">
-        <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
-          Contraseña del certificado
-        </Label>
-        <div className="relative">
-          <Input
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            disabled={disabled || signing}
-            autoComplete="off"
-          />
-          <button
-            type="button"
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            onClick={() => setShowPassword(!showPassword)}
-            tabIndex={-1}
-          >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
+      {/* Password — hidden if remembered and auto-parsed */}
+      {!passwordRemembered && (
+        <div className="space-y-2">
+          <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+            Contraseña del certificado
+          </Label>
+          <div className="relative">
+            <Input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              disabled={disabled || signing}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowPassword(!showPassword)}
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            🔒 La contraseña y la clave privada se procesan exclusivamente en tu navegador.
+          </p>
         </div>
-        <p className="text-[10px] text-muted-foreground">
-          🔒 La contraseña y la clave privada se procesan exclusivamente en tu navegador. Nunca se envían al servidor.
-        </p>
-      </div>
+      )}
+
+      {/* Remembered indicator */}
+      {passwordRemembered && !parsedCert && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+          Contraseña recordada para este certificado
+        </div>
+      )}
 
       {/* Parse button */}
-      {!parsedCert && (
+      {!parsedCert && !passwordRemembered && (
         <Button
           variant="outline"
           onClick={handleParseCertificate}
