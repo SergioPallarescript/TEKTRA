@@ -134,6 +134,10 @@ const SignatureDocuments = () => {
       const targetPath = selectedDocument.signed_file_path || selectedDocument.original_file_path;
       const { data, error } = await supabase.storage.from("plans").download(targetPath);
       if (error || !data) { toast.error("No se pudo abrir el PDF"); return; }
+      // Store raw bytes for certificate signing
+      if (selectedDocument.status === "pending") {
+        setOriginalPdfBuffer(await data.arrayBuffer());
+      }
       const url = URL.createObjectURL(data);
       setPdfBlobUrl((c) => { if (c) URL.revokeObjectURL(c); return url; });
       await renderPdf(url);
