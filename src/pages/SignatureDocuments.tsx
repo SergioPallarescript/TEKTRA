@@ -127,6 +127,7 @@ const SignatureDocuments = () => {
     if (!selectedDocument) {
       setPdfBlobUrl((c) => { if (c) URL.revokeObjectURL(c); return null; });
       setPdfPages([]);
+      setOriginalPdfBuffer(null);
       return;
     }
     const loadPreview = async () => {
