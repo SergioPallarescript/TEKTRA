@@ -66,7 +66,10 @@ const SignatureDocuments = () => {
   const [replacing, setReplacing] = useState(false);
   const [fiscalModalOpen, setFiscalModalOpen] = useState(false);
   const [fiscalData, setFiscalData] = useState<{ full_name: string; dni_cif: string } | null>(null);
-  const [signMethod, setSignMethod] = useState<string>(() => localStorage.getItem("tektra_sign_method") || "manual");
+  const [signMethod, setSignMethod] = useState<string>(() => {
+    const saved = localStorage.getItem("tektra_sign_method");
+    return saved === "autofirma" ? "certificate" : (saved || "certificate");
+  });
   const [originalPdfBuffer, setOriginalPdfBuffer] = useState<ArrayBuffer | null>(null);
 
   const fetchDocuments = async () => {
