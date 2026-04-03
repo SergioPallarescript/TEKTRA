@@ -424,11 +424,24 @@ function findByteRange(pdfBytes: Uint8Array): {
 /*  PKCS#7 generation                                                  */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Convert Uint8Array to a forge-compatible binary string without blowing the stack.
+ * String.fromCharCode.apply() crashes with large arrays, so we chunk it.
+ */
+function uint8ToBinaryString(bytes: Uint8Array): string {
+  const CHUNK = 8192;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+    parts.push(String.fromCharCode.apply(null, slice as unknown as number[]));
+  }
+  return parts.join("");
+}
+
 function generatePKCS7(dataToSign: Uint8Array, p12: P12ParseResult): string {
   // Build the PKCS#7 signed data with the actual ByteRange content
   const p7Final = forge.pkcs7.createSignedData();
-  p7Final.content = forge.util.createBuffer(forge.util.binary.raw.encode(dataToSign));
-
+  p7Final.content = forge.util.createBuffer(uint8ToBinaryString(dataToSign));
   p7Final.addCertificate(p12.certificate);
   for (const cert of p12.chain) {
     p7Final.addCertificate(cert);
