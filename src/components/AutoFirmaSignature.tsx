@@ -77,11 +77,17 @@ export default function AutoFirmaSignature({ disabled, onSign, originalPdfBytes 
         });
       } else {
         // Launch protocol handler
-        launchAutoFirmaProtocol(pdfBase64);
-        toast.info(
-          "Se ha abierto AutoFirma. Firma el documento en la ventana de AutoFirma y luego sube el PDF firmado manualmente.",
-          { duration: 10000 }
-        );
+        const launched = launchAutoFirmaProtocol(pdfBase64);
+        if (!launched) {
+          toast.error("El PDF es demasiado grande para firmar con el protocolo AutoFirma. Usa la pestaña 'Certificado .P12'.");
+        } else {
+          toast.info(
+            status?.isMobile
+              ? "Se está abriendo la app AutoFirma. Firma el documento en la app y luego sube el PDF firmado manualmente."
+              : "Se ha abierto AutoFirma. Firma el documento en la ventana de AutoFirma y luego sube el PDF firmado manualmente.",
+            { duration: 10000 }
+          );
+        }
         setSigning(false);
         return;
       }
