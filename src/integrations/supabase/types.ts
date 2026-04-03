@@ -964,6 +964,8 @@ export type Database = {
       }
       signature_documents: {
         Row: {
+          certificate_cn: string | null
+          certificate_serial: string | null
           created_at: string
           file_size: number | null
           id: string
@@ -973,6 +975,7 @@ export type Database = {
           project_id: string
           recipient_id: string
           sender_id: string
+          signature_type: string | null
           signed_at: string | null
           signed_file_path: string | null
           status: string
@@ -981,6 +984,8 @@ export type Database = {
           validation_hash: string | null
         }
         Insert: {
+          certificate_cn?: string | null
+          certificate_serial?: string | null
           created_at?: string
           file_size?: number | null
           id?: string
@@ -990,6 +995,7 @@ export type Database = {
           project_id: string
           recipient_id: string
           sender_id: string
+          signature_type?: string | null
           signed_at?: string | null
           signed_file_path?: string | null
           status?: string
@@ -998,6 +1004,8 @@ export type Database = {
           validation_hash?: string | null
         }
         Update: {
+          certificate_cn?: string | null
+          certificate_serial?: string | null
           created_at?: string
           file_size?: number | null
           id?: string
@@ -1007,6 +1015,7 @@ export type Database = {
           project_id?: string
           recipient_id?: string
           sender_id?: string
+          signature_type?: string | null
           signed_at?: string | null
           signed_file_path?: string | null
           status?: string
