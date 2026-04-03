@@ -212,7 +212,7 @@ export async function signPdfWithP12(
 /*  Placeholder insertion                                              */
 /* ------------------------------------------------------------------ */
 
-function addSignaturePlaceholder(pdfBytes: Uint8Array): Uint8Array {
+function addSignaturePlaceholder(pdfBytes: Uint8Array, geo: string): Uint8Array {
   const pdf = new TextDecoder("latin1").decode(pdfBytes);
 
   // Find the last %%EOF
