@@ -429,11 +429,11 @@ const SignatureDocuments = () => {
             </div>
 
             <form data-tour="send-signature" onSubmit={handleCreateDocument} className="rounded-lg border border-border bg-card p-4 space-y-4">
-              <div className="space-y-2">
+              <div data-tour="sig-title" className="space-y-2">
                 <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Título</Label>
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Acta de recepción parcial" required />
               </div>
-              <div className="space-y-2">
+              <div data-tour="sig-recipient" className="space-y-2">
                 <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Destinatario</Label>
                 <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground" required>
@@ -443,7 +443,7 @@ const SignatureDocuments = () => {
                   ))}
                 </select>
               </div>
-              <div className="space-y-2">
+              <div data-tour="sig-file" className="space-y-2">
                 <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">PDF</Label>
                 <Input type="file" accept="application/pdf,.pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} required />
               </div>
