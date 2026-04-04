@@ -86,8 +86,16 @@ const OnboardingGuide = () => {
     const updateVisible = () => {
       const next = computeVisibleSteps(allSteps);
       setVisibleSteps(prev => {
+        const grew = next.length > prev.length;
+        if (grew && waitingForMore.current) {
+          // New steps appeared — resume the guide from where we left off
+          waitingForMore.current = false;
+          setTimeout(() => {
+            setStepIndex(prev.length); // continue from the first new step
+            setRun(true);
+          }, 600);
+        }
         if (prev.length !== next.length) return next;
-        // Check if targets changed
         const changed = prev.some((p, i) => (p.target as string) !== (next[i]?.target as string));
         return changed ? next : prev;
       });
