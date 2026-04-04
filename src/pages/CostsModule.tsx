@@ -582,8 +582,8 @@ const CostsModule = () => {
                       <h2 className="font-display text-lg sm:text-xl font-semibold tracking-tight truncate">{selectedClaim.title}</h2>
                       <p className="text-xs sm:text-sm text-muted-foreground truncate">{selectedClaim.file_name}</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
+                    <div data-tour="cost-preview" className="flex flex-wrap items-center gap-2 shrink-0">
+                      <Button data-tour="cost-download" variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
                         <Download className="h-3.5 w-3.5" /> Descargar
                       </Button>
                       <Button variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
