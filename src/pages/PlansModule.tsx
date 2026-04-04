@@ -452,7 +452,7 @@ const PlansModule = () => {
                 )}
                 <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
                   <DialogTrigger asChild>
-                    <Button className="font-display text-xs uppercase tracking-wider gap-2"><Upload className="h-4 w-4" />Subir Versión</Button>
+                    <Button data-tour="upload-version" className="font-display text-xs uppercase tracking-wider gap-2"><Upload className="h-4 w-4" />Subir Versión</Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader><DialogTitle className="font-display">Subir Nueva Versión</DialogTitle></DialogHeader>
