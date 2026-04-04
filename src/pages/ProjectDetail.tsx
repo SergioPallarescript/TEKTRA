@@ -403,7 +403,7 @@ const ProjectDetail = () => {
               key={mod.key}
               data-tour={`module-${mod.key}`}
               onClick={() => navigate(`/project/${id}/${mod.key}`)}
-              className="bg-card border border-border rounded-lg p-5 text-left hover:border-foreground/20 transition-all group animate-fade-in"
+              className="bg-card border border-border rounded-lg p-5 text-left hover:border-foreground/20 hover:shadow-lg hover:-translate-y-0.5 transition-all group animate-fade-in"
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <mod.icon className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors mb-3" />
@@ -418,7 +418,7 @@ const ProjectDetail = () => {
           {isAdmin && (
             <button
               onClick={() => navigate(`/project/${id}/admin`)}
-              className="bg-card border border-primary/20 rounded-lg p-5 text-left hover:border-primary/40 transition-all group animate-fade-in"
+              className="bg-card border border-primary/20 rounded-lg p-5 text-left hover:border-primary/40 hover:shadow-lg hover:-translate-y-0.5 transition-all group animate-fade-in"
               style={{ animationDelay: `${modules.length * 60}ms` }}
             >
               <Shield className="h-5 w-5 text-primary group-hover:text-primary transition-colors mb-3" />

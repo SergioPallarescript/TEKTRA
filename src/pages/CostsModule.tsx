@@ -527,8 +527,8 @@ const CostsModule = () => {
                     <div
                       key={claim.id}
                       onClick={() => setSelectedClaim(claim)}
-                      className={`rounded-lg border p-4 transition-colors cursor-pointer ${
-                        selectedClaim?.id === claim.id ? "border-primary bg-secondary/40" : "border-border bg-card hover:border-foreground/20"
+                      className={`rounded-lg border p-4 transition-all cursor-pointer ${
+                        selectedClaim?.id === claim.id ? "border-primary bg-secondary/40" : "border-border bg-card hover:border-foreground/20 hover:shadow-md"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2 min-w-0">
@@ -582,8 +582,8 @@ const CostsModule = () => {
                       <h2 className="font-display text-lg sm:text-xl font-semibold tracking-tight truncate">{selectedClaim.title}</h2>
                       <p className="text-xs sm:text-sm text-muted-foreground truncate">{selectedClaim.file_name}</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
+                    <div data-tour="cost-preview" className="flex flex-wrap items-center gap-2 shrink-0">
+                      <Button data-tour="cost-download" variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
                         <Download className="h-3.5 w-3.5" /> Descargar
                       </Button>
                       <Button variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
@@ -640,7 +640,7 @@ const CostsModule = () => {
 
                   {/* Signature panel */}
                   {canSignHere && (
-                    <div className="space-y-4 rounded-lg border border-border bg-background p-4">
+                    <div data-tour="cost-signature-panel" className="space-y-4 rounded-lg border border-border bg-background p-4">
                       <div>
                         <h3 className="font-display text-sm font-semibold uppercase tracking-wider">
                           {dt === "certificacion" ? `Firma Técnica (${projectRole})` : "Firma de Aceptación (Promotor)"}
@@ -648,8 +648,8 @@ const CostsModule = () => {
                       </div>
                       <Tabs value={signMethod} onValueChange={handleSignMethodChange}>
                         <TabsList className="w-full">
-                          <TabsTrigger value="certificate" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Certificado digital</TabsTrigger>
-                          <TabsTrigger value="manual" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Firma Manual</TabsTrigger>
+                          <TabsTrigger data-tour="cost-certificate-tab" value="certificate" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Certificado digital</TabsTrigger>
+                          <TabsTrigger data-tour="cost-manual-tab" value="manual" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Firma Manual</TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="certificate" className="mt-4">

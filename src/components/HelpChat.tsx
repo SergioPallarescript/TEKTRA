@@ -20,21 +20,32 @@ interface HelpChatProps {
 
 const SYSTEM_CONTEXT = `Eres el asistente de ayuda de TEKTRA, una plataforma de gestión de obras de construcción en España.
 
-Tu función es ayudar a los usuarios a entender cómo usar la plataforma. Conoces estas funcionalidades:
-- **Dashboard de Proyectos**: Crear obras, invitar agentes (DO, DEM, CON, PRO, CSS).
-- **Documentación de Proyecto**: Subir y gestionar documentos base de la obra.
-- **Planos Válidos**: Subir planos con control de versiones. Solo DO y DEM suben; todos validan.
-- **Cerebro de Obra**: IA que responde preguntas sobre la memoria y mediciones del proyecto.
-- **Metro Digital**: Herramienta para medir distancias y áreas sobre planos PDF.
-- **Libro de Órdenes**: Solo DEM registra órdenes de ejecución.
-- **Libro de Incidencias**: Solo CSS registra incidencias de seguridad.
-- **Validación Económica**: Constructor sube certificaciones; DO y DEM firman técnicamente; Promotor autoriza pago.
-- **Docs Finales (CFO)**: Certificado final de obra con 16 puntos de control.
-- **Diagrama Gantt**: Cronograma visual de hitos de obra.
-- **Firma Digital**: Firma con certificado digital (.p12/.pfx) o firma manual con canvas.
-- **Notificaciones**: Campana de alertas con notificaciones push.
+Tu función es ayudar a los usuarios a entender cómo usar la plataforma y resolver dudas operativas. Conoces en profundidad estas funcionalidades:
 
-Responde siempre en español, de forma concisa y práctica. Si no conoces algo, di que contacten con soporte.`;
+- **Dashboard de Proyectos**: Crear obras, invitar agentes (DO, DEM, CON, PRO, CSS). Botón "Nuevo Proyecto" para DO/DEM. Botón "Gestionar" para editar/eliminar proyectos.
+- **Invitar Agentes**: Desde el interior de un proyecto, botón "Invitar Agente". Se introduce el email y el rol. El agente recibirá un email de invitación y al registrarse con ese email se vinculará automáticamente.
+- **Documentación de Proyecto**: Subir y gestionar documentos base de la obra (memorias, pliegos, proyectos básicos).
+- **Planos Válidos**: Subir planos con control de versiones. Solo DO y DEM pueden subir nuevas versiones. Al subir una nueva versión, la anterior queda como histórico. Todos los roles deben confirmar su conformidad individual con cada versión.
+- **Cerebro de Obra**: IA que responde preguntas cruzando la documentación estática con el historial de órdenes e incidencias. Si hay contradicción, la orden más reciente tiene prioridad.
+- **Metro Digital**: Herramienta para medir distancias y áreas sobre planos PDF. Pasos: 1) Cargar PDF, 2) Mover/zoom con scroll, 3) Calibrar con medida real, 4) Medir distancias, 5) Medir áreas, 6) Limpiar mediciones.
+- **Libro de Órdenes**: Solo DEM registra órdenes de ejecución con texto y fotos.
+- **Libro de Incidencias**: Solo CSS registra incidencias de seguridad con severidad y fotos.
+- **Validación Económica**: Dos tipos de documentos:
+  - *Certificaciones*: Requieren firma digital obligatoria de DEM y DO. Tras ambas firmas, el Promotor puede "Autorizar para Pago".
+  - *Presupuestos*: Requieren validación técnica del DEM y firma del Promotor.
+  - El constructor sube el documento con importe y concepto.
+- **Firma Digital**: Dos métodos disponibles:
+  - *Certificado Digital*: Cargar archivo .p12/.pfx e introducir contraseña. La app recuerda la contraseña para futuras firmas con el mismo certificado.
+  - *Firma Manual*: Dibujo en canvas con hash SHA-256, huella y geolocalización.
+- **Docs Finales (CFO)**: Certificado final de obra con puntos de control. DO/DEM pueden reclamar documentos faltantes con "Auditoría".
+- **Diagrama Gantt**: Cronograma visual de hitos de obra generado automáticamente o manualmente.
+- **Notificaciones**: Campana de alertas con notificaciones push para firmas, nuevos planos, órdenes, etc.
+
+INSTRUCCIONES:
+- Responde siempre en español, de forma concisa y práctica.
+- Da instrucciones paso a paso cuando el usuario pregunte cómo hacer algo.
+- Si no conoces la respuesta exacta, sugiere que contacten con soporte usando el botón "?" > "Enviar duda a soporte".
+- Sé amable y profesional.`;
 
 const HelpChat = ({ open, onOpenChange }: HelpChatProps) => {
   const { user } = useAuth();
@@ -62,18 +73,15 @@ const HelpChat = ({ open, onOpenChange }: HelpChatProps) => {
     setLoading(true);
 
     try {
-      const { data: session } = await supabase.auth.getSession();
-      const { data, error } = await supabase.functions.invoke("brain-chat", {
+      const { data, error } = await supabase.functions.invoke("help-chat", {
         body: {
           messages: updated.map(m => ({ role: m.role, content: m.content })),
-          projectContext: SYSTEM_CONTEXT,
-          projectId: null,
+          systemContext: SYSTEM_CONTEXT,
         },
-        headers: { Authorization: `Bearer ${session.session?.access_token}` },
       });
 
       if (error) throw error;
-      const reply = data?.reply || data?.message || "No he podido procesar tu consulta.";
+      const reply = data?.reply || "No he podido procesar tu consulta.";
       setMessages(prev => [...prev, { role: "assistant", content: reply }]);
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Error al conectar con el asistente. Inténtalo de nuevo." }]);
@@ -91,7 +99,7 @@ const HelpChat = ({ open, onOpenChange }: HelpChatProps) => {
           </DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 px-6 min-h-0" style={{ maxHeight: "50vh" }}>
+        <ScrollArea className="flex-1 px-6 min-h-0 overflow-y-auto" style={{ maxHeight: "55vh" }}>
           <div className="space-y-4 py-2">
             {messages.map((msg, i) => (
               <div key={i} className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>

@@ -319,7 +319,7 @@ const Dashboard = () => {
             {projects.map((project, i) => (
               <div
                 key={project.id}
-                className={`text-left bg-card border rounded-lg p-6 transition-all group animate-fade-in relative overflow-hidden ${manageMode ? "border-primary/30" : "border-border hover:border-foreground/20"}`}
+                className={`text-left bg-card border rounded-lg p-6 transition-all group animate-fade-in relative overflow-hidden ${manageMode ? "border-primary/30" : "border-border hover:border-foreground/20 hover:shadow-lg hover:-translate-y-0.5"}`}
                 style={{ animationDelay: `${i * 80}ms` }}
               >
                 {coverUrls[project.id] && (
