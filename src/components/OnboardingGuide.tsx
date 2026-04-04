@@ -22,6 +22,7 @@ const OnboardingGuide = () => {
   const hasMarkedSeen = useRef(false);
   const observerRef = useRef<MutationObserver | null>(null);
   const autoStarted = useRef(false);
+  const waitingForMore = useRef(false);
 
   const normalizeRoute = useCallback((path: string) => {
     return path.replace(/\/project\/[0-9a-f-]{36}/, "/project/:id");
