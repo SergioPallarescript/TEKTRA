@@ -640,7 +640,7 @@ const CostsModule = () => {
 
                   {/* Signature panel */}
                   {canSignHere && (
-                    <div className="space-y-4 rounded-lg border border-border bg-background p-4">
+                    <div data-tour="cost-signature-panel" className="space-y-4 rounded-lg border border-border bg-background p-4">
                       <div>
                         <h3 className="font-display text-sm font-semibold uppercase tracking-wider">
                           {dt === "certificacion" ? `Firma Técnica (${projectRole})` : "Firma de Aceptación (Promotor)"}
@@ -648,8 +648,8 @@ const CostsModule = () => {
                       </div>
                       <Tabs value={signMethod} onValueChange={handleSignMethodChange}>
                         <TabsList className="w-full">
-                          <TabsTrigger value="certificate" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Certificado digital</TabsTrigger>
-                          <TabsTrigger value="manual" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Firma Manual</TabsTrigger>
+                          <TabsTrigger data-tour="cost-certificate-tab" value="certificate" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Certificado digital</TabsTrigger>
+                          <TabsTrigger data-tour="cost-manual-tab" value="manual" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Firma Manual</TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="certificate" className="mt-4">
