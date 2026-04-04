@@ -477,7 +477,7 @@ const PlansModule = () => {
 
             {/* Conformity Signatures */}
             {latestVersion && (
-              <div className="bg-card border border-border rounded-lg p-6 mb-6 animate-fade-in">
+              <div data-tour="conformity-section" className="bg-card border border-border rounded-lg p-6 mb-6 animate-fade-in">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-display text-xs uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4" />Conformidad — Versión {latestVersion.version_number}
