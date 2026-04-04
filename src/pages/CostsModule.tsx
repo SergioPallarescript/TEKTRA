@@ -527,8 +527,8 @@ const CostsModule = () => {
                     <div
                       key={claim.id}
                       onClick={() => setSelectedClaim(claim)}
-                      className={`rounded-lg border p-4 transition-colors cursor-pointer ${
-                        selectedClaim?.id === claim.id ? "border-primary bg-secondary/40" : "border-border bg-card hover:border-foreground/20"
+                      className={`rounded-lg border p-4 transition-all cursor-pointer ${
+                        selectedClaim?.id === claim.id ? "border-primary bg-secondary/40" : "border-border bg-card hover:border-foreground/20 hover:shadow-md"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2 min-w-0">
