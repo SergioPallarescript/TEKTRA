@@ -35,14 +35,11 @@ const OnboardingGuide = () => {
 
   const syncVisibleSteps = useCallback((sourceSteps: any[]) => {
     const joyrideSteps: GuideStep[] = sourceSteps
-      .map((s, rawIndex) => {
-        if (!s.target_element || s.target_element === "body") return true;
-        return document.querySelector(s.target_element) ? s : null;
-      })
-      .filter(Boolean)
-      .map((s, visibleIndex) => {
-        const sourceStep = (s === true ? sourceSteps[visibleIndex] : s) as any;
-        const rawIndex = sourceSteps.indexOf(sourceStep);
+      .flatMap((sourceStep, rawIndex) => {
+        if (sourceStep.target_element && sourceStep.target_element !== "body" && !document.querySelector(sourceStep.target_element)) {
+          return [];
+        }
+
         const isBodyTarget = !sourceStep.target_element || sourceStep.target_element === "body";
         return {
           target: isBodyTarget ? "body" : sourceStep.target_element,
@@ -53,7 +50,7 @@ const OnboardingGuide = () => {
           floaterProps: { disableAnimation: true },
           data: { rawIndex },
         };
-      }) as GuideStep[];
+      });
 
     const signature = joyrideSteps
       .map((step) => `${step.data.rawIndex}|${String(step.target)}|${String(step.title)}|${typeof step.content === "string" ? step.content : ""}`)
