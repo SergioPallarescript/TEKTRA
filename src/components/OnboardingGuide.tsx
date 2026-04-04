@@ -5,14 +5,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 
+type GuideStep = Step & {
+  data: {
+    rawIndex: number;
+  };
+};
+
 const OnboardingGuide = () => {
   const { user, profile } = useAuth();
   const location = useLocation();
   const { id: projectId } = useParams<{ id: string }>();
   const { projectRole } = useProjectRole(projectId);
-  const [steps, setSteps] = useState<Step[]>([]);
+  const [steps, setSteps] = useState<GuideStep[]>([]);
   const [run, setRun] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
+  const [currentRawIndex, setCurrentRawIndex] = useState(0);
   const hasMarkedSeen = useRef(false);
   const rawStepsRef = useRef<any[]>([]);
   const autoStartedKey = useRef<string | null>(null);
@@ -27,25 +34,26 @@ const OnboardingGuide = () => {
   const userRole = (pageRoute.startsWith("/project/:id") ? projectRole : undefined) ?? (profile?.role as string | undefined);
 
   const syncVisibleSteps = useCallback((sourceSteps: any[]) => {
-    const joyrideSteps: Step[] = sourceSteps
-      .filter((s) => {
-        if (!s.target_element || s.target_element === "body") return true;
-        return !!document.querySelector(s.target_element);
-      })
-      .map((s) => {
-        const isBodyTarget = !s.target_element || s.target_element === "body";
+    const joyrideSteps: GuideStep[] = sourceSteps
+      .flatMap((sourceStep, rawIndex) => {
+        if (sourceStep.target_element && sourceStep.target_element !== "body" && !document.querySelector(sourceStep.target_element)) {
+          return [];
+        }
+
+        const isBodyTarget = !sourceStep.target_element || sourceStep.target_element === "body";
         return {
-          target: isBodyTarget ? "body" : s.target_element,
-          title: s.title,
-          content: s.content,
+          target: isBodyTarget ? "body" : sourceStep.target_element,
+          title: sourceStep.title,
+          content: sourceStep.content,
           disableBeacon: true,
           placement: isBodyTarget ? ("center" as const) : ("auto" as const),
           floaterProps: { disableAnimation: true },
+          data: { rawIndex },
         };
       });
 
     const signature = joyrideSteps
-      .map((step) => `${String(step.target)}|${String(step.title)}|${typeof step.content === "string" ? step.content : ""}`)
+      .map((step) => `${step.data.rawIndex}|${String(step.target)}|${String(step.title)}|${typeof step.content === "string" ? step.content : ""}`)
       .join("::");
 
     if (signature !== lastStepSignature.current) {
@@ -61,9 +69,20 @@ const OnboardingGuide = () => {
     }
 
     pendingManualStart.current = false;
+    setCurrentRawIndex(0);
     setStepIndex(0);
     setRun(true);
   }, [steps.length]);
+
+  useEffect(() => {
+    if (steps.length === 0) {
+      setStepIndex(0);
+      return;
+    }
+
+    const nextVisibleIndex = steps.findIndex((step) => (step.data?.rawIndex ?? 0) >= currentRawIndex);
+    setStepIndex(nextVisibleIndex >= 0 ? nextVisibleIndex : 0);
+  }, [currentRawIndex, steps]);
 
   // Load steps from DB
   useEffect(() => {
@@ -81,6 +100,7 @@ const OnboardingGuide = () => {
       if (!data || data.length === 0) {
         rawStepsRef.current = [];
         lastStepSignature.current = "";
+        setCurrentRawIndex(0);
         setSteps([]);
         return;
       }
@@ -133,6 +153,7 @@ const OnboardingGuide = () => {
 
       if (!data) {
         setTimeout(() => {
+          setCurrentRawIndex(0);
           setStepIndex(0);
           setRun(true);
         }, 250);
@@ -163,7 +184,9 @@ const OnboardingGuide = () => {
 
     // Track step progression
     if (type === "step:after") {
-      setStepIndex(index + (action === "prev" ? -1 : 1));
+      const currentStep = steps[index];
+      const rawIndex = currentStep?.data?.rawIndex ?? index;
+      setCurrentRawIndex(Math.max(rawIndex + (action === "prev" ? -1 : 1), 0));
     }
 
     // Finished or skipped
@@ -197,6 +220,7 @@ const OnboardingGuide = () => {
       showSkipButton
       showProgress
       scrollToFirstStep
+      spotlightClicks
       disableOverlayClose={false}
       callback={handleCallback}
       locale={{
