@@ -521,10 +521,10 @@ const SignatureDocuments = () => {
                     <p className="text-xs sm:text-sm text-muted-foreground truncate">{selectedDocument.original_file_name}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
+                    <Button data-tour="signature-download" variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
                       <Download className="h-3.5 w-3.5" /> Descargar
                     </Button>
-                    <Button variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
+                    <Button data-tour="signature-open" variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
                       <ExternalLink className="h-3.5 w-3.5" /> Abrir
                     </Button>
                     <span className={`inline-flex items-center rounded px-2 py-1 text-[10px] font-display uppercase tracking-widest ${
@@ -535,7 +535,7 @@ const SignatureDocuments = () => {
                   </div>
                 </div>
 
-                <div ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
+                <div data-tour="signature-preview" ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
                   {pdfPages.length === 0 && (
                     <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
                       <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando PDF…
@@ -544,11 +544,11 @@ const SignatureDocuments = () => {
                 </div>
 
                 {selectedDocument.recipient_id === user?.id && selectedDocument.status === "pending" ? (
-                  <div className="space-y-4 rounded-lg border border-border bg-background p-4">
+                  <div data-tour="signature-panel" className="space-y-4 rounded-lg border border-border bg-background p-4">
                     <Tabs value={signMethod} onValueChange={handleSignMethodChange}>
                       <TabsList className="w-full">
-                        <TabsTrigger value="certificate" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Certificado digital</TabsTrigger>
-                        <TabsTrigger value="manual" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Firma Manual</TabsTrigger>
+                        <TabsTrigger data-tour="signature-certificate-tab" value="certificate" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Certificado digital</TabsTrigger>
+                        <TabsTrigger data-tour="signature-manual-tab" value="manual" className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider">Firma Manual</TabsTrigger>
                       </TabsList>
 
                       <TabsContent value="certificate" className="mt-4">
