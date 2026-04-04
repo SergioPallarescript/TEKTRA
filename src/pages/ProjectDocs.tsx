@@ -179,7 +179,7 @@ const ProjectDocs = () => {
             {canUpload && <p className="text-xs text-muted-foreground mt-2">Sube documentos para alimentar el Cerebro de Obra.</p>}
           </div>
         ) : (
-          <div className="space-y-2">
+          <div data-tour="docs-list" className="space-y-2">
             {docs.map((doc) => (
               <div
                 key={doc.id}
