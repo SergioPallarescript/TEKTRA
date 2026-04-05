@@ -111,7 +111,8 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
   }, [p12File, password]);
 
   const handleSign = useCallback(async () => {
-    if (!parsedCert || !originalPdfBytes) return;
+    if (!parsedCert) return;
+    if (!noPdfRequired && !originalPdfBytes) return;
     setSigning(true);
     try {
       let geo = "";
