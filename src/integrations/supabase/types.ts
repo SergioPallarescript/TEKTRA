@@ -1208,6 +1208,7 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      get_auth_email: { Args: { _user_id: string }; Returns: string }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
       is_project_admin: {
         Args: { _project_id: string; _user_id: string }
