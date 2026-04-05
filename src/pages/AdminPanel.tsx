@@ -49,6 +49,7 @@ const AdminPanel = () => {
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [updatingSecondaryId, setUpdatingSecondaryId] = useState<string | null>(null);
 
   const { isAdmin } = useProjectRole(projectId);
 
@@ -138,6 +139,20 @@ const AdminPanel = () => {
     setAuditLogs(data || []);
   }, [projectId]);
 
+  const broadcastRoleRefresh = useCallback(async () => {
+    if (!projectId) return;
+
+    await supabase.auth.refreshSession().catch(() => undefined);
+
+    const timestamp = Date.now();
+    const payload = JSON.stringify({ projectId, timestamp });
+
+    localStorage.setItem("tektra_role_refresh", payload);
+    window.dispatchEvent(new CustomEvent("tektra-role-updated", {
+      detail: { projectId, timestamp },
+    }));
+  }, [projectId]);
+
   useEffect(() => {
     fetchMembers();
     fetchAuditLogs();
@@ -185,81 +200,77 @@ const AdminPanel = () => {
     fetchAuditLogs();
   };
 
-  const handleSecondaryRoleToggle = async (memberId: string, memberEmail: string, currentSecondary: string | null) => {
-    if (!user || !projectId) return;
+  const handleSecondaryRoleToggle = async (member: any) => {
+    if (!user || !projectId || !member?.user_id) return;
 
-    const newSecondary = currentSecondary === "CSS" ? null : "CSS";
+    setUpdatingSecondaryId(member.id);
 
-    // If this is a virtual creator entry (not in project_members), insert first
-    let realMemberId = memberId;
-    if (memberId.startsWith("creator-")) {
-      const creatorUserId = memberId.replace("creator-", "");
-      const creatorMember = members.find((m: any) => m.user_id === creatorUserId && !m.id?.startsWith("creator-"));
-      if (creatorMember) {
-        realMemberId = creatorMember.id;
+    try {
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("created_by")
+        .eq("id", projectId)
+        .single();
+
+      if (projectError || project?.created_by !== user.id) {
+        throw new Error("Solo el creador del proyecto puede gestionar el rol dual CSS");
+      }
+
+      const { data: freshMember, error: memberError } = await supabase
+        .from("project_members")
+        .select("id, user_id, role, secondary_role, invited_email, status")
+        .eq("project_id", projectId)
+        .eq("user_id", member.user_id)
+        .maybeSingle();
+
+      if (memberError) throw memberError;
+
+      const resolvedRole = (freshMember?.role || member.role || member.profiles?.role) as AppRole | null;
+      if (resolvedRole !== "DEM") {
+        throw new Error("El rol dual CSS solo puede activarse sobre usuarios DEM");
+      }
+
+      const currentSecondary = (freshMember?.secondary_role || member.secondary_role) as AppRole | null;
+      const newSecondary = currentSecondary === "CSS" ? null : "CSS";
+      const memberEmail = freshMember?.invited_email || member.invited_email || member.profiles?.email || "—";
+
+      if (freshMember?.id) {
+        const { error: updateError } = await supabase
+          .from("project_members")
+          .update({ secondary_role: newSecondary })
+          .eq("id", freshMember.id);
+
+        if (updateError) throw updateError;
       } else {
-        // Insert creator as a real project member
-        const creatorProfile = members.find((m: any) => m.id === memberId);
-        const { data: inserted, error: insertErr } = await supabase
+        const { error: insertError } = await supabase
           .from("project_members")
           .insert({
             project_id: projectId,
-            user_id: creatorUserId,
-            role: creatorProfile?.role || "DO",
+            user_id: member.user_id,
+            invited_email: memberEmail === "—" ? null : memberEmail,
+            role: resolvedRole,
             secondary_role: newSecondary,
             status: "accepted",
             accepted_at: new Date().toISOString(),
-            invited_email: memberEmail,
-          })
-          .select("id")
-          .single();
+          });
 
-        if (insertErr || !inserted) {
-          toast.error("Error al registrar miembro");
-          return;
-        }
-
-        await supabase.from("audit_logs").insert({
-          user_id: user.id,
-          project_id: projectId,
-          action: "secondary_role_changed",
-          details: { member_email: memberEmail, old_secondary: currentSecondary, new_secondary: newSecondary, changed_by: profile?.email },
-        });
-
-        toast.success(newSecondary ? "Rol dual CSS activado" : "Rol dual CSS desactivado");
-        fetchMembers();
-        fetchAuditLogs();
-        return;
+        if (insertError) throw insertError;
       }
-    }
 
-    const { error } = await supabase
-      .from("project_members")
-      .update({ secondary_role: newSecondary })
-      .eq("id", realMemberId);
+      await supabase.from("audit_logs").insert({
+        user_id: user.id,
+        project_id: projectId,
+        action: "secondary_role_changed",
+        details: {
+          member_email: memberEmail,
+          old_secondary: currentSecondary,
+          new_secondary: newSecondary,
+          changed_by: profile?.email,
+        },
+      });
 
-    if (error) {
-      toast.error("Error al cambiar rol secundario");
-      return;
-    }
-
-    await supabase.from("audit_logs").insert({
-      user_id: user.id,
-      project_id: projectId,
-      action: "secondary_role_changed",
-      details: {
-        member_email: memberEmail,
-        old_secondary: currentSecondary,
-        new_secondary: newSecondary,
-        changed_by: profile?.email,
-      },
-    });
-
-    // Notify affected user
-    const memberUserId = members.find((m: any) => m.id === memberId)?.user_id;
-    if (memberUserId) {
       await notifyUser({
-        userId: memberUserId,
+        userId: member.user_id,
         projectId,
         title: newSecondary ? "Rol dual CSS activado" : "Rol dual CSS desactivado",
         message: newSecondary
@@ -267,11 +278,17 @@ const AdminPanel = () => {
           : "Se ha desactivado tu rol dual CSS",
         type: "info",
       });
-    }
 
-    toast.success(newSecondary ? "Rol CSS activado como rol dual" : "Rol CSS desactivado");
-    fetchMembers();
-    fetchAuditLogs();
+      await broadcastRoleRefresh();
+      await Promise.all([fetchMembers(), fetchAuditLogs()]);
+
+      toast.success(newSecondary ? "Rol CSS activado como rol dual" : "Rol CSS desactivado");
+    } catch (error) {
+      console.error("Error al cambiar rol secundario:", error);
+      toast.error(error instanceof Error ? error.message : "Error al cambiar rol secundario");
+    } finally {
+      setUpdatingSecondaryId(null);
+    }
   };
 
   const handleDeleteMember = async () => {
@@ -440,12 +457,15 @@ const AdminPanel = () => {
                             <div className="flex items-center gap-2">
                               <Switch
                                 checked={secondaryRole === "CSS"}
-                                onCheckedChange={() =>
-                                  handleSecondaryRoleToggle(member.id, email, secondaryRole)
-                                }
+                                disabled={updatingSecondaryId === member.id}
+                                onCheckedChange={() => handleSecondaryRoleToggle(member)}
                               />
                               <span className="text-xs text-muted-foreground">
-                                {secondaryRole === "CSS" ? "CSS Activo" : "Desactivado"}
+                                {updatingSecondaryId === member.id
+                                  ? "Actualizando..."
+                                  : secondaryRole === "CSS"
+                                    ? "CSS Activo"
+                                    : "Desactivado"}
                               </span>
                             </div>
                           ) : (

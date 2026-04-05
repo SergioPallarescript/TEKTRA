@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -23,7 +23,7 @@ export function useProjectRole(projectId: string | undefined): ProjectRoleResult
   const [secondaryRole, setSecondaryRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchRole = useCallback(async () => {
     if (!user || !projectId) {
       setProjectRole(null);
       setSecondaryRole(null);
@@ -33,87 +33,126 @@ export function useProjectRole(projectId: string | undefined): ProjectRoleResult
 
     setLoading(true);
 
-    const fetchRole = async () => {
-      try {
-        // 1. Try by user_id first
-        const { data: membership } = await supabase
+    try {
+      // 1. Try by user_id first
+      const { data: membership } = await supabase
+        .from("project_members")
+        .select("role, secondary_role, status")
+        .eq("project_id", projectId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (membership) {
+        if (membership.status && membership.status !== "accepted") {
+          await supabase
+            .from("project_members")
+            .update({ status: "accepted", accepted_at: new Date().toISOString() })
+            .eq("project_id", projectId)
+            .eq("user_id", user.id);
+        }
+
+        setProjectRole(membership.role as AppRole);
+        setSecondaryRole((membership.secondary_role as AppRole) || null);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Fallback by invited_email
+      const userEmail = user.email;
+      if (userEmail) {
+        const { data: emailMembership } = await supabase
           .from("project_members")
-          .select("role, secondary_role, status")
+          .select("id, role, secondary_role")
           .eq("project_id", projectId)
-          .eq("user_id", user.id)
+          .eq("invited_email", userEmail)
+          .is("user_id", null)
           .maybeSingle();
 
-        if (membership) {
-          // Auto-activate: if status is not "accepted", update it
-          if (membership.status && membership.status !== "accepted") {
-            await supabase
-              .from("project_members")
-              .update({ status: "accepted", accepted_at: new Date().toISOString() })
-              .eq("project_id", projectId)
-              .eq("user_id", user.id);
-          }
-          setProjectRole(membership.role as AppRole);
-          setSecondaryRole((membership.secondary_role as AppRole) || null);
+        if (emailMembership) {
+          await supabase
+            .from("project_members")
+            .update({ user_id: user.id, status: "accepted", accepted_at: new Date().toISOString() })
+            .eq("id", emailMembership.id);
+
+          setProjectRole(emailMembership.role as AppRole);
+          setSecondaryRole((emailMembership.secondary_role as AppRole) || null);
           setLoading(false);
           return;
         }
+      }
 
-        // 2. Fallback: check by invited_email (user may have registered but
-        //    the handle_new_user trigger may not have linked user_id yet)
-        const userEmail = user.email;
-        if (userEmail) {
-          const { data: emailMembership } = await supabase
-            .from("project_members")
-            .select("id, role, secondary_role")
-            .eq("project_id", projectId)
-            .eq("invited_email", userEmail)
-            .is("user_id", null)
-            .maybeSingle();
+      // 3. Fallback creator profile
+      const { data: project } = await supabase
+        .from("projects")
+        .select("created_by")
+        .eq("id", projectId)
+        .single();
 
-          if (emailMembership) {
-            // Auto-link user_id for future lookups
-            await supabase
-              .from("project_members")
-              .update({ user_id: user.id, status: "accepted", accepted_at: new Date().toISOString() })
-              .eq("id", emailMembership.id);
-
-            setProjectRole(emailMembership.role as AppRole);
-            setSecondaryRole((emailMembership.secondary_role as AppRole) || null);
-            setLoading(false);
-            return;
-          }
-        }
-
-        // 3. Check if creator
-        const { data: project } = await supabase
-          .from("projects")
-          .select("created_by")
-          .eq("id", projectId)
+      if (project?.created_by === user.id) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("user_id", user.id)
           .single();
 
-        if (project?.created_by === user.id) {
-          const { data: profileData } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("user_id", user.id)
-            .single();
-          setProjectRole((profileData?.role as AppRole) || null);
-          setSecondaryRole(null);
-        } else {
-          setProjectRole(null);
-          setSecondaryRole(null);
-        }
-      } catch (err) {
-        console.error("Error fetching project role:", err);
+        setProjectRole((profileData?.role as AppRole) || null);
+        setSecondaryRole(null);
+      } else {
         setProjectRole(null);
         setSecondaryRole(null);
       }
+    } catch (err) {
+      console.error("Error fetching project role:", err);
+      setProjectRole(null);
+      setSecondaryRole(null);
+    }
 
-      setLoading(false);
+    setLoading(false);
+  }, [user, projectId]);
+
+  useEffect(() => {
+    fetchRole();
+  }, [fetchRole]);
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    const handleRoleRefresh = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string }>).detail;
+      if (!detail?.projectId || detail.projectId === projectId) {
+        void fetchRole();
+      }
     };
 
-    fetchRole();
-  }, [user, projectId]);
+    const handleStorageRefresh = (event: StorageEvent) => {
+      if (event.key !== "tektra_role_refresh" || !event.newValue) return;
+
+      try {
+        const payload = JSON.parse(event.newValue) as { projectId?: string };
+        if (!payload.projectId || payload.projectId === projectId) {
+          void fetchRole();
+        }
+      } catch {
+        void fetchRole();
+      }
+    };
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === "visible") {
+        void fetchRole();
+      }
+    };
+
+    window.addEventListener("tektra-role-updated", handleRoleRefresh as EventListener);
+    window.addEventListener("storage", handleStorageRefresh);
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+
+    return () => {
+      window.removeEventListener("tektra-role-updated", handleRoleRefresh as EventListener);
+      window.removeEventListener("storage", handleStorageRefresh);
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+    };
+  }, [fetchRole, projectId]);
 
   const isDO = projectRole === "DO";
   const isDEM = projectRole === "DEM";

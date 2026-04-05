@@ -139,6 +139,40 @@ Deno.serve(async (req) => {
         border-top: 1px solid #e5e7eb;
         margin-top: auto;
       }
+      .annex-table {
+        width: 100%;
+        border-collapse: collapse;
+        flex: 1;
+      }
+      .annex-table th,
+      .annex-table td {
+        padding: 0;
+        border: 1px solid #ddd;
+        vertical-align: middle;
+      }
+      .annex-cell-inner {
+        min-height: 42px;
+        padding: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        line-height: 1.4;
+        box-sizing: border-box;
+      }
+      .annex-head {
+        background: #f9fafb;
+        font-size: 9px;
+        font-weight: 700;
+      }
+      .annex-body {
+        font-size: 10px;
+      }
+      .annex-hash {
+        font-family: monospace;
+        font-size: 8px;
+        word-break: break-all;
+      }
     `;
 
     // Helper to render a signature stamp (3-column layout)
@@ -276,11 +310,11 @@ Deno.serve(async (req) => {
     const hashRows = (orders || []).map((order: any) => {
       const author = profileMap[order.created_by];
       return `<tr>
-        <td style="padding:8px;border:1px solid #ddd;font-size:10px;text-align:center;vertical-align:middle;height:36px;">${order.order_number}</td>
-        <td style="padding:8px;border:1px solid #ddd;font-size:10px;vertical-align:middle;">${order.asunto || "—"}</td>
-        <td style="padding:8px;border:1px solid #ddd;font-size:10px;vertical-align:middle;">${author?.full_name || "—"}</td>
-        <td style="padding:8px;border:1px solid #ddd;font-size:8px;font-family:monospace;word-break:break-all;vertical-align:middle;">${order.signature_hash || "—"}</td>
-        <td style="padding:8px;border:1px solid #ddd;font-size:10px;text-align:center;vertical-align:middle;">${order.signature_type === "p12" ? "Cert. Digital" : "Manual"}</td>
+        <td><div class="annex-cell-inner annex-body">${order.order_number}</div></td>
+        <td><div class="annex-cell-inner annex-body">${order.asunto || "—"}</div></td>
+        <td><div class="annex-cell-inner annex-body">${author?.full_name || "—"}</div></td>
+        <td><div class="annex-cell-inner annex-hash">${order.signature_hash || "—"}</div></td>
+        <td><div class="annex-cell-inner annex-body">${order.signature_type === "p12" ? "Cert. Digital" : "Manual"}</div></td>
       </tr>`;
     }).join("");
 
@@ -288,13 +322,13 @@ Deno.serve(async (req) => {
       <div style="page-break-before:always;padding:40px 20px;min-height:90vh;display:flex;flex-direction:column;">
         <h2 style="font-size:16px;font-weight:bold;margin:0 0 8px;">ANEXO TÉCNICO — Índice de Trazabilidad</h2>
         <p style="font-size:10px;color:#6b7280;margin:0 0 16px;">Hashes SHA-256 de integridad para verificación pericial</p>
-        <table style="width:100%;border-collapse:collapse;flex:1;">
+        <table class="annex-table">
           <tr>
-            <th style="padding:8px;border:1px solid #ddd;font-size:9px;text-align:center;background:#f9fafb;vertical-align:middle;">Nº</th>
-            <th style="padding:8px;border:1px solid #ddd;font-size:9px;text-align:left;background:#f9fafb;vertical-align:middle;">Asunto</th>
-            <th style="padding:8px;border:1px solid #ddd;font-size:9px;text-align:left;background:#f9fafb;vertical-align:middle;">Firmante</th>
-            <th style="padding:8px;border:1px solid #ddd;font-size:9px;text-align:left;background:#f9fafb;vertical-align:middle;">Hash SHA-256</th>
-            <th style="padding:8px;border:1px solid #ddd;font-size:9px;text-align:center;background:#f9fafb;vertical-align:middle;">Tipo</th>
+            <th><div class="annex-cell-inner annex-head">Nº</div></th>
+            <th><div class="annex-cell-inner annex-head">Asunto</div></th>
+            <th><div class="annex-cell-inner annex-head">Firmante</div></th>
+            <th><div class="annex-cell-inner annex-head">Hash SHA-256</div></th>
+            <th><div class="annex-cell-inner annex-head">Tipo</div></th>
           </tr>
           ${hashRows}
         </table>
