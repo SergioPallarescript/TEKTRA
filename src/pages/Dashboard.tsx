@@ -169,7 +169,7 @@ const Dashboard = () => {
       action: "project_created", details: { name: newProject.name },
     });
     setProjects((prev) => [data, ...prev]);
-    setNewProject({ name: "", description: "", address: "" });
+    setNewProject({ name: "", description: "", address: "", referencia_catastral: "" });
     setDialogOpen(false);
     toast.success("Proyecto creado");
   };
