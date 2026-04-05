@@ -25,39 +25,32 @@ Deno.serve(async (req) => {
     const { projectId } = await req.json();
     if (!projectId) throw new Error("projectId required");
 
-    // Fetch project info
-    const { data: project } = await supabase.from("projects").select("*").eq("id", projectId).single();
+    // Fetch project + cover + orders + members
+    const [
+      { data: project },
+      { data: cover },
+      { data: orders },
+      { data: members },
+    ] = await Promise.all([
+      supabase.from("projects").select("*").eq("id", projectId).single(),
+      supabase.from("book_covers").select("*").eq("project_id", projectId).eq("book_type", "orders").maybeSingle(),
+      supabase.from("orders").select("*").eq("project_id", projectId).order("created_at", { ascending: true }),
+      supabase.from("project_members").select("*").eq("project_id", projectId).eq("status", "accepted"),
+    ]);
+
     if (!project) throw new Error("Project not found");
 
-    // Fetch all orders
-    const { data: orders } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: true });
-
-    // Fetch profiles for creators
+    // Fetch profiles
     const creatorIds = [...new Set((orders || []).map((o: any) => o.created_by))];
-    const { data: profiles } = creatorIds.length > 0
-      ? await supabase.from("profiles").select("user_id, full_name, role").in("user_id", creatorIds)
+    const memberIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
+    const allIds = [...new Set([...creatorIds, ...memberIds])];
+    const { data: profiles } = allIds.length > 0
+      ? await supabase.from("profiles").select("user_id, full_name, role, dni_cif").in("user_id", allIds)
       : { data: [] };
     const profileMap: Record<string, any> = {};
     (profiles || []).forEach((p: any) => { profileMap[p.user_id] = p; });
 
-    // Fetch project members
-    const { data: members } = await supabase
-      .from("project_members")
-      .select("*")
-      .eq("project_id", projectId)
-      .eq("status", "accepted");
-    const memberIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
-    const { data: memberProfiles } = memberIds.length > 0
-      ? await supabase.from("profiles").select("user_id, full_name, role").in("user_id", memberIds)
-      : { data: [] };
-    const memberProfileMap: Record<string, any> = {};
-    (memberProfiles || []).forEach((p: any) => { memberProfileMap[p.user_id] = p; });
-
-    // Fetch TEKTRA logo
+    // Fetch logo
     let logoBase64 = "";
     try {
       const { data: logoData } = await supabase.storage.from("plans").download("tectra-logo.png");
@@ -67,17 +60,38 @@ Deno.serve(async (req) => {
       }
     } catch {}
 
-    // Build HTML document for export
     const today = new Date().toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
+    const c = cover as any;
+    const directores = (c?.directores_obra || []) as { nombre: string; colegiado: string }[];
 
-    const teamHtml = (members || []).map((m: any) => {
-      const mp = memberProfileMap[m.user_id];
-      return `<tr><td style="padding:4px 8px;border:1px solid #ddd;font-size:11px;">${m.role}</td><td style="padding:4px 8px;border:1px solid #ddd;font-size:11px;">${mp?.full_name || m.invited_email || "—"}</td></tr>`;
-    }).join("");
+    // === COVER PAGE ===
+    const coverPageHtml = `
+      <div style="page-break-after:always;min-height:90vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:60px 40px;">
+        ${logoBase64 ? `<img src="data:image/png;base64,${logoBase64}" style="height:50px;margin-bottom:24px;" />` : '<p style="font-size:24px;font-weight:bold;margin-bottom:24px;">TEKTRA</p>'}
+        <h1 style="font-size:28px;font-weight:bold;letter-spacing:-0.02em;margin:0 0 8px;">LIBRO DE ÓRDENES Y ASISTENCIAS</h1>
+        ${c?.libro_numero ? `<p style="font-size:16px;color:#6b7280;margin:0 0 32px;">Libro Nº ${c.libro_numero}</p>` : ""}
+        
+        <table style="width:100%;max-width:500px;border-collapse:collapse;text-align:left;margin:24px 0;">
+          <tr><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;width:160px;">Obra:</td><td style="padding:8px 12px;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">${project.name}</td></tr>
+          <tr><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Situación:</td><td style="padding:8px 12px;font-size:13px;border-bottom:1px solid #e5e7eb;">${project.address || "—"}</td></tr>
+          ${project.referencia_catastral ? `<tr><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Ref. Catastral:</td><td style="padding:8px 12px;font-size:13px;border-bottom:1px solid #e5e7eb;">${project.referencia_catastral}</td></tr>` : ""}
+          ${c?.colegio_oficial ? `<tr><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Colegio Oficial:</td><td style="padding:8px 12px;font-size:13px;border-bottom:1px solid #e5e7eb;">${c.colegio_oficial}</td></tr>` : ""}
+          ${c?.propietario_promotor ? `<tr><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Promotor:</td><td style="padding:8px 12px;font-size:13px;border-bottom:1px solid #e5e7eb;">${c.propietario_promotor}</td></tr>` : ""}
+          ${directores.map((d, i) => `<tr><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Director${directores.length > 1 ? ` ${i + 1}` : ""} de Obra:</td><td style="padding:8px 12px;font-size:13px;border-bottom:1px solid #e5e7eb;">${d.nombre}${d.colegiado ? ` — Col. ${d.colegiado}` : ""}</td></tr>`).join("")}
+          ${c?.director_ejecucion_nombre ? `<tr><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Dir. Ejecución:</td><td style="padding:8px 12px;font-size:13px;border-bottom:1px solid #e5e7eb;">${c.director_ejecucion_nombre}${c.director_ejecucion_colegiado ? ` — Col. ${c.director_ejecucion_colegiado}` : ""}</td></tr>` : ""}
+          ${c?.fecha_comienzo ? `<tr><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Fecha Comienzo:</td><td style="padding:8px 12px;font-size:13px;border-bottom:1px solid #e5e7eb;">${new Date(c.fecha_comienzo).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}</td></tr>` : ""}
+          <tr><td style="padding:8px 12px;font-size:12px;color:#6b7280;">Total Órdenes:</td><td style="padding:8px 12px;font-size:13px;font-weight:600;">${(orders || []).length}</td></tr>
+        </table>
 
-    const ordersHtml = (orders || []).map((order: any) => {
+        <p style="font-size:10px;color:#9ca3af;margin-top:40px;">Documento generado por TEKTRA — ${today}</p>
+      </div>
+    `;
+
+    // === ORDER PAGES ===
+    const orderPages = (orders || []).map((order: any) => {
       const author = profileMap[order.created_by];
-      const date = new Date(order.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      const date = new Date(order.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
       const contentHtml = order.content
         .replace(/\*\*ESTADO DE LA OBRA:\*\*/g, '<strong style="color:#059669;">ESTADO DE LA OBRA:</strong>')
         .replace(/\*\*INSTRUCCIONES Y ÓRDENES:\*\*/g, '<strong style="color:#2563eb;">INSTRUCCIONES Y ÓRDENES:</strong>')
@@ -85,53 +99,77 @@ Deno.serve(async (req) => {
         .replace(/\n/g, "<br>");
 
       return `
-        <div style="page-break-inside:avoid;margin-bottom:16px;border:1px solid #e5e7eb;border-radius:6px;padding:12px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-            <strong style="font-size:12px;color:#374151;">Orden #${order.order_number}</strong>
-            <span style="font-size:10px;color:#6b7280;">${date}</span>
+        <div style="page-break-before:always;padding:40px 20px;min-height:90vh;">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:20px;">
+            <div>
+              ${c?.libro_numero ? `<p style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin:0;">Libro de órdenes y asistencias nº ${c.libro_numero}</p>` : ""}
+              <p style="font-size:16px;font-weight:bold;margin:4px 0 0;">Orden nº ${order.order_number}</p>
+            </div>
+            <span style="font-size:11px;color:#6b7280;">${date}</span>
           </div>
-          <div style="font-size:11px;line-height:1.6;">${contentHtml}</div>
-          <div style="margin-top:8px;font-size:10px;color:#9ca3af;">
-            Registrada por: ${author?.full_name || "—"} (${author?.role || "—"})
+
+          <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+            ${order.dirigida_a ? `<tr><td style="padding:4px 8px;font-size:11px;color:#6b7280;width:100px;">Dirigida a:</td><td style="padding:4px 8px;font-size:11px;font-weight:600;">${order.dirigida_a}</td></tr>` : ""}
+            ${order.escrita_por ? `<tr><td style="padding:4px 8px;font-size:11px;color:#6b7280;">Escrita por:</td><td style="padding:4px 8px;font-size:11px;">${order.escrita_por}</td></tr>` : ""}
+            ${order.asunto ? `<tr><td style="padding:4px 8px;font-size:11px;color:#6b7280;">Asunto:</td><td style="padding:4px 8px;font-size:11px;font-weight:600;">${order.asunto}</td></tr>` : ""}
+          </table>
+
+          <div style="font-size:12px;line-height:1.7;margin-bottom:24px;">${contentHtml}</div>
+
+          <div style="margin-top:auto;border-top:1px solid #e5e7eb;padding-top:16px;">
+            <table style="width:100%;border-collapse:collapse;font-size:10px;color:#6b7280;">
+              <tr>
+                <td style="padding:2px 0;">Firmado por: ${author?.full_name || "—"} (${author?.role || "—"})</td>
+                <td style="padding:2px 0;text-align:right;">Tipo: ${order.signature_type === "p12" ? "Certificado Digital" : "Firma Manual"}</td>
+              </tr>
+              <tr>
+                <td style="padding:2px 0;">Geolocalización: ${order.signature_geo || "—"}</td>
+                <td style="padding:2px 0;text-align:right;">DNI/CIF: ${author?.dni_cif || "—"}</td>
+              </tr>
+              ${order.signature_hash ? `<tr><td colspan="2" style="padding:2px 0;font-family:monospace;font-size:8px;">Hash: ${order.signature_hash}</td></tr>` : ""}
+            </table>
           </div>
         </div>
       `;
     }).join("");
 
+    // === HASH INDEX ANNEX ===
+    const hashRows = (orders || []).map((order: any) => {
+      return `<tr>
+        <td style="padding:4px 8px;border:1px solid #ddd;font-size:10px;text-align:center;">${order.order_number}</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;font-size:10px;">${order.asunto || "—"}</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;font-size:8px;font-family:monospace;">${order.signature_hash || "—"}</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;font-size:10px;text-align:center;">${order.signature_type === "p12" ? "Cert." : "Manual"}</td>
+      </tr>`;
+    }).join("");
+
+    const annexHtml = (orders || []).length > 0 ? `
+      <div style="page-break-before:always;padding:40px 20px;">
+        <h2 style="font-size:16px;font-weight:bold;margin:0 0 8px;">ANEXO TÉCNICO — Índice de Trazabilidad</h2>
+        <p style="font-size:10px;color:#6b7280;margin:0 0 16px;">Hashes SHA-256 de integridad para verificación pericial</p>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;text-align:center;background:#f9fafb;">Nº</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;text-align:left;background:#f9fafb;">Asunto</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;text-align:left;background:#f9fafb;">Hash SHA-256</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;text-align:center;background:#f9fafb;">Tipo</th>
+          </tr>
+          ${hashRows}
+        </table>
+        <p style="font-size:8px;color:#9ca3af;margin-top:16px;text-align:center;">
+          Generado por TEKTRA — ${today}. Este anexo forma parte del expediente de trazabilidad del Libro de Órdenes.
+        </p>
+      </div>
+    ` : "";
+
     const html = `
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Libro de Órdenes — ${project.name}</title></head>
-<body style="font-family:'Montserrat',Arial,sans-serif;max-width:800px;margin:0 auto;padding:40px 20px;color:#1f2937;">
-  <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:16px;margin-bottom:24px;">
-    <div>
-      <h1 style="margin:0;font-size:22px;letter-spacing:-0.02em;">LIBRO DE ÓRDENES</h1>
-      <p style="margin:4px 0 0;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;">Certificado Final de Obra</p>
-    </div>
-    ${logoBase64 ? `<img src="data:image/png;base64,${logoBase64}" style="height:36px;" />` : '<span style="font-size:18px;font-weight:bold;">TEKTRA</span>'}
-  </div>
-
-  <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
-    <tr><td style="padding:4px 8px;font-size:11px;color:#6b7280;width:120px;">Proyecto:</td><td style="padding:4px 8px;font-size:11px;font-weight:600;">${project.name}</td></tr>
-    <tr><td style="padding:4px 8px;font-size:11px;color:#6b7280;">Dirección:</td><td style="padding:4px 8px;font-size:11px;">${project.address || "—"}</td></tr>
-    <tr><td style="padding:4px 8px;font-size:11px;color:#6b7280;">Fecha emisión:</td><td style="padding:4px 8px;font-size:11px;">${today}</td></tr>
-    <tr><td style="padding:4px 8px;font-size:11px;color:#6b7280;">Total órdenes:</td><td style="padding:4px 8px;font-size:11px;">${(orders || []).length}</td></tr>
-  </table>
-
-  <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:#6b7280;margin:24px 0 8px;">Equipo del Proyecto</h2>
-  <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
-    <tr><th style="padding:4px 8px;border:1px solid #ddd;font-size:10px;text-align:left;background:#f9fafb;">Rol</th><th style="padding:4px 8px;border:1px solid #ddd;font-size:10px;text-align:left;background:#f9fafb;">Nombre</th></tr>
-    ${teamHtml}
-  </table>
-
-  <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:#6b7280;margin:24px 0 12px;">Registro Cronológico de Órdenes</h2>
-  ${ordersHtml}
-
-  <div style="margin-top:48px;border-top:1px solid #e5e7eb;padding-top:16px;">
-    <p style="font-size:9px;color:#9ca3af;text-align:center;">
-      Documento generado automáticamente por TEKTRA — ${today}. Este documento forma parte del Certificado Final de Obra.
-    </p>
-  </div>
+<body style="font-family:'Montserrat',Arial,sans-serif;max-width:800px;margin:0 auto;padding:0;color:#1f2937;">
+  ${coverPageHtml}
+  ${orderPages}
+  ${annexHtml}
 </body>
 </html>`;
 

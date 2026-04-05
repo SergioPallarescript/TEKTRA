@@ -175,6 +175,7 @@ Deno.serve(async (req) => {
         supabase.from("cost_claims").delete().eq("project_id", projectId),
         supabase.from("audit_logs").delete().eq("project_id", projectId),
         supabase.from("project_members").delete().eq("project_id", projectId),
+        supabase.from("book_covers").delete().eq("project_id", projectId),
       ]);
 
       const { error } = await supabase.from("projects").delete().eq("id", projectId);
