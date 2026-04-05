@@ -143,6 +143,7 @@ const BookCoverForm = ({ projectId, bookType, project, onConfigured }: BookCover
         variant={isConfigured ? "outline" : "default"}
         size="sm"
         onClick={() => setOpen(true)}
+        data-tour="book-cover"
         className="font-display text-xs uppercase tracking-wider gap-2"
       >
         {isConfigured ? <><CheckCircle2 className="h-3.5 w-3.5 text-success" /> Portada Configurada</> : <><Settings className="h-3.5 w-3.5" /> Configurar Portada</>}

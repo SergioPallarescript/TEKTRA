@@ -10,7 +10,9 @@ interface CertificateSignatureProps {
   disabled?: boolean;
   userRole: string;
   onSign: (signedPdfBytes: Uint8Array, metadata: CertSignMetadata) => Promise<void>;
-  originalPdfBytes: ArrayBuffer | null;
+  originalPdfBytes?: ArrayBuffer | null;
+  /** When true, the sign button activates as soon as the certificate is loaded (no PDF needed) */
+  noPdfRequired?: boolean;
 }
 
 export interface CertSignMetadata {
@@ -46,7 +48,7 @@ function findSavedPassword(fileName: string, fileSize: number): string | null {
   return saved[`${fileName}__${fileSize}`] || null;
 }
 
-export default function CertificateSignature({ disabled, userRole, onSign, originalPdfBytes }: CertificateSignatureProps) {
+export default function CertificateSignature({ disabled, userRole, onSign, originalPdfBytes, noPdfRequired }: CertificateSignatureProps) {
   const [p12File, setP12File] = useState<File | null>(null);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -109,7 +111,8 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
   }, [p12File, password]);
 
   const handleSign = useCallback(async () => {
-    if (!parsedCert || !originalPdfBytes) return;
+    if (!parsedCert) return;
+    if (!noPdfRequired && !originalPdfBytes) return;
     setSigning(true);
     try {
       let geo = "";
@@ -130,8 +133,19 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
         timestamp,
       };
 
-      const signedBytes = await signPdfWithP12(originalPdfBytes, parsedCert, signerInfo);
-      const hash = await computeSHA256(signedBytes);
+      let signedBytes: Uint8Array;
+      let hash: string;
+      if (originalPdfBytes) {
+        signedBytes = await signPdfWithP12(originalPdfBytes, parsedCert, signerInfo);
+        hash = await computeSHA256(signedBytes);
+      } else {
+        // No PDF mode (orders/incidents) — generate hash from metadata
+        const metaStr = `${parsedCert.commonName}|${timestamp}|${geo}`;
+        const encoder = new TextEncoder();
+        const digest = await crypto.subtle.digest("SHA-256", encoder.encode(metaStr));
+        hash = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+        signedBytes = new Uint8Array();
+      }
 
       await onSign(signedBytes, {
         signerName: parsedCert.commonName,
@@ -153,7 +167,7 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
     } finally {
       setSigning(false);
     }
-  }, [parsedCert, originalPdfBytes, userRole, onSign]);
+  }, [parsedCert, originalPdfBytes, noPdfRequired, userRole, onSign]);
 
   return (
     <div className="space-y-4">
@@ -250,7 +264,7 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
       {parsedCert && (
         <Button
           onClick={handleSign}
-          disabled={!originalPdfBytes || signing || disabled}
+          disabled={(!noPdfRequired && !originalPdfBytes) || signing || disabled}
           className="w-full gap-2 font-display text-xs uppercase tracking-wider"
         >
           {signing ? (

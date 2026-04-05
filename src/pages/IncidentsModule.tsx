@@ -374,6 +374,7 @@ const IncidentsModule = () => {
                             disabled={submitting}
                             userRole={roleLabel}
                             originalPdfBytes={null}
+                            noPdfRequired
                             onSign={async (_bytes, metadata) => { await handleCertSign(new Uint8Array(), metadata); }}
                           />
                         </TabsContent>

@@ -85,9 +85,33 @@ export function parseP12(p12Buffer: ArrayBuffer, password: string): P12ParseResu
 
   // Extract CN and serialNumber (DNI/NIF)
   const cnAttr = mainCert.subject.getField("CN");
-  const snAttr = mainCert.subject.getField({ name: "serialName" }) || mainCert.subject.getField("2.5.4.5");
   const commonName = cnAttr?.value || "Desconocido";
-  const serialNumber = snAttr?.value || "";
+
+  // Try multiple strategies to extract DNI/NIF
+  let serialNumber = "";
+  // 1. OID 2.5.4.5 (serialNumber / serialName)
+  const snAttr = mainCert.subject.getField({ name: "serialName" })
+    || mainCert.subject.getField("2.5.4.5")
+    || mainCert.subject.getField("serialNumber");
+  if (snAttr?.value) {
+    serialNumber = snAttr.value;
+  }
+  // 2. Extract from CN (common in Spanish certs: "SURNAME NAME - 12345678A")
+  if (!serialNumber && commonName) {
+    const dniMatch = commonName.match(/(\d{8}[A-Z])/i);
+    const nieMatch = commonName.match(/([XYZ]\d{7}[A-Z])/i);
+    const cifMatch = commonName.match(/([A-H]\d{8})/i);
+    serialNumber = dniMatch?.[1] || nieMatch?.[1] || cifMatch?.[1] || "";
+  }
+  // 3. Try subject alternative name or other extensions
+  if (!serialNumber) {
+    for (const attr of mainCert.subject.attributes) {
+      if (attr.type === "2.5.4.5" || attr.name === "serialName") {
+        serialNumber = String(attr.value);
+        break;
+      }
+    }
+  }
 
   return { commonName, serialNumber, certificate: mainCert, privateKey, chain };
 }
@@ -110,25 +134,41 @@ async function addVisualStamp(
   const stampH = 60;
   const margin = 36;
 
-  // Simple anti-overlap: bottom-right by default
-  const x = lastPage.getWidth() - stampW - margin;
-  const y = margin;
+  // Anti-overlap: scan for existing stamps by checking annotations count
+  // Use offset based on existing signature annotations
+  const existingAnnots = lastPage.node.lookup(lastPage.node.get(PDFDocument as any) as any);
+  // Simple approach: count existing /Sig objects in the PDF text
+  const pdfText = new TextDecoder("latin1").decode(pdfBytes);
+  const sigCount = (pdfText.match(/\/Type\s*\/Sig\b/g) || []).length;
 
-  // Background
+  // Position: bottom-right, offset upward for each existing stamp
+  const x = lastPage.getWidth() - stampW - margin;
+  const baseY = margin;
+  const offsetY = sigCount * (stampH + 8);
+  let y = baseY + offsetY;
+
+  // If it would go off the top, stack from the left side
+  if (y + stampH > lastPage.getHeight() - margin) {
+    const col = Math.floor(offsetY / (lastPage.getHeight() - 2 * margin));
+    y = baseY + (offsetY % (lastPage.getHeight() - 2 * margin - stampH));
+  }
+
+  // Background: grey with 80% opacity
   lastPage.drawRectangle({
     x, y, width: stampW, height: stampH,
-    color: rgb(0.97, 0.97, 0.97),
-    borderColor: rgb(0.3, 0.3, 0.3),
-    borderWidth: 0.75,
+    color: rgb(0.85, 0.85, 0.85),
+    opacity: 0.8,
+    borderColor: rgb(1, 0, 0), // RED border
+    borderWidth: 1.5,
   });
 
-  // Compact layout for smaller stamp
+  // Compact layout for smaller stamp — text at 100% opacity, dark color
   const lines = [
-    { text: signer.name, size: 6, f: fontBold, c: rgb(0.1, 0.1, 0.1) },
-    { text: `ID: ${signer.dni} | ${signer.role}`, size: 5, f: font, c: rgb(0.25, 0.25, 0.25) },
-    { text: `${new Date(signer.timestamp).toLocaleString("es-ES")}`, size: 5, f: font, c: rgb(0.25, 0.25, 0.25) },
-    { text: `Geo: ${signer.geo || "N/A"}`, size: 4.5, f: font, c: rgb(0.4, 0.4, 0.4) },
-    { text: "Firma PAdES — TEKTRA", size: 4, f: font, c: rgb(0.5, 0.5, 0.5) },
+    { text: signer.name, size: 6, f: fontBold, c: rgb(0.05, 0.05, 0.15) },
+    { text: `ID: ${signer.dni} | ${signer.role}`, size: 5, f: font, c: rgb(0.1, 0.1, 0.2) },
+    { text: `${new Date(signer.timestamp).toLocaleString("es-ES")}`, size: 5, f: font, c: rgb(0.1, 0.1, 0.2) },
+    { text: `Geo: ${signer.geo || "N/A"}`, size: 4.5, f: font, c: rgb(0.15, 0.15, 0.25) },
+    { text: "Firma PAdES — TEKTRA", size: 4, f: font, c: rgb(0.2, 0.2, 0.3) },
   ];
   lines.forEach((line, i) => {
     lastPage.drawText(line.text, {
