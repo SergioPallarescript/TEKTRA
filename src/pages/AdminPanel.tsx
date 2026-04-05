@@ -187,10 +187,53 @@ const AdminPanel = () => {
 
     const newSecondary = currentSecondary === "CSS" ? null : "CSS";
 
+    // If this is a virtual creator entry (not in project_members), insert first
+    let realMemberId = memberId;
+    if (memberId.startsWith("creator-")) {
+      const creatorUserId = memberId.replace("creator-", "");
+      const creatorMember = members.find((m: any) => m.user_id === creatorUserId && !m.id?.startsWith("creator-"));
+      if (creatorMember) {
+        realMemberId = creatorMember.id;
+      } else {
+        // Insert creator as a real project member
+        const creatorProfile = members.find((m: any) => m.id === memberId);
+        const { data: inserted, error: insertErr } = await supabase
+          .from("project_members")
+          .insert({
+            project_id: projectId,
+            user_id: creatorUserId,
+            role: creatorProfile?.role || "DO",
+            secondary_role: newSecondary,
+            status: "accepted",
+            accepted_at: new Date().toISOString(),
+            invited_email: memberEmail,
+          })
+          .select("id")
+          .single();
+
+        if (insertErr || !inserted) {
+          toast.error("Error al registrar miembro");
+          return;
+        }
+
+        await supabase.from("audit_logs").insert({
+          user_id: user.id,
+          project_id: projectId,
+          action: "secondary_role_changed",
+          details: { member_email: memberEmail, old_secondary: currentSecondary, new_secondary: newSecondary, changed_by: profile?.email },
+        });
+
+        toast.success(newSecondary ? "Rol dual CSS activado" : "Rol dual CSS desactivado");
+        fetchMembers();
+        fetchAuditLogs();
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("project_members")
       .update({ secondary_role: newSecondary })
-      .eq("id", memberId);
+      .eq("id", realMemberId);
 
     if (error) {
       toast.error("Error al cambiar rol secundario");
