@@ -410,6 +410,10 @@ const Dashboard = () => {
               <Input value={editData.status} onChange={(e) => setEditData(prev => ({ ...prev, status: e.target.value }))} placeholder="active, completed, cancelled" />
             </div>
             <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Referencia Catastral</Label>
+              <Input value={editData.referencia_catastral} onChange={(e) => setEditData(prev => ({ ...prev, referencia_catastral: e.target.value }))} placeholder="Ej: 1234567AB8901C0001DE" maxLength={20} />
+            </div>
+            <div className="space-y-2">
               <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <ImagePlus className="h-3.5 w-3.5" /> Imagen de Portada
               </Label>
