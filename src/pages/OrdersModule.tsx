@@ -173,6 +173,11 @@ const OrdersModule = () => {
     const geo = await getGeoLocation();
     const hash = await computeHash(finalContent + new Date().toISOString() + user.id);
 
+    // Capture canvas signature image for manual signatures
+    const signatureImage = signatureMethod === "manual" && sigCanvasRef.current
+      ? sigCanvasRef.current.toDataUrl()
+      : null;
+
     const { error } = await supabase.from("orders").insert({
       project_id: projectId,
       content: finalContent,
@@ -189,6 +194,7 @@ const OrdersModule = () => {
       signed_at: new Date().toISOString(),
       signed_by: user.id,
       is_locked: true,
+      signature_image: signatureImage,
     } as any);
 
     if (error) { toast.error("Error al crear la orden"); setSubmitting(false); return; }
