@@ -158,8 +158,8 @@ export function useProjectRole(projectId: string | undefined): ProjectRoleResult
   const isDEM = projectRole === "DEM";
   const isCON = projectRole === "CON";
   const isPRO = projectRole === "PRO";
-  const isCSS = projectRole === "CSS" || secondaryRole === "CSS";
-  const hasDualCSS = secondaryRole === "CSS";
+  const isCSS = projectRole === "CSS" || (secondaryRole != null && secondaryRole === "CSS");
+  const hasDualCSS = secondaryRole != null && secondaryRole === "CSS";
 
   return {
     projectRole,
