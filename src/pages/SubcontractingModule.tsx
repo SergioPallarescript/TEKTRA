@@ -337,7 +337,7 @@ const SubcontractingModule = () => {
   );
 
   return (
-    <AppLayout projectId={projectId}>
+    <AppLayout>
       <div className="max-w-4xl mx-auto py-6 px-4">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6 flex-wrap">
