@@ -7,7 +7,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Trash2, Settings, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Settings, CheckCircle2, Shield } from "lucide-react";
 
 interface Director {
   nombre: string;
