@@ -146,31 +146,25 @@ Deno.serve(async (req) => {
       }
       .annex-table th,
       .annex-table td {
-        padding: 0;
-        border: 1px solid #ddd;
+        padding: 4px 6px;
+        border: 1px solid #bbb;
         vertical-align: middle;
-      }
-      .annex-cell-inner {
-        min-height: 42px;
-        padding: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         text-align: center;
-        line-height: 1.4;
-        box-sizing: border-box;
+        line-height: 1.2;
       }
       .annex-head {
-        background: #f9fafb;
-        font-size: 9px;
+        background: #f3f4f6;
+        font-size: 8px;
         font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
       }
       .annex-body {
-        font-size: 10px;
+        font-size: 9px;
       }
       .annex-hash {
         font-family: monospace;
-        font-size: 8px;
+        font-size: 7px;
         word-break: break-all;
       }
     `;
