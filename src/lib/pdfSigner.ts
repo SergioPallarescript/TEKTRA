@@ -85,9 +85,33 @@ export function parseP12(p12Buffer: ArrayBuffer, password: string): P12ParseResu
 
   // Extract CN and serialNumber (DNI/NIF)
   const cnAttr = mainCert.subject.getField("CN");
-  const snAttr = mainCert.subject.getField({ name: "serialName" }) || mainCert.subject.getField("2.5.4.5");
   const commonName = cnAttr?.value || "Desconocido";
-  const serialNumber = snAttr?.value || "";
+
+  // Try multiple strategies to extract DNI/NIF
+  let serialNumber = "";
+  // 1. OID 2.5.4.5 (serialNumber / serialName)
+  const snAttr = mainCert.subject.getField({ name: "serialName" })
+    || mainCert.subject.getField("2.5.4.5")
+    || mainCert.subject.getField("serialNumber");
+  if (snAttr?.value) {
+    serialNumber = snAttr.value;
+  }
+  // 2. Extract from CN (common in Spanish certs: "SURNAME NAME - 12345678A")
+  if (!serialNumber && commonName) {
+    const dniMatch = commonName.match(/(\d{8}[A-Z])/i);
+    const nieMatch = commonName.match(/([XYZ]\d{7}[A-Z])/i);
+    const cifMatch = commonName.match(/([A-H]\d{8})/i);
+    serialNumber = dniMatch?.[1] || nieMatch?.[1] || cifMatch?.[1] || "";
+  }
+  // 3. Try subject alternative name or other extensions
+  if (!serialNumber) {
+    for (const attr of mainCert.subject.attributes) {
+      if (attr.type === "2.5.4.5" || attr.name === "serialName") {
+        serialNumber = attr.value;
+        break;
+      }
+    }
+  }
 
   return { commonName, serialNumber, certificate: mainCert, privateKey, chain };
 }
