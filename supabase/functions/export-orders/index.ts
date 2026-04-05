@@ -304,11 +304,11 @@ Deno.serve(async (req) => {
     const hashRows = (orders || []).map((order: any) => {
       const author = profileMap[order.created_by];
       return `<tr>
-        <td><div class="annex-cell-inner annex-body">${order.order_number}</div></td>
-        <td><div class="annex-cell-inner annex-body">${order.asunto || "—"}</div></td>
-        <td><div class="annex-cell-inner annex-body">${author?.full_name || "—"}</div></td>
-        <td><div class="annex-cell-inner annex-hash">${order.signature_hash || "—"}</div></td>
-        <td><div class="annex-cell-inner annex-body">${order.signature_type === "p12" ? "Cert. Digital" : "Manual"}</div></td>
+        <td class="annex-body">${order.order_number}</td>
+        <td class="annex-body">${order.asunto || "—"}</td>
+        <td class="annex-body">${author?.full_name || "—"}</td>
+        <td class="annex-hash">${order.signature_hash || "—"}</td>
+        <td class="annex-body">${order.signature_type === "p12" ? "Cert. Digital" : "Manual"}</td>
       </tr>`;
     }).join("");
 
