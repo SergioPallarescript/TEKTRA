@@ -39,6 +39,9 @@ const roleColors: Record<AppRole, string> = {
   CSS: "bg-destructive/10 text-destructive",
 };
 
+/* Roles that can have CSS as secondary */
+const CSS_ELIGIBLE_ROLES: AppRole[] = ["DEM", "DO"];
+
 const AdminPanel = () => {
   const { id: projectId } = useParams<{ id: string }>();
   const { user, profile } = useAuth();
@@ -50,72 +53,74 @@ const AdminPanel = () => {
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [updatingSecondaryId, setUpdatingSecondaryId] = useState<string | null>(null);
+  const [creatorUserId, setCreatorUserId] = useState<string | null>(null);
 
   const { isAdmin } = useProjectRole(projectId);
 
+  /* ─── Fetch members ─── */
   const fetchMembers = useCallback(async () => {
     if (!projectId) return;
-    
-    // Fetch members WITHOUT profile join (no FK exists)
+
     const { data: memberData } = await supabase
       .from("project_members")
       .select("*")
       .eq("project_id", projectId);
 
-    // Fetch project creator
     const { data: project } = await supabase
       .from("projects")
       .select("created_by")
       .eq("id", projectId)
       .single();
 
+    const projectCreator = project?.created_by ?? null;
+    setCreatorUserId(projectCreator);
+
     let allMembers: any[] = memberData || [];
 
-    // Collect all user_ids to fetch profiles in batch
+    // Collect user_ids for batch profile fetch
     const userIds = allMembers.map((m: any) => m.user_id).filter(Boolean);
-    if (project?.created_by && !userIds.includes(project.created_by)) {
-      userIds.push(project.created_by);
+    if (projectCreator && !userIds.includes(projectCreator)) {
+      userIds.push(projectCreator);
     }
 
-    // Fetch all profiles at once
     let profilesMap: Record<string, any> = {};
     if (userIds.length > 0) {
       const { data: profilesData } = await supabase
         .from("profiles")
         .select("user_id, full_name, email, role")
         .in("user_id", userIds);
-      
+
       if (profilesData) {
         profilesData.forEach((p: any) => { profilesMap[p.user_id] = p; });
       }
     }
 
-    // Attach profile data to each member
+    // Attach profile data
     allMembers = allMembers.map((m: any) => ({
       ...m,
       profiles: m.user_id ? profilesMap[m.user_id] || null : null,
     }));
 
-    // If the creator is not in project_members, add as virtual (read-only) entry
-    // If they ARE in project_members, mark them as creator so they can't be deleted
-    if (project?.created_by) {
-      const creatorIdx = allMembers.findIndex((m: any) => m.user_id === project.created_by);
+    // Mark creator and add virtual entry if creator not in project_members
+    if (projectCreator) {
+      const creatorIdx = allMembers.findIndex((m: any) => m.user_id === projectCreator);
       if (creatorIdx >= 0) {
         allMembers[creatorIdx] = { ...allMembers[creatorIdx], _isCreator: true };
       } else {
-        const creatorProfile = profilesMap[project.created_by];
+        const creatorProfile = profilesMap[projectCreator];
         if (creatorProfile) {
           allMembers = [
             {
-              id: `creator-${project.created_by}`,
+              id: `creator-${projectCreator}`,
               project_id: projectId,
-              user_id: project.created_by,
+              user_id: projectCreator,
               role: creatorProfile.role || "DO",
               secondary_role: null,
               status: "accepted",
               invited_email: creatorProfile.email,
               profiles: creatorProfile,
               _isCreator: true,
+              _isVirtual: true,
             },
             ...allMembers,
           ];
@@ -127,6 +132,7 @@ const AdminPanel = () => {
     setLoading(false);
   }, [projectId]);
 
+  /* ─── Fetch audit logs ─── */
   const fetchAuditLogs = useCallback(async () => {
     if (!projectId) return;
     const { data } = await supabase
@@ -139,17 +145,14 @@ const AdminPanel = () => {
     setAuditLogs(data || []);
   }, [projectId]);
 
+  /* ─── Broadcast role refresh across tabs/components ─── */
   const broadcastRoleRefresh = useCallback(async () => {
     if (!projectId) return;
-
     await supabase.auth.refreshSession().catch(() => undefined);
-
-    const timestamp = Date.now();
-    const payload = JSON.stringify({ projectId, timestamp });
-
+    const payload = JSON.stringify({ projectId, timestamp: Date.now() });
     localStorage.setItem("tektra_role_refresh", payload);
     window.dispatchEvent(new CustomEvent("tektra-role-updated", {
-      detail: { projectId, timestamp },
+      detail: { projectId, timestamp: Date.now() },
     }));
   }, [projectId]);
 
@@ -158,13 +161,9 @@ const AdminPanel = () => {
     fetchAuditLogs();
   }, [fetchMembers, fetchAuditLogs]);
 
+  /* ─── Role change handler ─── */
   const handleRoleChange = async (memberId: string, newRole: AppRole, memberEmail: string, oldRole: string) => {
-    if (!user || !projectId || memberId.startsWith("creator-")) {
-      if (memberId.startsWith("creator-")) {
-        toast.error("El creador del proyecto no puede cambiar su rol desde aquí");
-      }
-      return;
-    }
+    if (!user || !projectId) return;
 
     const { error } = await supabase
       .from("project_members")
@@ -183,12 +182,10 @@ const AdminPanel = () => {
       details: { member_email: memberEmail, old_role: oldRole, new_role: newRole, changed_by: profile?.email },
     });
 
-    // Notify affected user
     const memberUserId = members.find((m: any) => m.id === memberId)?.user_id;
     if (memberUserId) {
       await notifyUser({
-        userId: memberUserId,
-        projectId,
+        userId: memberUserId, projectId,
         title: "Tu rol ha sido actualizado",
         message: `Tu rol ha cambiado de ${oldRole} a ${newRole}`,
         type: "info",
@@ -196,88 +193,85 @@ const AdminPanel = () => {
     }
 
     toast.success(`Rol actualizado a ${roleLabels[newRole]}`);
+    await broadcastRoleRefresh();
     fetchMembers();
     fetchAuditLogs();
   };
 
+  /* ─── CSS dual role toggle (rebuilt from scratch) ─── */
   const handleSecondaryRoleToggle = async (member: any) => {
-    if (!user || !projectId || !member?.user_id) return;
+    if (!user || !projectId) return;
+
+    const targetUserId = member.user_id;
+    if (!targetUserId) {
+      toast.error("Este miembro no tiene usuario vinculado");
+      return;
+    }
 
     setUpdatingSecondaryId(member.id);
 
     try {
-      const { data: project, error: projectError } = await supabase
-        .from("projects")
-        .select("created_by")
-        .eq("id", projectId)
-        .single();
+      const isVirtual = member._isVirtual === true;
+      const memberRole = (member.role as AppRole);
 
-      if (projectError || project?.created_by !== user.id) {
-        throw new Error("Solo el creador del proyecto puede gestionar el rol dual CSS");
+      if (!CSS_ELIGIBLE_ROLES.includes(memberRole)) {
+        throw new Error("El rol dual CSS solo puede activarse sobre usuarios DO o DEM");
       }
 
-      const { data: freshMember, error: memberError } = await supabase
-        .from("project_members")
-        .select("id, user_id, role, secondary_role, invited_email, status")
-        .eq("project_id", projectId)
-        .eq("user_id", member.user_id)
-        .maybeSingle();
+      const currentSecondary = member.secondary_role as string | null;
+      const newSecondary: AppRole | null = currentSecondary === "CSS" ? null : "CSS";
+      const memberEmail = member.invited_email || member.profiles?.email || "—";
 
-      if (memberError) throw memberError;
-
-      const resolvedRole = (freshMember?.role || member.role || member.profiles?.role) as AppRole | null;
-      if (resolvedRole !== "DEM") {
-        throw new Error("El rol dual CSS solo puede activarse sobre usuarios DEM");
-      }
-
-      const currentSecondary = (freshMember?.secondary_role || member.secondary_role) as AppRole | null;
-      const newSecondary = currentSecondary === "CSS" ? null : "CSS";
-      const memberEmail = freshMember?.invited_email || member.invited_email || member.profiles?.email || "—";
-
-      if (freshMember?.id) {
-        const { error: updateError } = await supabase
-          .from("project_members")
-          .update({ secondary_role: newSecondary })
-          .eq("id", freshMember.id);
-
-        if (updateError) throw updateError;
-      } else {
+      if (isVirtual) {
+        // Creator not yet in project_members → insert a real row
         const { error: insertError } = await supabase
           .from("project_members")
           .insert({
             project_id: projectId,
-            user_id: member.user_id,
+            user_id: targetUserId,
             invited_email: memberEmail === "—" ? null : memberEmail,
-            role: resolvedRole,
+            role: memberRole,
             secondary_role: newSecondary,
             status: "accepted",
             accepted_at: new Date().toISOString(),
           });
 
         if (insertError) throw insertError;
+      } else {
+        // Real member → just update secondary_role
+        const { error: updateError } = await supabase
+          .from("project_members")
+          .update({ secondary_role: newSecondary })
+          .eq("id", member.id);
+
+        if (updateError) throw updateError;
       }
 
+      // Audit log
       await supabase.from("audit_logs").insert({
         user_id: user.id,
         project_id: projectId,
         action: "secondary_role_changed",
         details: {
           member_email: memberEmail,
+          target_user_id: targetUserId,
           old_secondary: currentSecondary,
           new_secondary: newSecondary,
           changed_by: profile?.email,
         },
       });
 
-      await notifyUser({
-        userId: member.user_id,
-        projectId,
-        title: newSecondary ? "Rol dual CSS activado" : "Rol dual CSS desactivado",
-        message: newSecondary
-          ? "Se te ha asignado el rol dual CSS, ahora tienes acceso al Libro de Incidencias"
-          : "Se ha desactivado tu rol dual CSS",
-        type: "info",
-      });
+      // Notify affected user
+      if (targetUserId !== user.id) {
+        await notifyUser({
+          userId: targetUserId, projectId,
+          title: newSecondary ? "Rol dual CSS activado" : "Rol dual CSS desactivado",
+          message: newSecondary
+            ? "Se te ha asignado el rol dual CSS, ahora tienes acceso al Libro de Incidencias"
+            : "Se ha desactivado tu rol dual CSS",
+          type: "info",
+        });
+      }
 
       await broadcastRoleRefresh();
       await Promise.all([fetchMembers(), fetchAuditLogs()]);
@@ -291,6 +285,7 @@ const AdminPanel = () => {
     }
   };
 
+  /* ─── Delete member ─── */
   const handleDeleteMember = async () => {
     if (!deleteTarget || !user || !projectId) return;
 
@@ -315,11 +310,9 @@ const AdminPanel = () => {
       },
     });
 
-    // Notify removed user
     if (deleteTarget.user_id) {
       await notifyUser({
-        userId: deleteTarget.user_id,
-        projectId,
+        userId: deleteTarget.user_id, projectId,
         title: "Acceso revocado",
         message: "Se ha revocado tu acceso a este proyecto",
         type: "warning",
@@ -332,6 +325,7 @@ const AdminPanel = () => {
     fetchAuditLogs();
   };
 
+  /* ─── Access guard ─── */
   if (!isAdmin) {
     return (
       <AppLayout>
@@ -373,7 +367,7 @@ const AdminPanel = () => {
 
         {!showHistory ? (
           /* Members Table */
-          <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="rounded-lg border border-border bg-card overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
@@ -403,8 +397,9 @@ const AdminPanel = () => {
                     const name = member.profiles?.full_name || email;
                     const currentRole = member.role as AppRole;
                     const secondaryRole = member.secondary_role as string | null;
-                    const isVirtualCreator = member.id?.toString().startsWith("creator-");
+                    const isVirtual = member._isVirtual === true;
                     const isCreator = member._isCreator === true;
+                    const canToggleCSS = CSS_ELIGIBLE_ROLES.includes(currentRole);
 
                     return (
                       <TableRow key={member.id}>
@@ -412,7 +407,7 @@ const AdminPanel = () => {
                           <div>
                             <p className="font-medium text-foreground text-sm">
                               {name}
-                              {isVirtualCreator && <span className="ml-2 text-xs text-primary">(Creador)</span>}
+                              {isCreator && <span className="ml-2 text-xs text-primary">(Creador)</span>}
                             </p>
                             <p className="text-xs text-muted-foreground">{email}</p>
                           </div>
@@ -430,7 +425,7 @@ const AdminPanel = () => {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {isVirtualCreator ? (
+                          {isVirtual ? (
                             <Badge className={roleColors[currentRole]}>{roleLabels[currentRole]}</Badge>
                           ) : (
                             <Select
@@ -453,7 +448,7 @@ const AdminPanel = () => {
                           )}
                         </TableCell>
                         <TableCell>
-                          {currentRole === "DEM" ? (
+                          {canToggleCSS ? (
                             <div className="flex items-center gap-2">
                               <Switch
                                 checked={secondaryRole === "CSS"}
@@ -512,10 +507,7 @@ const AdminPanel = () => {
                 }
 
                 return (
-                  <div
-                    key={log.id}
-                    className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card/50"
-                  >
+                  <div key={log.id} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card/50">
                     <History className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-sm text-foreground">{description}</p>
@@ -533,11 +525,12 @@ const AdminPanel = () => {
         {/* Dual Role Info */}
         <div className="mt-6 p-4 rounded-lg border border-border bg-muted/20">
           <h3 className="font-display text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            ℹ️ Rol Dual DEM + CSS
+            ℹ️ Rol Dual CSS
           </h3>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Al activar el rol dual, el Arquitecto Técnico (DEM) obtiene acceso de escritura tanto en el
-            Libro de Órdenes como en el Libro de Incidencias, manteniendo una sesión única.
+            Al activar el rol dual CSS, el Director de Obra (DO) o el Arquitecto Técnico (DEM) obtiene
+            acceso de escritura tanto en el Libro de Órdenes como en el Libro de Incidencias,
+            manteniendo una sesión única. El creador del proyecto puede gestionar su propio rol dual.
             Todos los cambios quedan registrados en el historial de auditoría.
           </p>
         </div>
