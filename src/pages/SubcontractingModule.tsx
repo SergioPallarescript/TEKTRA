@@ -467,7 +467,7 @@ const SubcontractingModule = () => {
                           Nivel {entry.nivel_subcontratacion}
                         </span>
                         {entry.is_locked && (
-                          <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-display uppercase tracking-wider">
+                          <span className="flex items-center gap-1 text-[10px] text-primary font-display uppercase tracking-wider">
                             <Lock className="h-3 w-3" /> Firmado
                           </span>
                         )}
