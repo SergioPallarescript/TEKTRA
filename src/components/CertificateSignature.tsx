@@ -167,7 +167,7 @@ export default function CertificateSignature({ disabled, userRole, onSign, origi
     } finally {
       setSigning(false);
     }
-  }, [parsedCert, originalPdfBytes, userRole, onSign]);
+  }, [parsedCert, originalPdfBytes, noPdfRequired, userRole, onSign]);
 
   return (
     <div className="space-y-4">
