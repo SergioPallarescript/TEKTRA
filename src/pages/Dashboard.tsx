@@ -68,7 +68,7 @@ const Dashboard = () => {
   const { user, profile } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newProject, setNewProject] = useState({ name: "", description: "", address: "" });
+  const [newProject, setNewProject] = useState({ name: "", description: "", address: "", referencia_catastral: "" });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [pendingSignatureDocs, setPendingSignatureDocs] = useState<any[]>([]);
