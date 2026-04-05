@@ -90,6 +90,10 @@ Deno.serve(async (req) => {
         payload.cover_image_url = typeof body.cover_image_url === "string" && body.cover_image_url.trim() ? body.cover_image_url.trim() : null;
       }
 
+      if (body.referencia_catastral !== undefined) {
+        payload.referencia_catastral = typeof body.referencia_catastral === "string" && body.referencia_catastral.trim() ? body.referencia_catastral.trim() : null;
+      }
+
       if (!payload.name) {
         return new Response(JSON.stringify({ error: "El nombre del proyecto es obligatorio" }), {
           status: 400,
