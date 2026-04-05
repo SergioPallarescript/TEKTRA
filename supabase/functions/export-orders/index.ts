@@ -75,8 +75,13 @@ Deno.serve(async (req) => {
     const c = cover as any;
     const directores = (c?.directores_obra || []) as { nombre: string; colegiado: string }[];
 
-    // === STAMP STYLES ===
-    const stampStyles = `
+    const totalPages = 1 + (orders || []).length + ((orders || []).length > 0 ? 1 : 0);
+
+    // === STYLES ===
+    const styles = `
+      @media print {
+        .page-footer { position: fixed; bottom: 0; left: 0; right: 0; }
+      }
       .stamp-digital {
         display: inline-block;
         border: 2px solid #FF0000;
@@ -107,10 +112,22 @@ Deno.serve(async (req) => {
         gap: 8px;
         margin-top: 12px;
       }
+      .page-number {
+        text-align: center;
+        font-size: 10px;
+        color: #6b7280;
+        padding: 16px 0 8px;
+        border-top: 1px solid #e5e7eb;
+        margin-top: auto;
+      }
     `;
 
     // Helper to render a signature stamp
-    const renderStamp = (type: string, name: string, dniCif: string, date: string, geo: string, hash: string, role: string) => {
+    const renderStamp = (type: string, name: string, dniCif: string, date: string, geo: string, hash: string, role: string, signatureImage?: string) => {
+      const signatureImageHtml = signatureImage
+        ? `<div style="margin:4px 0;"><img src="${signatureImage}" style="max-width:200px;max-height:60px;border:1px solid #ccc;background:#fff;padding:2px;" /></div>`
+        : "";
+
       if (type === "p12") {
         return `<div class="stamp-digital">
           <div style="font-weight:bold;font-size:10px;margin-bottom:2px;">✅ FIRMADO DIGITALMENTE</div>
@@ -127,6 +144,7 @@ Deno.serve(async (req) => {
         <div>Por: <strong>${name}</strong></div>
         <div>DNI/NIE: <strong>${dniCif || "—"}</strong></div>
         <div>Rol: ${role || "—"}</div>
+        ${signatureImageHtml}
         <div>Fecha: ${date}</div>
         <div>Geo: ${geo || "—"}</div>
         ${hash ? `<div style="font-family:monospace;font-size:7px;word-break:break-all;margin-top:2px;">Hash SHA-256: ${hash}</div>` : ""}
@@ -153,11 +171,12 @@ Deno.serve(async (req) => {
         </table>
 
         <p style="font-size:10px;color:#9ca3af;margin-top:40px;">Documento generado por TEKTRA — ${today}</p>
+        <div class="page-number">Página 1 de ${totalPages}</div>
       </div>
     `;
 
     // === ORDER PAGES ===
-    const orderPages = (orders || []).map((order: any) => {
+    const orderPages = (orders || []).map((order: any, idx: number) => {
       const author = profileMap[order.created_by];
       const date = new Date(order.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
       const signedDate = order.signed_at
@@ -179,7 +198,8 @@ Deno.serve(async (req) => {
         signedDate,
         order.signature_geo || "",
         order.signature_hash || "",
-        author?.role || "—"
+        author?.role || "—",
+        order.signature_type !== "p12" ? (order.signature_image || undefined) : undefined
       ));
 
       // Add validation stamps
@@ -198,8 +218,10 @@ Deno.serve(async (req) => {
         ));
       });
 
+      const pageNum = idx + 2;
+
       return `
-        <div style="page-break-before:always;padding:40px 20px;min-height:90vh;">
+        <div style="page-break-before:always;padding:40px 20px;min-height:90vh;display:flex;flex-direction:column;">
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:20px;">
             <div>
               ${c?.libro_numero ? `<p style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin:0;">Libro de órdenes y asistencias nº ${c.libro_numero}</p>` : ""}
@@ -214,7 +236,7 @@ Deno.serve(async (req) => {
             ${order.asunto ? `<tr><td style="padding:4px 8px;font-size:11px;color:#6b7280;">Asunto:</td><td style="padding:4px 8px;font-size:11px;font-weight:600;">${order.asunto}</td></tr>` : ""}
           </table>
 
-          <div style="font-size:12px;line-height:1.7;margin-bottom:24px;">${contentHtml}</div>
+          <div style="font-size:12px;line-height:1.7;margin-bottom:24px;flex:1;">${contentHtml}</div>
 
           <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
             <p style="font-size:9px;color:#6b7280;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.05em;">Firmas y Sellos de Integridad</p>
@@ -222,11 +244,13 @@ Deno.serve(async (req) => {
               ${stamps.join("")}
             </div>
           </div>
+          <div class="page-number">Página ${pageNum} de ${totalPages}</div>
         </div>
       `;
     }).join("");
 
     // === HASH INDEX ANNEX ===
+    const annexPageNum = 1 + (orders || []).length + 1;
     const hashRows = (orders || []).map((order: any) => {
       const author = profileMap[order.created_by];
       return `<tr>
@@ -239,10 +263,10 @@ Deno.serve(async (req) => {
     }).join("");
 
     const annexHtml = (orders || []).length > 0 ? `
-      <div style="page-break-before:always;padding:40px 20px;">
+      <div style="page-break-before:always;padding:40px 20px;min-height:90vh;display:flex;flex-direction:column;">
         <h2 style="font-size:16px;font-weight:bold;margin:0 0 8px;">ANEXO TÉCNICO — Índice de Trazabilidad</h2>
         <p style="font-size:10px;color:#6b7280;margin:0 0 16px;">Hashes SHA-256 de integridad para verificación pericial</p>
-        <table style="width:100%;border-collapse:collapse;">
+        <table style="width:100%;border-collapse:collapse;flex:1;">
           <tr>
             <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;text-align:center;background:#f9fafb;">Nº</th>
             <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;text-align:left;background:#f9fafb;">Asunto</th>
@@ -255,6 +279,7 @@ Deno.serve(async (req) => {
         <p style="font-size:8px;color:#9ca3af;margin-top:16px;text-align:center;">
           Generado por TEKTRA — ${today}. Este anexo forma parte del expediente de trazabilidad del Libro de Órdenes.
         </p>
+        <div class="page-number">Página ${annexPageNum} de ${totalPages}</div>
       </div>
     ` : "";
 
@@ -264,7 +289,7 @@ Deno.serve(async (req) => {
 <head>
   <meta charset="utf-8">
   <title>Libro de Órdenes — ${project.name}</title>
-  <style>${stampStyles}</style>
+  <style>${styles}</style>
 </head>
 <body style="font-family:'Montserrat',Arial,sans-serif;max-width:800px;margin:0 auto;padding:0;color:#1f2937;">
   ${coverPageHtml}
