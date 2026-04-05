@@ -364,8 +364,9 @@ const Dashboard = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground flex-wrap">
                     {project.address && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{project.address}</span>}
+                    {(project as any).referencia_catastral && <span className="text-[10px] font-mono">Ref: {(project as any).referencia_catastral}</span>}
                     <span className="flex items-center gap-1"><Users className="h-3 w-3" />Equipo</span>
                   </div>
                 </button>
