@@ -48,7 +48,7 @@ function findSavedPassword(fileName: string, fileSize: number): string | null {
   return saved[`${fileName}__${fileSize}`] || null;
 }
 
-export default function CertificateSignature({ disabled, userRole, onSign, originalPdfBytes }: CertificateSignatureProps) {
+export default function CertificateSignature({ disabled, userRole, onSign, originalPdfBytes, noPdfRequired }: CertificateSignatureProps) {
   const [p12File, setP12File] = useState<File | null>(null);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
