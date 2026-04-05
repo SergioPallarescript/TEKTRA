@@ -44,6 +44,7 @@ const modules = [
   { key: "brain", label: "Cerebro de Obra", icon: Brain, desc: "IA basada en documentos" },
   { key: "orders", label: "Libro de Órdenes", icon: BookOpen, desc: "Solo DEM" },
   { key: "incidents", label: "Libro de Incidencias", icon: AlertTriangle, desc: "Solo CSS" },
+  { key: "subcontracting", label: "Libro de Subcontratación", icon: ClipboardCheck, desc: "Solo Constructor" },
   { key: "costs", label: "Validación Económica", icon: DollarSign, desc: "Certificaciones y presupuestos" },
   { key: "dwg", label: "Metro Digital", icon: Ruler, desc: "Toma de medidas" },
   { key: "cfo", label: "Docs Finales (CFO)", icon: ClipboardCheck, desc: "16 puntos de control" },
