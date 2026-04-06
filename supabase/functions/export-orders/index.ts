@@ -310,16 +310,16 @@ Deno.serve(async (req) => {
     }).join("");
 
     const annexHtml = (orders || []).length > 0 ? `
-      <div style="page-break-before:always;padding:40px 20px;min-height:90vh;display:flex;flex-direction:column;">
+      <div style="page-break-before:always;padding:40px 20px;">
         <h2 style="font-size:16px;font-weight:bold;margin:0 0 8px;">ANEXO TÉCNICO — Índice de Trazabilidad</h2>
         <p style="font-size:10px;color:#6b7280;margin:0 0 16px;">Hashes SHA-256 de integridad para verificación pericial</p>
         <table class="annex-table">
           <tr>
-            <th class="annex-head">Nº</th>
-            <th class="annex-head">Asunto</th>
-            <th class="annex-head">Firmante</th>
-            <th class="annex-head">Hash SHA-256</th>
-            <th class="annex-head">Tipo</th>
+            <th>Nº</th>
+            <th style="text-align:left;">Asunto</th>
+            <th style="text-align:left;">Firmante</th>
+            <th style="text-align:left;">Hash SHA-256</th>
+            <th>Tipo</th>
           </tr>
           ${hashRows}
         </table>
