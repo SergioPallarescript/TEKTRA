@@ -142,29 +142,26 @@ Deno.serve(async (req) => {
       .annex-table {
         width: 100%;
         border-collapse: collapse;
-        flex: 1;
       }
       .annex-table th,
       .annex-table td {
-        padding: 4px 6px;
-        border: 1px solid #bbb;
+        padding: 4px 8px;
+        border: 1px solid #ddd;
         vertical-align: middle;
-        text-align: center;
-        line-height: 1.2;
+        line-height: 1.1;
       }
-      .annex-head {
-        background: #f3f4f6;
-        font-size: 8px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.02em;
-      }
-      .annex-body {
+      .annex-table th {
+        background: #f9fafb;
         font-size: 9px;
+        font-weight: 700;
+        text-align: center;
+      }
+      .annex-table td {
+        font-size: 10px;
       }
       .annex-hash {
         font-family: monospace;
-        font-size: 7px;
+        font-size: 8px;
         word-break: break-all;
       }
     `;
@@ -304,25 +301,25 @@ Deno.serve(async (req) => {
     const hashRows = (orders || []).map((order: any) => {
       const author = profileMap[order.created_by];
       return `<tr>
-        <td class="annex-body">${order.order_number}</td>
-        <td class="annex-body">${order.asunto || "—"}</td>
-        <td class="annex-body">${author?.full_name || "—"}</td>
+        <td style="text-align:center;">${order.order_number}</td>
+        <td>${order.asunto || "—"}</td>
+        <td>${author?.full_name || "—"}</td>
         <td class="annex-hash">${order.signature_hash || "—"}</td>
-        <td class="annex-body">${order.signature_type === "p12" ? "Cert. Digital" : "Manual"}</td>
+        <td style="text-align:center;">${order.signature_type === "p12" ? "Cert." : "Manual"}</td>
       </tr>`;
     }).join("");
 
     const annexHtml = (orders || []).length > 0 ? `
-      <div style="page-break-before:always;padding:40px 20px;min-height:90vh;display:flex;flex-direction:column;">
+      <div style="page-break-before:always;padding:40px 20px;">
         <h2 style="font-size:16px;font-weight:bold;margin:0 0 8px;">ANEXO TÉCNICO — Índice de Trazabilidad</h2>
         <p style="font-size:10px;color:#6b7280;margin:0 0 16px;">Hashes SHA-256 de integridad para verificación pericial</p>
         <table class="annex-table">
           <tr>
-            <th class="annex-head">Nº</th>
-            <th class="annex-head">Asunto</th>
-            <th class="annex-head">Firmante</th>
-            <th class="annex-head">Hash SHA-256</th>
-            <th class="annex-head">Tipo</th>
+            <th>Nº</th>
+            <th style="text-align:left;">Asunto</th>
+            <th style="text-align:left;">Firmante</th>
+            <th style="text-align:left;">Hash SHA-256</th>
+            <th>Tipo</th>
           </tr>
           ${hashRows}
         </table>

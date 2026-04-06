@@ -105,18 +105,18 @@ Deno.serve(async (req) => {
       const sigType = entry.signature_type === "p12" ? "✅ Cert." : "✍️ Manual";
 
       return `<tr>
-        <td style="padding:4px 6px;border:1px solid #999;text-align:center;font-size:10px;">${entry.entry_number}</td>
-        <td style="padding:4px 6px;border:1px solid #999;font-size:10px;"><strong>${entry.empresa_nombre}</strong><br/>NIF: ${entry.empresa_nif}</td>
-        <td style="padding:4px 6px;border:1px solid #999;text-align:center;font-size:10px;">${entry.nivel_subcontratacion}º</td>
-        <td style="padding:4px 6px;border:1px solid #999;font-size:10px;">${entry.objeto_contrato}</td>
-        <td style="padding:4px 6px;border:1px solid #999;text-align:center;font-size:10px;">${new Date(entry.fecha_comienzo).toLocaleDateString("es-ES")}</td>
-        <td style="padding:4px 6px;border:1px solid #999;font-size:10px;">${entry.responsable_nombre}<br/>DNI: ${entry.responsable_dni}</td>
-        <td style="padding:4px 6px;border:1px solid #999;text-align:center;font-size:10px;">${entry.fecha_plan_seguridad ? new Date(entry.fecha_plan_seguridad).toLocaleDateString("es-ES") : "—"}</td>
-        <td style="padding:4px 6px;border:1px solid #999;text-align:center;font-size:9px;">
+        <td style="padding:4px 8px;border:1px solid #ddd;text-align:center;font-size:10px;line-height:1.1;">${entry.entry_number}</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;font-size:10px;line-height:1.1;"><strong>${entry.empresa_nombre}</strong><br/>NIF: ${entry.empresa_nif}</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;text-align:center;font-size:10px;line-height:1.1;">${entry.nivel_subcontratacion}º</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;font-size:10px;line-height:1.1;">${entry.objeto_contrato}</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;text-align:center;font-size:10px;line-height:1.1;">${new Date(entry.fecha_comienzo).toLocaleDateString("es-ES")}</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;font-size:10px;line-height:1.1;">${entry.responsable_nombre}<br/>DNI: ${entry.responsable_dni}</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;text-align:center;font-size:10px;line-height:1.1;">${entry.fecha_plan_seguridad ? new Date(entry.fecha_plan_seguridad).toLocaleDateString("es-ES") : "—"}</td>
+        <td style="padding:4px 8px;border:1px solid #ddd;text-align:center;font-size:10px;line-height:1.1;">
           <div>${sigType}</div>
           <div style="font-size:8px;color:#666;">${signDate}</div>
-          <div style="font-family:monospace;font-size:7px;word-break:break-all;">${hashShort}</div>
-          ${entry.signature_geo ? `<div style="font-size:7px;color:#888;">📍 ${entry.signature_geo}</div>` : ""}
+          <div style="font-family:monospace;font-size:8px;word-break:break-all;">${hashShort}</div>
+          ${entry.signature_geo ? `<div style="font-size:8px;color:#888;">📍 ${entry.signature_geo}</div>` : ""}
         </td>
       </tr>`;
     }).join("");
@@ -126,15 +126,15 @@ Deno.serve(async (req) => {
         <h2 style="font-size:14px;margin:0 0 4px;">REGISTRO DE SUBCONTRATACIONES</h2>
         <p style="font-size:10px;color:#666;margin:0 0 12px;">Obra: ${project.name} — ${project.address || ""}</p>
         <table style="width:100%;border-collapse:collapse;">
-          <tr style="background:#f3f4f6;">
-            <th style="padding:4px 4px;border:1px solid #999;font-size:8px;text-transform:uppercase;">Nº</th>
-            <th style="padding:4px 4px;border:1px solid #999;font-size:8px;text-transform:uppercase;">Empresa / NIF</th>
-            <th style="padding:4px 4px;border:1px solid #999;font-size:8px;text-transform:uppercase;">Nivel</th>
-            <th style="padding:4px 4px;border:1px solid #999;font-size:8px;text-transform:uppercase;">Objeto</th>
-            <th style="padding:4px 4px;border:1px solid #999;font-size:8px;text-transform:uppercase;">Inicio</th>
-            <th style="padding:4px 4px;border:1px solid #999;font-size:8px;text-transform:uppercase;">Responsable</th>
-            <th style="padding:4px 4px;border:1px solid #999;font-size:8px;text-transform:uppercase;">PSS</th>
-            <th style="padding:4px 4px;border:1px solid #999;font-size:8px;text-transform:uppercase;">Firma</th>
+          <tr>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;background:#f9fafb;">Nº</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;background:#f9fafb;text-align:left;">Empresa / NIF</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;background:#f9fafb;">Nivel</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;background:#f9fafb;text-align:left;">Objeto</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;background:#f9fafb;">Inicio</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;background:#f9fafb;text-align:left;">Responsable</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;background:#f9fafb;">PSS</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;font-size:9px;background:#f9fafb;">Firma</th>
           </tr>
           ${entryRows}
         </table>
