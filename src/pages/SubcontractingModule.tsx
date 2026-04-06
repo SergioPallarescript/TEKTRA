@@ -501,6 +501,35 @@ const SubcontractingModule = () => {
             <DialogTitle className="font-display text-base">Diligencia de Habilitación</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
+            {/* Auto-filled data from project */}
+            {members.length > 0 && (
+              <div className="bg-muted/30 border border-border rounded-lg p-3 space-y-1.5">
+                <p className="text-[10px] font-display uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <span className="text-base">🧠</span> Datos obtenidos del proyecto
+                </p>
+                {(() => {
+                  const getMember = (role: string) => {
+                    const m = members.find((m: any) => m.role === role);
+                    return m ? { name: (m as any).profiles?.full_name || m.invited_email || "—", nif: (m as any).profiles?.dni_cif || "—" } : null;
+                  };
+                  const pro = getMember("PRO");
+                  const con = getMember("CON");
+                  const df = getMember("DO") || getMember("DEM");
+                  const cssM = members.find((m: any) => m.role === "CSS" || m.secondary_role === "CSS");
+                  const css = cssM ? { name: (cssM as any).profiles?.full_name || (cssM as any).invited_email || "—", nif: (cssM as any).profiles?.dni_cif || "—" } : null;
+                  return (
+                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+                      {pro && <><span className="text-muted-foreground">Promotor:</span><span className="font-medium">{pro.name} — NIF: {pro.nif}</span></>}
+                      {con && <><span className="text-muted-foreground">Constructor:</span><span className="font-medium">{con.name} — NIF: {con.nif}</span></>}
+                      {df && <><span className="text-muted-foreground">Dir. Facultativa:</span><span className="font-medium">{df.name} — NIF: {df.nif}</span></>}
+                      {css && <><span className="text-muted-foreground">CSS:</span><span className="font-medium">{css.name} — NIF: {css.nif}</span></>}
+                      {project?.address && <><span className="text-muted-foreground">Domicilio obra:</span><span className="font-medium">{project.address}</span></>}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Nº Inscripción REA *</Label>
               <Input value={reaNumber} onChange={e => setReaNumber(e.target.value)} placeholder="Número de inscripción en el REA" />
