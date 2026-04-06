@@ -301,11 +301,11 @@ Deno.serve(async (req) => {
     const hashRows = (orders || []).map((order: any) => {
       const author = profileMap[order.created_by];
       return `<tr>
-        <td class="annex-body">${order.order_number}</td>
-        <td class="annex-body">${order.asunto || "—"}</td>
-        <td class="annex-body">${author?.full_name || "—"}</td>
+        <td style="text-align:center;">${order.order_number}</td>
+        <td>${order.asunto || "—"}</td>
+        <td>${author?.full_name || "—"}</td>
         <td class="annex-hash">${order.signature_hash || "—"}</td>
-        <td class="annex-body">${order.signature_type === "p12" ? "Cert. Digital" : "Manual"}</td>
+        <td style="text-align:center;">${order.signature_type === "p12" ? "Cert." : "Manual"}</td>
       </tr>`;
     }).join("");
 
