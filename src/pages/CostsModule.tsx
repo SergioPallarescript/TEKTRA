@@ -203,6 +203,11 @@ const CostsModule = () => {
     });
   }, [pdfPages]);
 
+  /* ───── Computed values for presupuesto/certificacion with PEM+IVA ───── */
+  const pemAmount = useMemo(() => parseFloat(amount) || 0, [amount]);
+  const pemIVA = useMemo(() => pemAmount * (parseFloat(ivaPercent) || 0) / 100, [pemAmount, ivaPercent]);
+  const pemTotal = useMemo(() => pemAmount + pemIVA, [pemAmount, pemIVA]);
+
   /* ───── Create ───── */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,12 +223,23 @@ const CostsModule = () => {
       if (!error) { fileUrl = path; fileName = file.name; }
     }
 
-    const finalAmount = isPartida ? partidaTotal : parseFloat(amount);
+    let finalAmount: number;
+    let finalPEM: number;
+    if (isPartida) {
+      finalAmount = partidaTotal;
+      finalPEM = partidaPEM;
+    } else {
+      // Presupuesto / Certificación: user enters PEM, we calc total with IVA
+      finalPEM = pemAmount;
+      finalAmount = pemTotal;
+    }
 
     const insertData: any = {
       project_id: projectId, title, description: description || null,
       amount: finalAmount, file_url: fileUrl, file_name: fileName,
       submitted_by: user.id, doc_type: docType,
+      iva_percent: parseFloat(ivaPercent) || 21,
+      pem: finalPEM,
     };
 
     if (isPartida) {
@@ -233,21 +249,31 @@ const CostsModule = () => {
       insertData.anchura = parseFloat(pAnchura) || 0;
       insertData.altura = parseFloat(pAltura) || 0;
       insertData.precio_unitario = parseFloat(precioUnitario) || 0;
-      insertData.iva_percent = parseFloat(ivaPercent) || 21;
-      insertData.pem = partidaPEM;
       insertData.comentario = comentario || null;
+    }
+
+    // Auto-validation: if DO or DEM submits a presupuesto/partida, auto-validate
+    const autoValidate = (isDO || isDEM) && (docType === "presupuesto" || docType === "partida");
+    if (autoValidate) {
+      insertData.status = "pending_payment";
+      insertData.technical_approved_by = user.id;
+      insertData.technical_approved_at = new Date().toISOString();
+      if (isDEM) { insertData.dem_signed_by = user.id; insertData.dem_signed_at = new Date().toISOString(); }
+      if (isDO) { insertData.do_signed_by = user.id; insertData.do_signed_at = new Date().toISOString(); }
     }
 
     const { error } = await supabase.from("cost_claims").insert(insertData as any);
     if (error) { toast.error("Error al enviar"); setSubmitting(false); return; }
 
     const docLabel = DOC_TYPE_LABELS[docType] || docType;
-    toast.success(`${docLabel} enviado`);
+    toast.success(`${docLabel} enviado${autoValidate ? " y validado automáticamente" : ""}`);
     await notifyProjectMembers({
       projectId: projectId!,
       actorId: user.id,
-      title: `Nueva ${docLabel}: ${title}`,
-      message: `Se ha registrado ${docLabel === "Certificación" ? "una nueva Certificación" : docLabel === "Partida" ? "una nueva Partida" : "un nuevo Presupuesto"} pendiente de validación: "${title}"`,
+      title: autoValidate ? `${docLabel} validada por DF: ${title}` : `Nueva ${docLabel}: ${title}`,
+      message: autoValidate
+        ? `"${title}" ha sido creada y validada automáticamente por la Dirección Facultativa. Pendiente de autorización de pago por el Promotor.`
+        : `Se ha registrado ${docLabel === "Certificación" ? "una nueva Certificación" : docLabel === "Partida" ? "una nueva Partida" : "un nuevo Presupuesto"} pendiente de validación: "${title}"`,
       type: "cost",
     });
 
@@ -719,9 +745,15 @@ const CostsModule = () => {
                     </div>
                   ) : (
                     <>
-                      <p className="text-2xl font-display font-bold tracking-tight">
-                        {parseFloat(selectedClaim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}
-                      </p>
+                      {/* PEM+IVA breakdown for presupuesto/certificación */}
+                      <div className="rounded-lg border border-border bg-background p-4 space-y-2">
+                        <p className="text-sm"><span className="text-muted-foreground">Importe PEM:</span> <strong>{parseFloat(selectedClaim.pem || selectedClaim.amount || 0).toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                        {parseFloat(selectedClaim.iva_percent || 0) > 0 && (
+                          <p className="text-sm"><span className="text-muted-foreground">Cuota IVA ({selectedClaim.iva_percent || 21}%):</span> <strong>{(parseFloat(selectedClaim.pem || selectedClaim.amount || 0) * parseFloat(selectedClaim.iva_percent || 21) / 100).toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                        )}
+                        <p className="text-xl font-display font-bold">Total: {parseFloat(selectedClaim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</p>
+                        <p className="text-[10px] text-muted-foreground italic">Los precios indicados son Precios de Ejecución Material</p>
+                      </div>
                       {selectedClaim.file_url ? (
                         <div ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
                           {pdfPages.length === 0 && (
@@ -906,13 +938,37 @@ const CostsModule = () => {
             ) : (
               <>
                 <div className="space-y-2">
-                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Importe (€) *</Label>
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Importe PEM (€) *</Label>
                   <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="45000.00" required />
+                  <p className="text-[10px] text-muted-foreground italic">Presupuesto de Ejecución Material (sin IVA)</p>
                 </div>
                 <div className="space-y-2">
-                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Documento PDF *</Label>
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Tipo de IVA *</Label>
+                  <Select value={ivaPercent} onValueChange={setIvaPercent}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {IVA_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Live desglose */}
+                {pemAmount > 0 && (
+                  <div className="rounded-lg bg-secondary/50 p-3 space-y-1 text-sm">
+                    <p>Importe PEM: <strong>{pemAmount.toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                    <p>Cuota IVA ({ivaPercent}%): <strong>{pemIVA.toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                    <p className="font-display font-bold text-base">TOTAL FINAL: {pemTotal.toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</p>
+                    <p className="text-[10px] text-muted-foreground italic">Los precios indicados son Precios de Ejecución Material</p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Documento PDF</Label>
                   <Input type="file" accept=".pdf" onChange={e => setFile(e.target.files?.[0] || null)} className="cursor-pointer" />
                 </div>
+                {(isDO || isDEM) && (docType === "presupuesto") && (
+                  <p className="text-[10px] text-success bg-success/5 border border-success/20 rounded p-2">
+                    ✓ Como miembro de la Dirección Facultativa, este documento se validará automáticamente al enviarlo.
+                  </p>
+                )}
               </>
             )}
             <AlertDialogFooter>

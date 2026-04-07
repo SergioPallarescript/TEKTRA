@@ -5,17 +5,19 @@ import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { notifyUser } from "@/lib/notifications";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import {
   ArrowLeft, CheckCircle2, Circle, Upload, FileText,
-  Shield, Bell, Download, RefreshCw, Trash2,
+  Shield, Bell, Download, RefreshCw, Trash2, ChevronDown, ChevronUp, XCircle, Loader2,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label";
 
 type AppRole = "DO" | "DEM" | "CON" | "PRO" | "CSS";
 
@@ -54,6 +56,10 @@ const CFOModule = () => {
   const [claimDialog, setClaimDialog] = useState<{ open: boolean; item: any | null }>({ open: false, item: null });
   const [auditing, setAuditing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [rejectDialog, setRejectDialog] = useState<{ open: boolean; item: any | null }>({ open: false, item: null });
+  const [rejectReason, setRejectReason] = useState("");
 
   const { isDEM, projectRole } = useProjectRole(projectId);
   const userRole = projectRole as AppRole | undefined;
@@ -92,6 +98,26 @@ const CFOModule = () => {
     return Boolean(item.is_completed && item.completed_by === user.id && !item.validated_by_deo);
   };
 
+  const togglePreview = async (item: any) => {
+    if (expandedItem === item.id) { setExpandedItem(null); return; }
+    setExpandedItem(item.id);
+    if (!previewUrls[item.id] && item.file_url) {
+      const { data } = await supabase.storage.from("plans").download(item.file_url);
+      if (data) {
+        const url = URL.createObjectURL(data);
+        setPreviewUrls(prev => ({ ...prev, [item.id]: url }));
+      }
+    }
+  };
+
+  const handleDownloadItem = async (item: any) => {
+    const { data } = await supabase.storage.from("plans").download(item.file_url);
+    if (!data) return;
+    const url = URL.createObjectURL(data);
+    const a = document.createElement("a"); a.href = url; a.download = item.file_name; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleFileUpload = async (itemId: string, file: File) => {
     if (!projectId || !user) return;
     setUploadingId(itemId);
@@ -101,6 +127,7 @@ const CFOModule = () => {
     const { error: updateError } = await supabase.from("cfo_items").update({
       is_completed: true, completed_at: new Date().toISOString(), completed_by: user.id,
       file_url: path, file_name: file.name,
+      rejection_reason: null, rejected_by: null, rejected_at: null,
     }).eq("id", itemId);
     if (updateError) { toast.error("Error al actualizar el documento"); setUploadingId(null); return; }
     await supabase.from("audit_logs").insert({ user_id: user.id, project_id: projectId, action: "cfo_item_completed", details: { item_id: itemId, file_name: file.name } });
@@ -110,84 +137,43 @@ const CFOModule = () => {
 
   const handleReplaceFile = async (item: any, file: File) => {
     if (!projectId || !user || !canManageUploadedItem(item)) return;
-
     setUploadingId(item.id);
     try {
       const previousPath = item.file_url;
       const nextPath = `cfo/${projectId}/${item.id}_${Date.now()}_${sanitizeFileName(file.name)}`;
       const { error: uploadError } = await uploadFileWithFallback({ path: nextPath, file });
-
       if (uploadError) throw uploadError;
-
       const { error: updateError } = await supabase.from("cfo_items").update({
-        file_url: nextPath,
-        file_name: file.name,
-        completed_at: new Date().toISOString(),
-        completed_by: user.id,
-        validated_by_deo: null,
-        validated_at: null,
+        file_url: nextPath, file_name: file.name,
+        completed_at: new Date().toISOString(), completed_by: user.id,
+        validated_by_deo: null, validated_at: null,
+        rejection_reason: null, rejected_by: null, rejected_at: null,
       }).eq("id", item.id).eq("completed_by", user.id);
-
       if (updateError) throw updateError;
-
-      if (previousPath && previousPath !== nextPath) {
-        await supabase.storage.from("plans").remove([previousPath]);
-      }
-
-      await supabase.from("audit_logs").insert({
-        user_id: user.id,
-        project_id: projectId,
-        action: "cfo_item_replaced",
-        details: { item_id: item.id, previous_file_name: item.file_name, new_file_name: file.name },
-      });
-
-      toast.success("Documento sustituido");
-      await fetchItems();
-    } catch (error: any) {
-      toast.error(error?.message || "Error al sustituir el documento");
-    } finally {
-      setUploadingId(null);
-    }
+      if (previousPath && previousPath !== nextPath) await supabase.storage.from("plans").remove([previousPath]);
+      // Clear cached preview
+      if (previewUrls[item.id]) { URL.revokeObjectURL(previewUrls[item.id]); setPreviewUrls(prev => { const n = { ...prev }; delete n[item.id]; return n; }); }
+      toast.success("Documento sustituido"); await fetchItems();
+    } catch (error: any) { toast.error(error?.message || "Error al sustituir el documento"); }
+    finally { setUploadingId(null); }
   };
 
   const handleDeleteFile = async (item: any) => {
     if (!projectId || !user || !canManageUploadedItem(item)) return;
-
     const confirmed = window.confirm("¿Quieres eliminar este documento para poder subir una versión corregida?");
     if (!confirmed) return;
-
     setUploadingId(item.id);
     try {
-      if (item.file_url) {
-        await supabase.storage.from("plans").remove([item.file_url]);
-      }
-
-      const { error: updateError } = await supabase.from("cfo_items").update({
-        is_completed: false,
-        completed_at: null,
-        completed_by: null,
-        file_url: null,
-        file_name: null,
-        validated_by_deo: null,
-        validated_at: null,
+      if (item.file_url) await supabase.storage.from("plans").remove([item.file_url]);
+      await supabase.from("cfo_items").update({
+        is_completed: false, completed_at: null, completed_by: null,
+        file_url: null, file_name: null, validated_by_deo: null, validated_at: null,
       }).eq("id", item.id).eq("completed_by", user.id);
-
-      if (updateError) throw updateError;
-
-      await supabase.from("audit_logs").insert({
-        user_id: user.id,
-        project_id: projectId,
-        action: "cfo_item_deleted",
-        details: { item_id: item.id, file_name: item.file_name },
-      });
-
-      toast.success("Documento eliminado");
-      await fetchItems();
-    } catch (error: any) {
-      toast.error(error?.message || "Error al eliminar el documento");
-    } finally {
-      setUploadingId(null);
-    }
+      if (previewUrls[item.id]) { URL.revokeObjectURL(previewUrls[item.id]); setPreviewUrls(prev => { const n = { ...prev }; delete n[item.id]; return n; }); }
+      setExpandedItem(null);
+      toast.success("Documento eliminado"); await fetchItems();
+    } catch (error: any) { toast.error(error?.message || "Error al eliminar el documento"); }
+    finally { setUploadingId(null); }
   };
 
   const handleAudit = async () => {
@@ -210,15 +196,13 @@ const CFOModule = () => {
     const targets = (members || []).filter((m: any) => allowedRoles.includes(m.role) && m.user_id);
     for (const target of targets) {
       await notifyUser({
-        userId: target.user_id,
-        projectId: projectId!,
+        userId: target.user_id, projectId: projectId!,
         title: "⚠️ Reclamación de Documento CFO",
-        message: `Atención: El DEM solicita la subida inmediata del documento pendiente: "${item.title}" (Punto ${item.item_number}). Este documento es indispensable para el cierre del CFO y la devolución de fianzas.`,
+        message: `Atención: El DEM solicita la subida inmediata del documento pendiente: "${item.title}" (Punto ${item.item_number}).`,
         type: "cfo_claim",
       });
     }
     await supabase.from("cfo_items").update({ claimed_at: new Date().toISOString(), claimed_by: user.id }).eq("id", item.id);
-    await supabase.from("audit_logs").insert({ user_id: user.id, project_id: projectId, action: "cfo_claim_sent", details: { item_title: item.title, item_number: item.item_number, target_roles: allowedRoles } });
     toast.success(`Reclamación enviada a ${allowedRoles.map((r: string) => roleLabels[r] || r).join(", ")}`);
     setClaimDialog({ open: false, item: null }); fetchItems();
   };
@@ -226,8 +210,27 @@ const CFOModule = () => {
   const handleValidate = async (itemId: string) => {
     if (!user) return;
     await supabase.from("cfo_items").update({ validated_by_deo: true, validated_at: new Date().toISOString() }).eq("id", itemId);
-    await supabase.from("audit_logs").insert({ user_id: user.id, project_id: projectId, action: "cfo_item_validated", details: { item_id: itemId } });
     toast.success("Documento validado por DEM"); fetchItems();
+  };
+
+  const handleReject = async () => {
+    if (!rejectDialog.item || !user) return;
+    await supabase.from("cfo_items").update({
+      validated_by_deo: false, validated_at: null,
+      rejection_reason: rejectReason || "Sin motivo especificado",
+      rejected_by: user.id, rejected_at: new Date().toISOString(),
+    }).eq("id", rejectDialog.item.id);
+    // Notify uploader
+    if (rejectDialog.item.completed_by && projectId) {
+      await notifyUser({
+        userId: rejectDialog.item.completed_by, projectId,
+        title: "❌ Documento CFO Rechazado",
+        message: `El documento "${rejectDialog.item.title}" ha sido rechazado. Motivo: ${rejectReason || "Sin motivo especificado"}`,
+        type: "cfo_rejection",
+      });
+    }
+    toast.success("Documento rechazado");
+    setRejectDialog({ open: false, item: null }); setRejectReason(""); fetchItems();
   };
 
   const handleExport = async () => {
@@ -324,64 +327,111 @@ const CFOModule = () => {
                     if (!item) return null;
                     const isCompleted = item.is_completed;
                     const isValidated = item.validated_by_deo;
+                    const isRejected = !!item.rejection_reason && !isValidated;
                     const canUpload_ = canUploadItem(item);
                     const isPending = !isCompleted;
                     const canManageUploaded = canManageUploadedItem(item);
+                    const isExpanded = expandedItem === item.id;
+
                     return (
-                      <div key={item.id} className={`flex items-center justify-between p-3 rounded border transition-all ${
-                        isValidated ? "border-success/50 bg-success/10" :
-                        isCompleted ? "border-success/30 bg-success/5" :
-                        item.claimed_at ? "border-destructive/30 bg-destructive/5" : "border-border hover:border-foreground/10"
-                      }`}>
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          {isValidated ? <CheckCircle2 className="h-5 w-5 text-success shrink-0" /> :
-                           isCompleted ? <CheckCircle2 className="h-5 w-5 text-success/60 shrink-0" /> :
-                           <Circle className="h-5 w-5 text-muted-foreground/30 shrink-0" />}
-                          <div className="min-w-0">
-                            <p className={`text-sm ${isCompleted ? "text-success" : ""}`}>
-                              <span className="font-display font-bold mr-2">{pt.num}.</span>{pt.title}
-                            </p>
-                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                              {item.file_name && <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><FileText className="h-3 w-3" /> {item.file_name}</span>}
-                              {item.claimed_at && !isCompleted && <span className="text-[10px] text-destructive font-display uppercase tracking-wider">Reclamado</span>}
-                              {isValidated && <span className="text-[10px] text-success font-display uppercase tracking-wider">✓ Validado DEM</span>}
+                      <div key={item.id}>
+                        <div
+                          className={`flex items-center justify-between p-3 rounded border transition-all cursor-pointer ${
+                            isRejected ? "border-destructive/50 bg-destructive/5" :
+                            isValidated ? "border-success/50 bg-success/10" :
+                            isCompleted ? "border-success/30 bg-success/5" :
+                            item.claimed_at ? "border-destructive/30 bg-destructive/5" : "border-border hover:border-foreground/10 hover:shadow-md"
+                          }`}
+                          onClick={() => isCompleted && item.file_url && togglePreview(item)}
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            {isRejected ? <XCircle className="h-5 w-5 text-destructive shrink-0" /> :
+                             isValidated ? <CheckCircle2 className="h-5 w-5 text-success shrink-0" /> :
+                             isCompleted ? <CheckCircle2 className="h-5 w-5 text-success/60 shrink-0" /> :
+                             <Circle className="h-5 w-5 text-muted-foreground/30 shrink-0" />}
+                            <div className="min-w-0">
+                              <p className={`text-sm ${isRejected ? "text-destructive" : isCompleted ? "text-success" : ""}`}>
+                                <span className="font-display font-bold mr-2">{pt.num}.</span>{pt.title}
+                              </p>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {item.file_name && <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><FileText className="h-3 w-3" /> {item.file_name}</span>}
+                                {item.claimed_at && !isCompleted && <span className="text-[10px] text-destructive font-display uppercase tracking-wider">Reclamado</span>}
+                                {isValidated && <span className="text-[10px] text-success font-display uppercase tracking-wider">✓ Validado DEM</span>}
+                                {isRejected && <span className="text-[10px] text-destructive font-display uppercase tracking-wider">✗ Rechazado</span>}
+                              </div>
+                              {isRejected && item.rejection_reason && (
+                                <p className="text-[10px] text-destructive mt-0.5">Motivo: {item.rejection_reason}</p>
+                              )}
+                              <p className="text-[10px] text-muted-foreground/50 mt-0.5">Responsable: {pt.agentLabel}</p>
                             </div>
-                            <p className="text-[10px] text-muted-foreground/50 mt-0.5">Responsable: {pt.agentLabel}</p>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {isPending && canUpload_ && (
-                            <label className="cursor-pointer">
-                              <input type="file" className="hidden" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFileUpload(item.id, f); e.currentTarget.value = ""; }} />
-                              <span className={`flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer ${uploadingId === item.id ? "opacity-50" : ""}`}>
-                                <Upload className="h-3 w-3" /> {uploadingId === item.id ? "Subiendo..." : "Subir"}
-                              </span>
-                            </label>
-                          )}
-                          {isCompleted && canManageUploaded && (
-                            <>
+                          <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                            {isPending && canUpload_ && (
                               <label className="cursor-pointer">
-                                <input type="file" className="hidden" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleReplaceFile(item, f); e.currentTarget.value = ""; }} />
+                                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFileUpload(item.id, f); e.currentTarget.value = ""; }} />
                                 <span className={`flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer ${uploadingId === item.id ? "opacity-50" : ""}`}>
-                                  <RefreshCw className="h-3 w-3" /> {uploadingId === item.id ? "Sustituyendo..." : "Sustituir"}
+                                  <Upload className="h-3 w-3" /> {uploadingId === item.id ? "Subiendo..." : "Subir"}
                                 </span>
                               </label>
-                              <Button size="sm" variant="ghost" onClick={() => void handleDeleteFile(item)} disabled={uploadingId === item.id} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive">
-                                <Trash2 className="h-3 w-3" /> Eliminar
+                            )}
+                            {isDEM && isCompleted && !isValidated && (
+                              <>
+                                <Button size="sm" variant="outline" onClick={() => handleValidate(item.id)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7">
+                                  <Shield className="h-3 w-3" /> Validar
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => { setRejectDialog({ open: true, item }); setRejectReason(""); }} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive">
+                                  <XCircle className="h-3 w-3" /> Rechazar
+                                </Button>
+                              </>
+                            )}
+                            {isDEM && isPending && (
+                              <Button data-tour="cfo-reclaim" size="sm" variant="ghost" onClick={() => setClaimDialog({ open: true, item })} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive">
+                                <Bell className="h-3 w-3" /> Reclamar
                               </Button>
-                            </>
-                          )}
-                          {isDEM && isCompleted && !isValidated && (
-                            <Button size="sm" variant="outline" onClick={() => handleValidate(item.id)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7">
-                              <Shield className="h-3 w-3" /> Validar
-                            </Button>
-                          )}
-                          {isDEM && isPending && (
-                            <Button data-tour="cfo-reclaim" size="sm" variant="ghost" onClick={() => setClaimDialog({ open: true, item })} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive">
-                              <Bell className="h-3 w-3" /> Reclamar
-                            </Button>
-                          )}
+                            )}
+                            {isCompleted && item.file_url && (
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                                {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              </Button>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Accordion preview */}
+                        {isExpanded && isCompleted && item.file_url && (
+                          <div className="border border-t-0 border-border rounded-b-lg p-4 bg-background animate-in slide-in-from-top-2 duration-200">
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                              <Button size="sm" variant="outline" onClick={() => handleDownloadItem(item)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7">
+                                <Download className="h-3 w-3" /> Descargar
+                              </Button>
+                              {canManageUploaded && (
+                                <>
+                                  <label className="cursor-pointer">
+                                    <input type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleReplaceFile(item, f); e.currentTarget.value = ""; }} />
+                                    <span className="flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer">
+                                      <RefreshCw className="h-3 w-3" /> Sustituir
+                                    </span>
+                                  </label>
+                                  <Button size="sm" variant="ghost" onClick={() => void handleDeleteFile(item)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive">
+                                    <Trash2 className="h-3 w-3" /> Eliminar
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                            {/* Preview area */}
+                            {previewUrls[item.id] ? (
+                              item.file_name?.toLowerCase().endsWith(".pdf") ? (
+                                <iframe src={previewUrls[item.id]} className="w-full h-[400px] rounded border border-border" />
+                              ) : (
+                                <img src={previewUrls[item.id]} alt={item.file_name} className="max-w-full max-h-[400px] rounded border border-border object-contain mx-auto" />
+                              )
+                            ) : (
+                              <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" /> Cargando previsualización...
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -397,6 +447,7 @@ const CFOModule = () => {
         </p>
       </div>
 
+      {/* Claim dialog */}
       <AlertDialog open={claimDialog.open} onOpenChange={(o) => setClaimDialog({ open: o, item: claimDialog.item })}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -417,6 +468,28 @@ const CFOModule = () => {
             <AlertDialogCancel className="font-display text-xs uppercase tracking-wider">Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => claimDialog.item && handleClaim(claimDialog.item)} className="font-display text-xs uppercase tracking-wider bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Confirmar Reclamación
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reject dialog */}
+      <AlertDialog open={rejectDialog.open} onOpenChange={(o) => { if (!o) { setRejectDialog({ open: false, item: null }); setRejectReason(""); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">❌ Rechazar Documento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Indica el motivo del rechazo. El agente responsable recibirá una notificación y deberá subir una versión corregida.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Motivo de rechazo *</Label>
+            <Textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Indique el motivo del rechazo..." rows={3} />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReject} disabled={!rejectReason.trim()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Rechazar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
