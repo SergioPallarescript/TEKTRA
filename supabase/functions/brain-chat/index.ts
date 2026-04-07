@@ -26,16 +26,19 @@ serve(async (req) => {
     if (authError || !authData.user) throw new Error("No autorizado");
 
     let updatedExecutionHistory = typeof dynamicContext === "string" ? dynamicContext.trim() : "";
+    let project: { id: string; created_by: string | null; name: string; address: string | null; description: string | null; referencia_catastral: string | null } | null = null;
 
     if (projectId) {
-      const [{ data: project }, { data: member }] = await Promise.all([
+      const [{ data: projectData }, { data: member }] = await Promise.all([
         supabase.from("projects").select("id, created_by, name, address, description, referencia_catastral").eq("id", projectId).single(),
         supabase.from("project_members").select("id").eq("project_id", projectId).eq("user_id", authData.user.id).eq("status", "accepted").maybeSingle(),
       ]);
 
-      if (!project || (project.created_by !== authData.user.id && !member)) {
+      if (!projectData || (projectData.created_by !== authData.user.id && !member)) {
         throw new Error("Acceso denegado al proyecto");
       }
+
+      project = projectData;
 
       const memoryPath = `project-memory/${projectId}/memoria_dinamica_${projectId}.txt`;
       const { data: memoryFile } = await supabase.storage.from("plans").download(memoryPath);

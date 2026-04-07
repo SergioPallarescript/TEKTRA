@@ -137,7 +137,7 @@ const AppHeader = () => {
 
         {/* Center: Logo */}
         <button onClick={() => navigate("/")} className="flex items-center">
-          <img src="/tectra-logo.png" alt="TEKTRA" className="h-6 dark:brightness-0 dark:invert" />
+<img src="/tectra-logo.png" alt="TEKTRA" className="h-8 sm:h-9 dark:brightness-0 dark:invert" />
         </button>
 
         {/* Right: Notifications */}
