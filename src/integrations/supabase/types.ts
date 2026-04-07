@@ -503,6 +503,13 @@ export type Database = {
           is_locked: boolean | null
           photos: string[] | null
           project_id: string
+          recipient_signature_geo: string | null
+          recipient_signature_hash: string | null
+          recipient_signature_image: string | null
+          recipient_signature_type: string | null
+          recipient_signed_at: string | null
+          recipient_signed_by: string | null
+          recipient_user_id: string | null
           remedial_actions: string | null
           resolved_at: string | null
           severity: string
@@ -527,6 +534,13 @@ export type Database = {
           is_locked?: boolean | null
           photos?: string[] | null
           project_id: string
+          recipient_signature_geo?: string | null
+          recipient_signature_hash?: string | null
+          recipient_signature_image?: string | null
+          recipient_signature_type?: string | null
+          recipient_signed_at?: string | null
+          recipient_signed_by?: string | null
+          recipient_user_id?: string | null
           remedial_actions?: string | null
           resolved_at?: string | null
           severity?: string
@@ -551,6 +565,13 @@ export type Database = {
           is_locked?: boolean | null
           photos?: string[] | null
           project_id?: string
+          recipient_signature_geo?: string | null
+          recipient_signature_hash?: string | null
+          recipient_signature_image?: string | null
+          recipient_signature_type?: string | null
+          recipient_signed_at?: string | null
+          recipient_signed_by?: string | null
+          recipient_user_id?: string | null
           remedial_actions?: string | null
           resolved_at?: string | null
           severity?: string
@@ -708,6 +729,13 @@ export type Database = {
           order_number: number
           photos: string[] | null
           project_id: string
+          recipient_signature_geo: string | null
+          recipient_signature_hash: string | null
+          recipient_signature_image: string | null
+          recipient_signature_type: string | null
+          recipient_signed_at: string | null
+          recipient_signed_by: string | null
+          recipient_user_id: string | null
           requires_validation: boolean | null
           signature_geo: string | null
           signature_hash: string | null
@@ -730,6 +758,13 @@ export type Database = {
           order_number?: number
           photos?: string[] | null
           project_id: string
+          recipient_signature_geo?: string | null
+          recipient_signature_hash?: string | null
+          recipient_signature_image?: string | null
+          recipient_signature_type?: string | null
+          recipient_signed_at?: string | null
+          recipient_signed_by?: string | null
+          recipient_user_id?: string | null
           requires_validation?: boolean | null
           signature_geo?: string | null
           signature_hash?: string | null
@@ -752,6 +787,13 @@ export type Database = {
           order_number?: number
           photos?: string[] | null
           project_id?: string
+          recipient_signature_geo?: string | null
+          recipient_signature_hash?: string | null
+          recipient_signature_image?: string | null
+          recipient_signature_type?: string | null
+          recipient_signed_at?: string | null
+          recipient_signed_by?: string | null
+          recipient_user_id?: string | null
           requires_validation?: boolean | null
           signature_geo?: string | null
           signature_hash?: string | null
@@ -1083,6 +1125,56 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      signature_document_recipients: {
+        Row: {
+          certificate_cn: string | null
+          certificate_serial: string | null
+          created_at: string
+          document_id: string
+          id: string
+          recipient_id: string
+          signature_type: string | null
+          signed_at: string | null
+          signed_file_path: string | null
+          status: string
+          validation_hash: string | null
+        }
+        Insert: {
+          certificate_cn?: string | null
+          certificate_serial?: string | null
+          created_at?: string
+          document_id: string
+          id?: string
+          recipient_id: string
+          signature_type?: string | null
+          signed_at?: string | null
+          signed_file_path?: string | null
+          status?: string
+          validation_hash?: string | null
+        }
+        Update: {
+          certificate_cn?: string | null
+          certificate_serial?: string | null
+          created_at?: string
+          document_id?: string
+          id?: string
+          recipient_id?: string
+          signature_type?: string | null
+          signed_at?: string | null
+          signed_file_path?: string | null
+          status?: string
+          validation_hash?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signature_document_recipients_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "signature_documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       signature_documents: {
         Row: {
