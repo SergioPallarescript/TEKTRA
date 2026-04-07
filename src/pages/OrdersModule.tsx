@@ -27,9 +27,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { notifyProjectMembers } from "@/lib/notifications";
+import { notifyProjectMembers, notifyUser } from "@/lib/notifications";
 import {
-  ArrowLeft, Plus, BookOpen, AlertTriangle, Mic, MicOff, Camera, Image, Paperclip, X, Download, Lock, ShieldCheck, FileSignature,
+  ArrowLeft, Plus, BookOpen, AlertTriangle, Mic, MicOff, Camera, Image, Paperclip, X, Download, Lock, ShieldCheck, FileSignature, PenLine,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -39,17 +39,24 @@ const ORDER_FIELDS = [
   { key: "pendientes", label: "Pendientes", placeholder: "Tareas pendientes de resolver..." },
 ];
 
+const DESTINATARIOS_ROLES: Record<string, string> = {
+  "CONSTRUCTOR": "CON",
+  "PROMOTOR": "PRO",
+  "DIRECCIÓN FACULTATIVA": "DO",
+  "COORD. SEGURIDAD Y SALUD": "CSS",
+};
 const DESTINATARIOS = ["CONSTRUCTOR", "PROMOTOR", "DIRECCIÓN FACULTATIVA", "COORD. SEGURIDAD Y SALUD", "TODOS LOS AGENTES"];
 const EMISORES = ["DIRECCIÓN FACULTATIVA", "DIRECTOR DE OBRA", "DIRECTOR DE EJECUCIÓN", "COORD. SEGURIDAD Y SALUD"];
 
 const OrdersModule = () => {
   const { id: projectId } = useParams<{ id: string }>();
   const { user, profile } = useAuth();
-  const { isDEM, isDO, hasDualCSS, isAdmin } = useProjectRole(projectId);
+  const { isDEM, isDO, hasDualCSS, isAdmin, projectRole, isCON, isPRO, isCSS } = useProjectRole(projectId);
   const navigate = useNavigate();
 
   const [project, setProject] = useState<any>(null);
   const [orders, setOrders] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [content, setContent] = useState("");
@@ -76,6 +83,14 @@ const OrdersModule = () => {
   const [showFiscalModal, setShowFiscalModal] = useState(false);
   const [pendingSubmit, setPendingSubmit] = useState(false);
 
+  // Counter-sign
+  const [counterSignOpen, setCounterSignOpen] = useState(false);
+  const [counterSignOrder, setCounterSignOrder] = useState<any>(null);
+  const [counterSignMethod, setCounterSignMethod] = useState<string>(() => localStorage.getItem("tektra_sig_method") || "manual");
+  const counterSigRef = useRef<SignatureCanvasHandle>(null);
+  const [counterSigning, setCounterSigning] = useState(false);
+  const [counterFiscalModal, setCounterFiscalModal] = useState(false);
+
   const canWrite = isDEM || isDO || hasDualCSS;
   const canExport = isDEM || isDO;
   const [exporting, setExporting] = useState(false);
@@ -101,7 +116,31 @@ const OrdersModule = () => {
     setLoading(false);
   }, [projectId]);
 
-  useEffect(() => { fetchProject(); fetchOrders(); }, [fetchProject, fetchOrders]);
+  const fetchMembers = useCallback(async () => {
+    if (!projectId) return;
+    const { data: memberRows } = await supabase
+      .from("project_members")
+      .select("user_id, role, secondary_role, invited_email")
+      .eq("project_id", projectId)
+      .eq("status", "accepted");
+    const userIds = (memberRows || []).map((m: any) => m.user_id).filter(Boolean);
+    const { data: profiles } = userIds.length
+      ? await supabase.from("profiles").select("user_id, full_name, email").in("user_id", userIds)
+      : { data: [] };
+    const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
+    setMembers((memberRows || []).map((m: any) => ({ ...m, profile: profileMap.get(m.user_id) || null })));
+  }, [projectId]);
+
+  useEffect(() => { fetchProject(); fetchOrders(); fetchMembers(); }, [fetchProject, fetchOrders, fetchMembers]);
+
+  // Find the recipient user_id based on dirigidaA role mapping
+  const findRecipientUserId = (dirigida: string): string | null => {
+    if (dirigida === "TODOS LOS AGENTES") return null;
+    const targetRole = DESTINATARIOS_ROLES[dirigida];
+    if (!targetRole) return null;
+    const member = members.find((m: any) => m.role === targetRole || m.secondary_role === targetRole);
+    return member?.user_id || null;
+  };
 
   const getGeoLocation = (): Promise<string> => {
     return new Promise((resolve) => {
@@ -125,37 +164,27 @@ const OrdersModule = () => {
     if (e) e.preventDefault();
     if (!projectId || !user || !profile) return;
 
-    // Check fiscal data
     if (!profile.dni_cif || !profile.fiscal_address) {
       setShowFiscalModal(true);
       setPendingSubmit(true);
       return;
     }
 
-    // Check cover configured
     if (!coverConfigured) {
       toast.error("Debes configurar la portada del libro antes de crear órdenes");
       return;
     }
 
-    if (!asunto.trim()) {
-      toast.error("El asunto es obligatorio");
-      return;
-    }
+    if (!asunto.trim()) { toast.error("El asunto es obligatorio"); return; }
 
     const finalContent = structuredSections
       ? formatOrderSections({ estado: structuredSections.estado || "", instrucciones: structuredSections.instrucciones || "", pendientes: structuredSections.pendientes || "" })
       : content;
 
-    if (!finalContent.trim()) {
-      toast.error("El contenido de la orden es obligatorio");
-      return;
-    }
+    if (!finalContent.trim()) { toast.error("El contenido de la orden es obligatorio"); return; }
 
-    // Check cross-alerts
     await checkCrossAlerts(finalContent);
 
-    // For manual signature, check if canvas has content
     if (signatureMethod === "manual" && sigCanvasRef.current?.isEmpty()) {
       toast.error("Debes firmar la orden antes de enviarla");
       return;
@@ -173,10 +202,11 @@ const OrdersModule = () => {
     const geo = await getGeoLocation();
     const hash = await computeHash(finalContent + new Date().toISOString() + user.id);
 
-    // Capture canvas signature image for manual signatures
     const signatureImage = signatureMethod === "manual" && sigCanvasRef.current
       ? sigCanvasRef.current.toDataUrl()
       : null;
+
+    const recipientUserId = findRecipientUserId(dirigidaA);
 
     const { error } = await supabase.from("orders").insert({
       project_id: projectId,
@@ -195,6 +225,7 @@ const OrdersModule = () => {
       signed_by: user.id,
       is_locked: true,
       signature_image: signatureImage,
+      recipient_user_id: recipientUserId,
     } as any);
 
     if (error) { toast.error("Error al crear la orden"); setSubmitting(false); return; }
@@ -205,14 +236,26 @@ const OrdersModule = () => {
       details: { has_photos: photoUrls.length > 0, dirigida_a: dirigidaA, asunto, signature_type: signatureMethod, hash, geo },
     });
 
-    toast.success("Orden registrada y firmada");
+    // Notify specific recipient about pending counter-signature
+    if (recipientUserId) {
+      await notifyUser({
+        userId: recipientUserId,
+        projectId: projectId!,
+        title: "📋 Orden pendiente de firma",
+        message: `Tienes una orden dirigida a ti pendiente de firmar: "${asunto}"`,
+        type: "signature",
+      });
+    }
+
+    // Also notify all project members
     await notifyProjectMembers({
-      projectId,
-      actorId: user.id,
+      projectId, actorId: user.id,
       title: "Nueva orden registrada",
       message: `Se ha registrado la orden: ${asunto}`,
       type: "info",
     });
+
+    toast.success("Orden registrada y firmada");
     resetForm();
     setCreateOpen(false);
     setSubmitting(false);
@@ -220,7 +263,6 @@ const OrdersModule = () => {
   };
 
   const handleCertSign = async (signedPdfBytes: Uint8Array, metadata: CertSignMetadata) => {
-    // For certificate signature, we create the order with certificate metadata
     if (!projectId || !user || !profile) return;
     if (!coverConfigured) { toast.error("Configura la portada primero"); return; }
     if (!asunto.trim()) { toast.error("El asunto es obligatorio"); return; }
@@ -242,6 +284,8 @@ const OrdersModule = () => {
       if (!error) photoUrls.push(path);
     }
 
+    const recipientUserId = findRecipientUserId(dirigidaA);
+
     const { error } = await supabase.from("orders").insert({
       project_id: projectId,
       content: finalContent,
@@ -258,15 +302,20 @@ const OrdersModule = () => {
       signed_at: new Date().toISOString(),
       signed_by: user.id,
       is_locked: true,
+      recipient_user_id: recipientUserId,
     } as any);
 
     if (error) { toast.error("Error al crear la orden"); setSubmitting(false); return; }
 
-    await supabase.from("audit_logs").insert({
-      user_id: user.id, project_id: projectId,
-      action: "order_created_legal",
-      details: { dirigida_a: dirigidaA, asunto, signature_type: "p12", hash, geo, certificate_cn: metadata.certificateCN },
-    });
+    if (recipientUserId) {
+      await notifyUser({
+        userId: recipientUserId,
+        projectId: projectId!,
+        title: "📋 Orden pendiente de firma",
+        message: `Tienes una orden dirigida a ti pendiente de firmar: "${asunto}"`,
+        type: "signature",
+      });
+    }
 
     toast.success("Orden registrada con certificado digital");
     await notifyProjectMembers({
@@ -278,6 +327,72 @@ const OrdersModule = () => {
     resetForm();
     setCreateOpen(false);
     setSubmitting(false);
+    fetchOrders();
+  };
+
+  // Counter-sign handler (manual)
+  const handleCounterSign = async () => {
+    if (!counterSignOrder || !user || !profile || !projectId) return;
+    if (!profile.dni_cif || !profile.fiscal_address) {
+      setCounterFiscalModal(true);
+      return;
+    }
+    if (counterSignMethod === "manual" && counterSigRef.current?.isEmpty()) {
+      toast.error("Debes dibujar tu firma"); return;
+    }
+    setCounterSigning(true);
+    const geo = await getGeoLocation();
+    const hash = await computeHash(counterSignOrder.content + new Date().toISOString() + user.id);
+    const signatureImage = counterSignMethod === "manual" && counterSigRef.current
+      ? counterSigRef.current.toDataUrl() : null;
+
+    const { error } = await (supabase.from("orders") as any)
+      .update({
+        recipient_signed_by: user.id,
+        recipient_signed_at: new Date().toISOString(),
+        recipient_signature_type: counterSignMethod,
+        recipient_signature_hash: hash,
+        recipient_signature_geo: geo,
+        recipient_signature_image: signatureImage,
+      })
+      .eq("id", counterSignOrder.id);
+
+    if (error) { toast.error("Error al firmar"); setCounterSigning(false); return; }
+
+    await supabase.from("audit_logs").insert({
+      user_id: user.id, project_id: projectId,
+      action: "order_countersigned",
+      details: { order_id: counterSignOrder.id, signature_type: counterSignMethod, hash, geo },
+    });
+
+    toast.success("Orden firmada por el destinatario");
+    setCounterSignOpen(false);
+    setCounterSignOrder(null);
+    setCounterSigning(false);
+    fetchOrders();
+  };
+
+  const handleCounterCertSign = async (_bytes: Uint8Array, metadata: CertSignMetadata) => {
+    if (!counterSignOrder || !user || !projectId) return;
+    setCounterSigning(true);
+    const geo = await getGeoLocation();
+    const hash = await computeHash(counterSignOrder.content + new Date().toISOString() + user.id);
+
+    const { error } = await (supabase.from("orders") as any)
+      .update({
+        recipient_signed_by: user.id,
+        recipient_signed_at: new Date().toISOString(),
+        recipient_signature_type: "p12",
+        recipient_signature_hash: hash,
+        recipient_signature_geo: geo,
+      })
+      .eq("id", counterSignOrder.id);
+
+    if (error) { toast.error("Error al firmar"); setCounterSigning(false); return; }
+    toast.success("Orden firmada con certificado digital");
+    setCounterSignOpen(false);
+    setCounterSignOrder(null);
+    setCounterSigning(false);
     fetchOrders();
   };
 
@@ -356,6 +471,17 @@ const OrdersModule = () => {
   }, [signatureMethod]);
 
   const roleLabel = profile?.role === "DO" ? "DIRECTOR DE OBRA" : profile?.role === "DEM" ? "DIRECTOR DE EJECUCIÓN" : profile?.role === "CSS" ? "COORD. SEGURIDAD Y SALUD" : "DIRECCIÓN FACULTATIVA";
+
+  // Check if current user needs to counter-sign an order
+  const isRecipientPending = (order: any) => {
+    return order.recipient_user_id === user?.id && !order.recipient_signed_at;
+  };
+
+  const getRecipientName = (order: any) => {
+    if (!order.recipient_user_id) return null;
+    const m = members.find((m: any) => m.user_id === order.recipient_user_id);
+    return m?.profile?.full_name || m?.invited_email || "Destinatario";
+  };
 
   return (
     <AppLayout>
@@ -557,18 +683,29 @@ const OrdersModule = () => {
           <div className="space-y-3">
             {orders.map((order, i) => {
               const isLocked = (order as any).is_locked;
+              const needsCounterSign = isRecipientPending(order);
+              const recipientName = getRecipientName(order);
+              const hasRecipientSigned = !!(order as any).recipient_signed_at;
               return (
-                <div key={order.id} className="bg-card border border-border rounded-lg p-5 animate-fade-in hover:shadow-lg hover:-translate-y-0.5 transition-all" style={{ animationDelay: `${i * 60}ms` }}>
+                <div key={order.id} className={`bg-card border rounded-lg p-5 animate-fade-in hover:shadow-lg hover:-translate-y-0.5 transition-all ${needsCounterSign ? "border-warning" : "border-border"}`} style={{ animationDelay: `${i * 60}ms` }}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                      {/* Legal header */}
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-xs font-display font-bold text-muted-foreground">#{order.order_number}</span>
                         {isLocked && (
                           <span className="flex items-center gap-1 text-[10px] text-success font-display uppercase tracking-wider">
-                            <Lock className="h-3 w-3" /> Firmada
+                            <Lock className="h-3 w-3" /> Emisor
                           </span>
                         )}
+                        {hasRecipientSigned ? (
+                          <span className="flex items-center gap-1 text-[10px] text-success font-display uppercase tracking-wider">
+                            <ShieldCheck className="h-3 w-3" /> Receptor
+                          </span>
+                        ) : (order as any).recipient_user_id ? (
+                          <span className="flex items-center gap-1 text-[10px] text-warning font-display uppercase tracking-wider">
+                            <PenLine className="h-3 w-3" /> Pte. Receptor
+                          </span>
+                        ) : null}
                         {(order as any).signature_type === "p12" && (
                           <span className="flex items-center gap-1 text-[10px] text-primary font-display uppercase tracking-wider">
                             <ShieldCheck className="h-3 w-3" /> Certificado
@@ -581,7 +718,7 @@ const OrdersModule = () => {
                       )}
 
                       <div className="flex gap-3 text-[10px] text-muted-foreground mb-2 flex-wrap">
-                        {(order as any).dirigida_a && <span>A: {(order as any).dirigida_a}</span>}
+                        {(order as any).dirigida_a && <span>A: {(order as any).dirigida_a}{recipientName ? ` (${recipientName})` : ""}</span>}
                         {(order as any).escrita_por && <span>De: {(order as any).escrita_por}</span>}
                       </div>
 
@@ -612,6 +749,17 @@ const OrdersModule = () => {
                           </span>
                         )}
                       </div>
+
+                      {/* Counter-sign button for recipient */}
+                      {needsCounterSign && (
+                        <Button
+                          size="sm"
+                          className="mt-3 gap-2 font-display text-xs uppercase tracking-wider"
+                          onClick={() => { setCounterSignOrder(order); setCounterSignOpen(true); }}
+                        >
+                          <PenLine className="h-3.5 w-3.5" /> Firmar como destinatario
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -620,6 +768,54 @@ const OrdersModule = () => {
           </div>
         )}
       </div>
+
+      {/* Counter-sign dialog */}
+      <Dialog open={counterSignOpen} onOpenChange={(open) => { if (!open) { setCounterSignOpen(false); setCounterSignOrder(null); } }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">Firmar Orden como Destinatario</DialogTitle>
+            {counterSignOrder && (
+              <p className="text-xs text-muted-foreground">Orden #{counterSignOrder.order_number} — {(counterSignOrder as any).asunto}</p>
+            )}
+          </DialogHeader>
+          {counterSignOrder && (
+            <div className="space-y-4 mt-2">
+              <div className="p-3 bg-secondary/20 rounded border border-border">
+                <p className="text-sm whitespace-pre-wrap">{counterSignOrder.content}</p>
+              </div>
+              <div className="space-y-2 border-t border-border pt-4">
+                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <FileSignature className="h-3.5 w-3.5" /> Tu Firma
+                </Label>
+                <Tabs value={counterSignMethod} onValueChange={setCounterSignMethod}>
+                  <TabsList className="w-full">
+                    <TabsTrigger value="manual" className="flex-1 text-xs">Firma Manual</TabsTrigger>
+                    <TabsTrigger value="certificate" className="flex-1 text-xs">Certificado Digital</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="manual" className="mt-3">
+                    <SignatureCanvas ref={counterSigRef} />
+                    <Button onClick={handleCounterSign} disabled={counterSigning} className="w-full mt-3 font-display text-xs uppercase tracking-wider gap-2">
+                      <ShieldCheck className="h-4 w-4" />
+                      {counterSigning ? "Firmando..." : "Firmar y Confirmar Recepción"}
+                    </Button>
+                  </TabsContent>
+                  <TabsContent value="certificate" className="mt-3">
+                    <CertificateSignature
+                      disabled={counterSigning}
+                      userRole={roleLabel}
+                      originalPdfBytes={null}
+                      noPdfRequired
+                      onSign={async (_bytes, metadata) => {
+                        await handleCounterCertSign(new Uint8Array(), metadata);
+                      }}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Cross-alert */}
       <AlertDialog open={crossAlert.show} onOpenChange={open => { if (!open) setCrossAlert({ show: false, incidents: [] }); }}>
@@ -649,11 +845,16 @@ const OrdersModule = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Fiscal data modal */}
+      {/* Fiscal data modals */}
       <FiscalDataModal
         open={showFiscalModal}
         onComplete={() => { setShowFiscalModal(false); if (pendingSubmit) { setPendingSubmit(false); handleCreate(); } }}
         onCancel={() => { setShowFiscalModal(false); setPendingSubmit(false); }}
+      />
+      <FiscalDataModal
+        open={counterFiscalModal}
+        onComplete={() => { setCounterFiscalModal(false); handleCounterSign(); }}
+        onCancel={() => setCounterFiscalModal(false)}
       />
     </AppLayout>
   );

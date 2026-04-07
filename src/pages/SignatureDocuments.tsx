@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileSignature, Loader2, PenSquare, Send, Trash2, Upload, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileSignature, Loader2, PenSquare, Send, Trash2, Upload, RefreshCw, Plus, X, UserPlus } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import FiscalDataModal from "@/components/FiscalDataModal";
 import SignatureCanvas, { type SignatureCanvasHandle } from "@/components/SignatureCanvas";
@@ -41,6 +41,16 @@ type SignatureDocument = {
   created_at: string;
 };
 
+type DocRecipient = {
+  id: string;
+  document_id: string;
+  recipient_id: string;
+  status: string;
+  signed_at: string | null;
+  validation_hash: string | null;
+  signature_type: string | null;
+};
+
 const SignatureDocuments = () => {
   const { id: projectId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -49,6 +59,7 @@ const SignatureDocuments = () => {
   const signatureRef = useRef<SignatureCanvasHandle | null>(null);
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const [documents, setDocuments] = useState<SignatureDocument[]>([]);
+  const [docRecipients, setDocRecipients] = useState<DocRecipient[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<SignatureDocument | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "sent">("pending");
@@ -58,7 +69,7 @@ const SignatureDocuments = () => {
   const [creating, setCreating] = useState(false);
   const [signing, setSigning] = useState(false);
   const [title, setTitle] = useState("");
-  const [recipientId, setRecipientId] = useState("");
+  const [recipientIds, setRecipientIds] = useState<string[]>([""]);
   const [file, setFile] = useState<File | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SignatureDocument | null>(null);
   const [replaceTarget, setReplaceTarget] = useState<SignatureDocument | null>(null);
@@ -74,12 +85,38 @@ const SignatureDocuments = () => {
 
   const fetchDocuments = async () => {
     if (!user) return;
+    // Fetch documents where user is sender or primary recipient
     const { data } = await (supabase.from("signature_documents" as any) as any)
       .select("*")
       .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
       .eq("project_id", projectId)
       .order("created_at", { ascending: false });
+    
+    // Also fetch documents where user is a secondary recipient
+    const { data: recipientRows } = await (supabase.from("signature_document_recipients" as any) as any)
+      .select("*")
+      .eq("recipient_id", user.id);
+
+    if (recipientRows && recipientRows.length > 0) {
+      const extraDocIds = recipientRows.map((r: any) => r.document_id).filter((id: string) => !(data || []).some((d: any) => d.id === id));
+      if (extraDocIds.length > 0) {
+        const { data: extraDocs } = await (supabase.from("signature_documents" as any) as any)
+          .select("*")
+          .in("id", extraDocIds);
+        if (extraDocs) data?.push(...extraDocs);
+      }
+    }
+
     setDocuments((data || []) as SignatureDocument[]);
+    setDocRecipients((recipientRows || []) as DocRecipient[]);
+  };
+
+  const fetchAllRecipients = async (docIds: string[]) => {
+    if (docIds.length === 0) return;
+    const { data } = await (supabase.from("signature_document_recipients" as any) as any)
+      .select("*")
+      .in("document_id", docIds);
+    setDocRecipients((data || []) as DocRecipient[]);
   };
 
   useEffect(() => {
@@ -103,6 +140,13 @@ const SignatureDocuments = () => {
     };
     void load();
   }, [projectId, user]);
+
+  // Re-fetch recipients when documents change
+  useEffect(() => {
+    if (documents.length > 0) {
+      fetchAllRecipients(documents.map(d => d.id));
+    }
+  }, [documents.length]);
 
   // Render PDF with PDF.js
   const renderPdf = useCallback(async (url: string) => {
@@ -138,7 +182,6 @@ const SignatureDocuments = () => {
       const targetPath = selectedDocument.signed_file_path || selectedDocument.original_file_path;
       const { data, error } = await supabase.storage.from("plans").download(targetPath);
       if (error || !data) { toast.error("No se pudo abrir el PDF"); return; }
-      // Store raw bytes for certificate signing
       if (selectedDocument.status === "pending") {
         setOriginalPdfBuffer(await data.arrayBuffer());
       }
@@ -150,7 +193,6 @@ const SignatureDocuments = () => {
     return () => { setPdfBlobUrl((c) => { if (c) URL.revokeObjectURL(c); return null; }); };
   }, [selectedDocument, renderPdf]);
 
-  // Scroll canvases into container
   useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container || pdfPages.length === 0) return;
@@ -164,44 +206,90 @@ const SignatureDocuments = () => {
     });
   }, [pdfPages]);
 
+  // Check if user needs to sign this doc (either as primary recipient or multi-recipient)
+  const userNeedsToSign = (doc: SignatureDocument) => {
+    if (doc.recipient_id === user?.id && doc.status === "pending") return true;
+    const myRecipientRow = docRecipients.find(r => r.document_id === doc.id && r.recipient_id === user?.id);
+    return myRecipientRow?.status === "pending";
+  };
+
   const pendingDocuments = useMemo(
-    () => documents.filter((d) => d.recipient_id === user?.id && d.status === "pending"),
-    [documents, user?.id],
+    () => documents.filter((d) => userNeedsToSign(d)),
+    [documents, user?.id, docRecipients],
   );
   const sentAndCompletedDocuments = useMemo(
-    () => documents.filter((d) => d.sender_id === user?.id || d.status === "signed"),
-    [documents, user?.id],
+    () => documents.filter((d) => d.sender_id === user?.id || d.status === "signed" || (!userNeedsToSign(d) && d.recipient_id !== user?.id)),
+    [documents, user?.id, docRecipients],
   );
   const activeDocuments = activeTab === "pending" ? pendingDocuments : sentAndCompletedDocuments;
 
+  // Multi-recipient helpers
+  const addRecipient = () => {
+    if (recipientIds.length >= 4) { toast.error("Máximo 4 destinatarios"); return; }
+    setRecipientIds([...recipientIds, ""]);
+  };
+  const removeRecipient = (idx: number) => {
+    if (recipientIds.length <= 1) return;
+    setRecipientIds(recipientIds.filter((_, i) => i !== idx));
+  };
+  const updateRecipient = (idx: number, value: string) => {
+    const updated = [...recipientIds];
+    updated[idx] = value;
+    setRecipientIds(updated);
+  };
+
   const handleCreateDocument = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectId || !user || !file || !recipientId || !title.trim()) return;
+    const validRecipients = recipientIds.filter(id => id.trim() !== "");
+    if (!projectId || !user || !file || validRecipients.length === 0 || !title.trim()) return;
     setCreating(true);
     try {
       const safeName = sanitizeFileName(file.name);
       const path = `signature-documents/${projectId}/original/${Date.now()}_${safeName}`;
       const { error: uploadError } = await uploadFileWithFallback({ path, file });
       if (uploadError) throw uploadError;
-      const { error: insertError } = await (supabase.from("signature_documents" as any) as any).insert({
-        project_id: projectId, sender_id: user.id, recipient_id: recipientId,
+
+      // Use the first recipient as the primary recipient (backwards compat)
+      const primaryRecipient = validRecipients[0];
+      const { data: insertedDoc, error: insertError } = await (supabase.from("signature_documents" as any) as any).insert({
+        project_id: projectId, sender_id: user.id, recipient_id: primaryRecipient,
         title: title.trim(), original_file_name: file.name, original_file_path: path,
         file_size: file.size, mime_type: file.type || "application/pdf",
-      });
+      }).select().single();
       if (insertError) throw insertError;
+
+      // Insert additional recipients into the junction table
+      if (validRecipients.length > 1) {
+        const additionalRecipients = validRecipients.slice(1).map(rid => ({
+          document_id: insertedDoc.id,
+          recipient_id: rid,
+        }));
+        await (supabase.from("signature_document_recipients" as any) as any).insert(additionalRecipients);
+      }
+
+      // Also insert the primary recipient into the junction table for consistency
+      await (supabase.from("signature_document_recipients" as any) as any).insert({
+        document_id: insertedDoc.id,
+        recipient_id: primaryRecipient,
+      });
+
       await supabase.from("audit_logs").insert({
         user_id: user.id, project_id: projectId, action: "signature_document_created",
-        details: { title: title.trim(), recipient_id: recipientId, file_name: file.name },
+        details: { title: title.trim(), recipients: validRecipients, file_name: file.name },
       });
-      // Notify recipient about pending signature
-      await notifyUser({
-        userId: recipientId,
-        projectId: projectId!,
-        title: "Firma pendiente",
-        message: `Tienes un nuevo documento para firmar: "${title.trim()}"`,
-        type: "signature",
-      });
-      setTitle(""); setRecipientId(""); setFile(null);
+
+      // Notify all recipients
+      for (const rid of validRecipients) {
+        await notifyUser({
+          userId: rid,
+          projectId: projectId!,
+          title: "Firma pendiente",
+          message: `Tienes un nuevo documento para firmar: "${title.trim()}"`,
+          type: "signature",
+        });
+      }
+
+      setTitle(""); setRecipientIds([""]); setFile(null);
       toast.success("Documento enviado para firma");
       await fetchDocuments();
       setActiveTab("sent");
@@ -240,10 +328,6 @@ const SignatureDocuments = () => {
       await (supabase.from("signature_documents" as any) as any)
         .update({ original_file_path: newPath, original_file_name: replaceFile.name, file_size: replaceFile.size })
         .eq("id", replaceTarget.id);
-      await supabase.from("audit_logs").insert({
-        user_id: user.id, project_id: projectId,
-        action: "signature_document_replaced", details: { document_id: replaceTarget.id, new_file: replaceFile.name },
-      });
       toast.success("Documento sustituido");
       setReplaceTarget(null); setReplaceFile(null);
       await fetchDocuments();
@@ -252,10 +336,8 @@ const SignatureDocuments = () => {
     finally { setReplacing(false); }
   };
 
-  // Check fiscal data before signing
   const initiateSign = async () => {
     if (!user) return;
-    // Check if user already has fiscal data
     const { data: prof } = await supabase.from("profiles").select("full_name, dni_cif").eq("user_id", user.id).single();
     if (prof?.dni_cif) {
       setFiscalData({ full_name: prof.full_name || "", dni_cif: (prof as any).dni_cif || "" });
@@ -316,9 +398,18 @@ const SignatureDocuments = () => {
       const { error: uploadError } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
       if (uploadError) throw uploadError;
 
-      await (supabase.from("signature_documents" as any) as any)
-        .update({ status: "signed", signed_file_path: signedPath, signed_at: signedAt, validation_hash: validationHash, signature_type: "manual" })
-        .eq("id", selectedDocument.id);
+      // Update primary document if this is the primary recipient
+      if (selectedDocument.recipient_id === user?.id) {
+        await (supabase.from("signature_documents" as any) as any)
+          .update({ status: "signed", signed_file_path: signedPath, signed_at: signedAt, validation_hash: validationHash, signature_type: "manual" })
+          .eq("id", selectedDocument.id);
+      }
+
+      // Update the junction table recipient record
+      await (supabase.from("signature_document_recipients" as any) as any)
+        .update({ status: "signed", signed_at: signedAt, validation_hash: validationHash, signature_type: "manual", signed_file_path: signedPath })
+        .eq("document_id", selectedDocument.id)
+        .eq("recipient_id", user?.id);
 
       await supabase.from("audit_logs").insert({
         user_id: user?.id, project_id: projectId,
@@ -347,13 +438,25 @@ const SignatureDocuments = () => {
     const { error: uploadError } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
     if (uploadError) throw uploadError;
 
-    await (supabase.from("signature_documents" as any) as any)
+    if (selectedDocument.recipient_id === user.id) {
+      await (supabase.from("signature_documents" as any) as any)
+        .update({
+          status: "signed", signed_file_path: signedPath, signed_at: signedAt,
+          validation_hash: metadata.validationHash, signature_type: "p12",
+          certificate_cn: metadata.certificateCN, certificate_serial: metadata.certificateSerial,
+        })
+        .eq("id", selectedDocument.id);
+    }
+
+    // Update junction table
+    await (supabase.from("signature_document_recipients" as any) as any)
       .update({
-        status: "signed", signed_file_path: signedPath, signed_at: signedAt,
-        validation_hash: metadata.validationHash, signature_type: "p12",
-        certificate_cn: metadata.certificateCN, certificate_serial: metadata.certificateSerial,
+        status: "signed", signed_at: signedAt, validation_hash: metadata.validationHash,
+        signature_type: "p12", certificate_cn: metadata.certificateCN, certificate_serial: metadata.certificateSerial,
+        signed_file_path: signedPath,
       })
-      .eq("id", selectedDocument.id);
+      .eq("document_id", selectedDocument.id)
+      .eq("recipient_id", user.id);
 
     await supabase.from("audit_logs").insert({
       user_id: user.id, project_id: projectId,
@@ -366,7 +469,6 @@ const SignatureDocuments = () => {
       geo_location: metadata.geo,
     });
 
-    // Trigger download
     const downloadUrl = URL.createObjectURL(signedBlob);
     const a = document.createElement("a");
     a.href = downloadUrl;
@@ -378,7 +480,6 @@ const SignatureDocuments = () => {
     await fetchDocuments();
     setSelectedDocument(null);
   }, [projectId, selectedDocument, user]);
-
 
   const handleSignMethodChange = (method: string) => {
     setSignMethod(method);
@@ -396,6 +497,19 @@ const SignatureDocuments = () => {
   const handleOpenExternal = () => {
     if (!pdfBlobUrl) return;
     window.open(pdfBlobUrl, "_blank");
+  };
+
+  // Get signing status for multi-recipient docs
+  const getDocSigningStatus = (doc: SignatureDocument) => {
+    const recipients = docRecipients.filter(r => r.document_id === doc.id);
+    if (recipients.length === 0) return null;
+    const signed = recipients.filter(r => r.status === "signed").length;
+    return { signed, total: recipients.length };
+  };
+
+  const getMemberName = (userId: string) => {
+    const m = members.find((m: any) => m.user_id === userId);
+    return m?.profile?.full_name || m?.invited_email || userId;
   };
 
   if (loading) {
@@ -434,14 +548,28 @@ const SignatureDocuments = () => {
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Acta de recepción parcial" required />
               </div>
               <div data-tour="sig-recipient" className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Destinatario</Label>
-                <select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground" required>
-                  <option value="">Selecciona agente</option>
-                  {members.map((m: any) => (
-                    <option key={m.user_id} value={m.user_id}>{m.profile?.full_name || m.invited_email || m.user_id}</option>
-                  ))}
-                </select>
+                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Destinatario(s)</Label>
+                {recipientIds.map((rid, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <select value={rid} onChange={(e) => updateRecipient(idx, e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground" required>
+                      <option value="">Selecciona agente</option>
+                      {members.filter((m: any) => !recipientIds.includes(m.user_id) || m.user_id === rid).map((m: any) => (
+                        <option key={m.user_id} value={m.user_id}>{m.profile?.full_name || m.invited_email || m.user_id} ({m.role})</option>
+                      ))}
+                    </select>
+                    {recipientIds.length > 1 && (
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeRecipient(idx)}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {recipientIds.length < 4 && (
+                  <Button type="button" variant="outline" size="sm" className="gap-1 text-xs w-full" onClick={addRecipient}>
+                    <UserPlus className="h-3.5 w-3.5" /> Añadir destinatario ({recipientIds.length}/4)
+                  </Button>
+                )}
               </div>
               <div data-tour="sig-file" className="space-y-2">
                 <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">PDF</Label>
@@ -449,14 +577,14 @@ const SignatureDocuments = () => {
               </div>
               <Button type="submit" className="w-full gap-2 font-display text-xs uppercase tracking-wider" disabled={creating}>
                 {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {creating ? "Enviando..." : "Enviar a firma"}
+                {creating ? "Enviando..." : `Enviar a firma (${recipientIds.filter(r => r).length} dest.)`}
               </Button>
             </form>
 
             <div className="rounded-lg border border-border bg-card p-4 space-y-3">
               <div className="flex gap-2">
                 <Button variant={activeTab === "pending" ? "default" : "outline"} className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider" onClick={() => setActiveTab("pending")}>
-                  Pendientes
+                  Pendientes ({pendingDocuments.length})
                 </Button>
                 <Button variant={activeTab === "sent" ? "default" : "outline"} className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider" onClick={() => setActiveTab("sent")}>
                   Enviados
@@ -470,6 +598,7 @@ const SignatureDocuments = () => {
                   activeDocuments.map((doc) => {
                     const isSender = doc.sender_id === user?.id;
                     const canModify = isSender && doc.status === "pending";
+                    const sigStatus = getDocSigningStatus(doc);
                     return (
                       <div key={doc.id}
                         className={`rounded-lg border p-3 transition-colors cursor-pointer ${
@@ -484,6 +613,13 @@ const SignatureDocuments = () => {
                             <p className="text-[10px] text-muted-foreground mt-0.5">
                               {new Date(doc.created_at).toLocaleDateString("es-ES")}
                             </p>
+                            {sigStatus && sigStatus.total > 1 && (
+                              <p className="text-[10px] mt-1 font-display">
+                                <span className={sigStatus.signed === sigStatus.total ? "text-success" : "text-warning"}>
+                                  {sigStatus.signed}/{sigStatus.total} firmados
+                                </span>
+                              </p>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             {canModify && (
@@ -527,13 +663,32 @@ const SignatureDocuments = () => {
                     <Button variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
                       <ExternalLink className="h-3.5 w-3.5" /> Abrir
                     </Button>
-                    <span className={`inline-flex items-center rounded px-2 py-1 text-[10px] font-display uppercase tracking-widest ${
-                      selectedDocument.status === "signed" ? "bg-success/10 text-success" : "bg-warning/10 text-warning"
-                    }`}>
-                      {selectedDocument.status === "signed" ? "Firmado" : "Pendiente"}
-                    </span>
                   </div>
                 </div>
+
+                {/* Multi-recipient status */}
+                {(() => {
+                  const sigStatus = getDocSigningStatus(selectedDocument);
+                  if (sigStatus && sigStatus.total > 1) {
+                    const recipients = docRecipients.filter(r => r.document_id === selectedDocument.id);
+                    return (
+                      <div className="p-3 rounded-lg border border-border bg-secondary/10">
+                        <p className="text-xs font-display uppercase tracking-wider text-muted-foreground mb-2">Estado de firmas ({sigStatus.signed}/{sigStatus.total})</p>
+                        <div className="space-y-1">
+                          {recipients.map(r => (
+                            <div key={r.id} className="flex items-center justify-between text-xs">
+                              <span>{getMemberName(r.recipient_id)}</span>
+                              <span className={r.status === "signed" ? "text-success font-display uppercase" : "text-warning font-display uppercase"}>
+                                {r.status === "signed" ? "✅ Firmado" : "⏳ Pendiente"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 <div data-tour="sig-preview" ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
                   {pdfPages.length === 0 && (
@@ -543,7 +698,7 @@ const SignatureDocuments = () => {
                   )}
                 </div>
 
-                {selectedDocument.recipient_id === user?.id && selectedDocument.status === "pending" ? (
+                {userNeedsToSign(selectedDocument) ? (
                   <div data-tour="sig-signature-panel" className="space-y-4 rounded-lg border border-border bg-background p-4">
                     <Tabs value={signMethod} onValueChange={handleSignMethodChange}>
                       <TabsList className="w-full">
