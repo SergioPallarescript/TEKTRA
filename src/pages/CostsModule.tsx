@@ -745,9 +745,15 @@ const CostsModule = () => {
                     </div>
                   ) : (
                     <>
-                      <p className="text-2xl font-display font-bold tracking-tight">
-                        {parseFloat(selectedClaim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}
-                      </p>
+                      {/* PEM+IVA breakdown for presupuesto/certificación */}
+                      <div className="rounded-lg border border-border bg-background p-4 space-y-2">
+                        <p className="text-sm"><span className="text-muted-foreground">Importe PEM:</span> <strong>{parseFloat(selectedClaim.pem || selectedClaim.amount || 0).toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                        {parseFloat(selectedClaim.iva_percent || 0) > 0 && (
+                          <p className="text-sm"><span className="text-muted-foreground">Cuota IVA ({selectedClaim.iva_percent || 21}%):</span> <strong>{(parseFloat(selectedClaim.pem || selectedClaim.amount || 0) * parseFloat(selectedClaim.iva_percent || 21) / 100).toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                        )}
+                        <p className="text-xl font-display font-bold">Total: {parseFloat(selectedClaim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</p>
+                        <p className="text-[10px] text-muted-foreground italic">Los precios indicados son Precios de Ejecución Material</p>
+                      </div>
                       {selectedClaim.file_url ? (
                         <div ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
                           {pdfPages.length === 0 && (
