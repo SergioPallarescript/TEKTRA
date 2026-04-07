@@ -31,6 +31,14 @@ import {
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
+/* ───── IVA options ───── */
+const IVA_OPTIONS = [
+  { value: "21", label: "21% (General)" },
+  { value: "10", label: "10% (Reducido)" },
+  { value: "4", label: "4% (Superreducido)" },
+  { value: "0", label: "0% (Exento)" },
+];
+
 /* ───── status helpers ───── */
 function getStatusInfo(claim: any) {
   const t = claim.doc_type || "certificacion";
@@ -41,17 +49,31 @@ function getStatusInfo(claim: any) {
     const demSigned = !!claim.dem_signed_by;
     const doSigned = !!claim.do_signed_by;
     if (s === "pending_technical") {
-      if (!demSigned && !doSigned) return { label: "Pendiente de Firmas Técnicas", color: "text-warning bg-warning/10" };
+      if (!demSigned && !doSigned) return { label: "Pendiente de Firmas Técnicas (DO + DEM)", color: "text-warning bg-warning/10" };
       if (demSigned && !doSigned) return { label: "Falta Firma DO", color: "text-warning bg-warning/10" };
       if (!demSigned && doSigned) return { label: "Falta Firma DEM", color: "text-warning bg-warning/10" };
     }
     if (s === "pending_payment") return { label: "Validado: Pendiente de Autorización de Pago", color: "text-accent bg-accent/10" };
   } else {
-    if (s === "pending_technical") return { label: "Pendiente Validación Técnica (DEM)", color: "text-warning bg-warning/10" };
-    if (s === "pending_payment") return { label: "Pendiente Firma del Promotor", color: "text-accent bg-accent/10" };
+    // presupuesto or partida
+    if (s === "pending_technical") return { label: "Pendiente Validación Técnica (DO o DEM)", color: "text-warning bg-warning/10" };
+    if (s === "pending_payment") return { label: "Pendiente Autorización Pago (Promotor)", color: "text-accent bg-accent/10" };
   }
   return { label: s, color: "text-muted-foreground bg-muted" };
 }
+
+/* ───── Measurement calc ───── */
+function calcMedicion(uds: number, lon: number, anch: number, alt: number): number {
+  const vals = [uds, lon, anch, alt].filter(v => v > 0);
+  if (vals.length === 0) return 0;
+  return vals.reduce((a, b) => a * b, 1);
+}
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  certificacion: "Certificación",
+  presupuesto: "Presupuesto",
+  partida: "Partida",
+};
 
 const CostsModule = () => {
   const { id: projectId } = useParams<{ id: string }>();
@@ -70,6 +92,16 @@ const CostsModule = () => {
   const [docType, setDocType] = useState<string>("certificacion");
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Partida fields
+  const [comentario, setComentario] = useState("");
+  const [unidadMedida, setUnidadMedida] = useState("");
+  const [pUds, setPUds] = useState("");
+  const [pLongitud, setPLongitud] = useState("");
+  const [pAnchura, setPAnchura] = useState("");
+  const [pAltura, setPAltura] = useState("");
+  const [precioUnitario, setPrecioUnitario] = useState("");
+  const [ivaPercent, setIvaPercent] = useState("21");
 
   const [selectedClaim, setSelectedClaim] = useState<any | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -91,7 +123,8 @@ const CostsModule = () => {
   });
   const [originalPdfBuffer, setOriginalPdfBuffer] = useState<ArrayBuffer | null>(null);
 
-  const canSubmit = isCON;
+  // Who can submit: CON, DO, DEM
+  const canSubmit = isCON || isDO || isDEM;
 
   const fetchClaims = useCallback(async () => {
     if (!projectId) return;
@@ -101,6 +134,21 @@ const CostsModule = () => {
   }, [projectId]);
 
   useEffect(() => { fetchClaims(); }, [fetchClaims]);
+
+  /* ───── Partida computed values ───── */
+  const partidaMedicion = useMemo(() => {
+    return calcMedicion(parseFloat(pUds) || 0, parseFloat(pLongitud) || 0, parseFloat(pAnchura) || 0, parseFloat(pAltura) || 0);
+  }, [pUds, pLongitud, pAnchura, pAltura]);
+
+  const partidaPEM = useMemo(() => {
+    return partidaMedicion * (parseFloat(precioUnitario) || 0);
+  }, [partidaMedicion, precioUnitario]);
+
+  const partidaIVA = useMemo(() => {
+    return partidaPEM * (parseFloat(ivaPercent) || 0) / 100;
+  }, [partidaPEM, ivaPercent]);
+
+  const partidaTotal = useMemo(() => partidaPEM + partidaIVA, [partidaPEM, partidaIVA]);
 
   /* ───── PDF.js render ───── */
   const renderPdf = useCallback(async (url: string) => {
@@ -131,7 +179,6 @@ const CostsModule = () => {
       const targetPath = (selectedClaim as any).signed_file_path || selectedClaim.file_url;
       const { data, error } = await supabase.storage.from("plans").download(targetPath);
       if (error || !data) { toast.error("No se pudo abrir el PDF"); return; }
-      // Store raw bytes for certificate signing
       if (canSignHere) {
         setOriginalPdfBuffer(await data.arrayBuffer());
       }
@@ -161,29 +208,53 @@ const CostsModule = () => {
     e.preventDefault();
     if (!projectId || !user) return;
     setSubmitting(true);
+
+    const isPartida = docType === "partida";
+
     let fileUrl = null; let fileName = null;
-    if (file) {
+    if (!isPartida && file) {
       const path = `costs/${projectId}/${Date.now()}_${sanitizeFileName(file.name)}`;
       const { error } = await uploadFileWithFallback({ path, file });
       if (!error) { fileUrl = path; fileName = file.name; }
     }
-    const { error } = await supabase.from("cost_claims").insert({
+
+    const finalAmount = isPartida ? partidaTotal : parseFloat(amount);
+
+    const insertData: any = {
       project_id: projectId, title, description: description || null,
-      amount: parseFloat(amount), file_url: fileUrl, file_name: fileName,
+      amount: finalAmount, file_url: fileUrl, file_name: fileName,
       submitted_by: user.id, doc_type: docType,
-    } as any);
+    };
+
+    if (isPartida) {
+      insertData.unidad_medida = unidadMedida;
+      insertData.uds = parseFloat(pUds) || 0;
+      insertData.longitud = parseFloat(pLongitud) || 0;
+      insertData.anchura = parseFloat(pAnchura) || 0;
+      insertData.altura = parseFloat(pAltura) || 0;
+      insertData.precio_unitario = parseFloat(precioUnitario) || 0;
+      insertData.iva_percent = parseFloat(ivaPercent) || 21;
+      insertData.pem = partidaPEM;
+      insertData.comentario = comentario || null;
+    }
+
+    const { error } = await supabase.from("cost_claims").insert(insertData as any);
     if (error) { toast.error("Error al enviar"); setSubmitting(false); return; }
-    const docLabel = docType === "presupuesto" ? "Presupuesto" : "Certificación";
+
+    const docLabel = DOC_TYPE_LABELS[docType] || docType;
     toast.success(`${docLabel} enviado`);
-    // Notify project members about new economic document
     await notifyProjectMembers({
       projectId: projectId!,
       actorId: user.id,
       title: `Nueva ${docLabel}: ${title}`,
-      message: `Se ha subido ${docLabel === "Certificación" ? "una nueva Certificación" : "un nuevo Presupuesto"} pendiente de validación: "${title}"`,
+      message: `Se ha registrado ${docLabel === "Certificación" ? "una nueva Certificación" : docLabel === "Partida" ? "una nueva Partida" : "un nuevo Presupuesto"} pendiente de validación: "${title}"`,
       type: "cost",
     });
+
+    // Reset form
     setTitle(""); setDescription(""); setAmount(""); setFile(null); setDocType("certificacion");
+    setComentario(""); setUnidadMedida(""); setPUds(""); setPLongitud(""); setPAnchura(""); setPAltura("");
+    setPrecioUnitario(""); setIvaPercent("21");
     setCreateOpen(false); setSubmitting(false); fetchClaims();
   };
 
@@ -198,12 +269,12 @@ const CostsModule = () => {
       }).eq("id", id);
       toast.success("Validación técnica registrada");
       const { data: claim } = await supabase.from("cost_claims").select("title, doc_type").eq("id", id).single();
-      const dt = claim?.doc_type === "presupuesto" ? "Presupuesto" : "Certificación";
+      const dt = DOC_TYPE_LABELS[claim?.doc_type || "certificacion"];
       await notifyProjectMembers({
         projectId: projectId!,
         actorId: user.id,
         title: `${dt} validada técnicamente`,
-        message: `"${claim?.title || ""}" ha sido validada. Pendiente de autorización de pago.`,
+        message: `"${claim?.title || ""}" ha sido validada. Pendiente de autorización de pago por el Promotor.`,
         type: "cost",
       });
     } else if (action === "authorize_payment") {
@@ -213,7 +284,7 @@ const CostsModule = () => {
       }).eq("id", id);
       toast.success("Pago autorizado");
       const { data: claim } = await supabase.from("cost_claims").select("title, doc_type").eq("id", id).single();
-      const dt = claim?.doc_type === "presupuesto" ? "Presupuesto" : "Certificación";
+      const dt = DOC_TYPE_LABELS[claim?.doc_type || "certificacion"];
       await notifyProjectMembers({
         projectId: projectId!,
         actorId: user.id,
@@ -228,11 +299,12 @@ const CostsModule = () => {
       }).eq("id", id);
       toast.success("Documento rechazado");
       const { data: claim } = await supabase.from("cost_claims").select("title, doc_type, submitted_by").eq("id", id).single();
-      const dt = claim?.doc_type === "presupuesto" ? "Presupuesto" : "Certificación";
+      const dt = DOC_TYPE_LABELS[claim?.doc_type || "certificacion"];
+      // Notify submitter urgently if PRO rejects
       await notifyProjectMembers({
         projectId: projectId!,
         actorId: user.id,
-        title: `${dt} rechazada`,
+        title: `⚠️ ${dt} rechazada`,
         message: `"${claim?.title || ""}" ha sido rechazada.${rejectReason ? ` Motivo: ${rejectReason}` : ""}`,
         type: "cost",
       });
@@ -244,16 +316,20 @@ const CostsModule = () => {
     }
   };
 
-  /* ───── Signature (for Certificación: DEM/DO; for Presupuesto: PRO) ───── */
+  /* ───── Signature logic ───── */
   const canSignHere = useMemo(() => {
     if (!selectedClaim || !user) return false;
     const dt = (selectedClaim as any).doc_type || "certificacion";
     const s = selectedClaim.status;
     if (dt === "certificacion" && s === "pending_technical") {
+      // Certificación requires BOTH DO and DEM
       if (isDEM && !(selectedClaim as any).dem_signed_by) return true;
       if (isDO && !(selectedClaim as any).do_signed_by) return true;
     }
-    if (dt === "presupuesto" && s === "pending_payment" && isPRO) return true;
+    if ((dt === "presupuesto" || dt === "partida") && s === "pending_technical") {
+      // Presupuesto/Partida: if submitted by CON, needs ONE signature from DO or DEM
+      if ((isDEM || isDO) && !(selectedClaim as any).technical_approved_by) return true;
+    }
     return false;
   }, [selectedClaim, user, isDEM, isDO, isPRO]);
 
@@ -274,7 +350,7 @@ const CostsModule = () => {
   };
 
   const performSign = async (signerName: string, signerDni: string) => {
-    if (!selectedClaim || !user || !pdfBlobUrl || !signatureRef.current) return;
+    if (!selectedClaim || !user || !signatureRef.current) return;
     if (signatureRef.current.isEmpty()) { toast.error("Dibuja tu firma"); return; }
     setSigning(true);
     try {
@@ -287,56 +363,58 @@ const CostsModule = () => {
         geo = `${pos.coords.latitude},${pos.coords.longitude}`;
       } catch {}
 
-      const targetPath = (selectedClaim as any).signed_file_path || selectedClaim.file_url;
-      const { data: pdfBlob } = await supabase.storage.from("plans").download(targetPath);
-      if (!pdfBlob) throw new Error("No se pudo descargar el PDF");
-      const bytes = await pdfBlob.arrayBuffer();
+      const dt = (selectedClaim as any).doc_type || "certificacion";
       const signedAt = new Date().toISOString();
       const hashSrc = `${selectedClaim.id}:${signedAt}:${user.id}:${sigDataUrl}`;
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(hashSrc));
       const hash = Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, "0")).join("").slice(0, 32).toUpperCase();
 
-      const pdfDoc = await PDFDocument.load(bytes);
-      const lastPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
-      const sigImg = await pdfDoc.embedPng(sigDataUrl);
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-
       const roleName = projectRole || "?";
-      const existingSignatures = [(selectedClaim as any).dem_signed_by, (selectedClaim as any).do_signed_by, (selectedClaim as any).pro_signed_by].filter(Boolean).length;
-      const boxX = 36 + existingSignatures * 260;
-      const boxY = 36;
-
-      lastPage.drawRectangle({ x: boxX, y: boxY, width: 250, height: 120, color: rgb(0.97, 0.97, 0.97), borderColor: rgb(0.2, 0.2, 0.2), borderWidth: 1 });
-      lastPage.drawText(`Firma ${roleName} — TEKTRA`, { x: boxX + 12, y: boxY + 102, size: 9, font });
-      lastPage.drawText(signerName, { x: boxX + 12, y: boxY + 90, size: 8, font, color: rgb(0.1, 0.1, 0.1) });
-      lastPage.drawText(`DNI/CIF: ${signerDni}`, { x: boxX + 12, y: boxY + 78, size: 8, font, color: rgb(0.1, 0.1, 0.1) });
-      lastPage.drawText(`Hash: ${hash}`, { x: boxX + 12, y: boxY + 66, size: 7, font, color: rgb(0.4, 0.4, 0.4) });
-      lastPage.drawText(`Fecha: ${new Date(signedAt).toLocaleString("es-ES")}`, { x: boxX + 12, y: boxY + 56, size: 7, font, color: rgb(0.4, 0.4, 0.4) });
-      lastPage.drawText(`Rol: ${roleName} | Geo: ${geo || "N/A"}`, { x: boxX + 12, y: boxY + 46, size: 6, font, color: rgb(0.5, 0.5, 0.5) });
-      const sigW = 160, sigH = Math.min((sigImg.height / sigImg.width) * sigW, 32);
-      lastPage.drawImage(sigImg, { x: boxX + 12, y: boxY + 6, width: sigW, height: sigH });
-
-      const signedBytes = await pdfDoc.save();
-      const signedBlob = new Blob([Uint8Array.from(signedBytes)], { type: "application/pdf" });
-      const signedFile = new File([signedBlob], `firmado_${sanitizeFileName(selectedClaim.file_name || "doc.pdf")}`, { type: "application/pdf" });
-      const signedPath = `costs/${projectId}/signed/${selectedClaim.id}_${Date.now()}.pdf`;
-      const { error: upErr } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
-      if (upErr) throw upErr;
-
-      // Update DB based on role
-      const dt = (selectedClaim as any).doc_type || "certificacion";
-      const updates: any = { signed_file_path: signedPath, validation_hash: hash };
+      const updates: any = { validation_hash: hash };
 
       if (dt === "certificacion") {
+        // Stamp PDF if file exists
+        if (selectedClaim.file_url) {
+          const targetPath = (selectedClaim as any).signed_file_path || selectedClaim.file_url;
+          const { data: pdfBlob } = await supabase.storage.from("plans").download(targetPath);
+          if (pdfBlob) {
+            const bytes = await pdfBlob.arrayBuffer();
+            const pdfDoc = await PDFDocument.load(bytes);
+            const lastPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
+            const sigImg = await pdfDoc.embedPng(sigDataUrl);
+            const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+            const existingSignatures = [(selectedClaim as any).dem_signed_by, (selectedClaim as any).do_signed_by].filter(Boolean).length;
+            const boxX = 36 + existingSignatures * 260;
+            const boxY = 36;
+            lastPage.drawRectangle({ x: boxX, y: boxY, width: 250, height: 120, color: rgb(0.97, 0.97, 0.97), borderColor: rgb(0.2, 0.2, 0.2), borderWidth: 1 });
+            lastPage.drawText(`Firma ${roleName} — TEKTRA`, { x: boxX + 12, y: boxY + 102, size: 9, font });
+            lastPage.drawText(signerName, { x: boxX + 12, y: boxY + 90, size: 8, font, color: rgb(0.1, 0.1, 0.1) });
+            lastPage.drawText(`DNI/CIF: ${signerDni}`, { x: boxX + 12, y: boxY + 78, size: 8, font, color: rgb(0.1, 0.1, 0.1) });
+            lastPage.drawText(`Hash: ${hash}`, { x: boxX + 12, y: boxY + 66, size: 7, font, color: rgb(0.4, 0.4, 0.4) });
+            lastPage.drawText(`Fecha: ${new Date(signedAt).toLocaleString("es-ES")}`, { x: boxX + 12, y: boxY + 56, size: 7, font, color: rgb(0.4, 0.4, 0.4) });
+            lastPage.drawText(`Rol: ${roleName} | Geo: ${geo || "N/A"}`, { x: boxX + 12, y: boxY + 46, size: 6, font, color: rgb(0.5, 0.5, 0.5) });
+            const sigW = 160, sigH = Math.min((sigImg.height / sigImg.width) * sigW, 32);
+            lastPage.drawImage(sigImg, { x: boxX + 12, y: boxY + 6, width: sigW, height: sigH });
+            const signedBytes = await pdfDoc.save();
+            const signedBlob = new Blob([Uint8Array.from(signedBytes)], { type: "application/pdf" });
+            const signedFile = new File([signedBlob], `firmado_${sanitizeFileName(selectedClaim.file_name || "doc.pdf")}`, { type: "application/pdf" });
+            const signedPath = `costs/${projectId}/signed/${selectedClaim.id}_${Date.now()}.pdf`;
+            const { error: upErr } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
+            if (!upErr) updates.signed_file_path = signedPath;
+          }
+        }
         if (isDEM) { updates.dem_signed_by = user.id; updates.dem_signed_at = signedAt; }
         if (isDO) { updates.do_signed_by = user.id; updates.do_signed_at = signedAt; }
         const demDone = isDEM ? true : !!(selectedClaim as any).dem_signed_by;
         const doDone = isDO ? true : !!(selectedClaim as any).do_signed_by;
         if (demDone && doDone) updates.status = "pending_payment";
-      } else if (dt === "presupuesto" && isPRO) {
-        updates.pro_signed_by = user.id;
-        updates.pro_signed_at = signedAt;
-        updates.status = "approved";
+      } else {
+        // presupuesto/partida: single signature validates
+        updates.technical_approved_by = user.id;
+        updates.technical_approved_at = signedAt;
+        updates.status = "pending_payment";
+        if (isDEM) { updates.dem_signed_by = user.id; updates.dem_signed_at = signedAt; }
+        if (isDO) { updates.do_signed_by = user.id; updates.do_signed_at = signedAt; }
       }
 
       await supabase.from("cost_claims").update(updates).eq("id", selectedClaim.id);
@@ -360,24 +438,30 @@ const CostsModule = () => {
   const handleCertSign = useCallback(async (signedPdfBytes: Uint8Array, metadata: CertSignMetadata) => {
     if (!selectedClaim || !user || !projectId) return;
     const signedAt = new Date().toISOString();
-    const signedBlob = new Blob([new Uint8Array(Array.from(signedPdfBytes))], { type: "application/pdf" });
-    const signedFile = new File([signedBlob], `firmado_${sanitizeFileName(selectedClaim.file_name || "doc.pdf")}`, { type: "application/pdf" });
-    const signedPath = `costs/${projectId}/signed/${selectedClaim.id}_${Date.now()}.pdf`;
-    const { error: upErr } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
-    if (upErr) throw upErr;
-
     const dt = (selectedClaim as any).doc_type || "certificacion";
-    const updates: any = { signed_file_path: signedPath, validation_hash: metadata.validationHash };
+
+    const updates: any = { validation_hash: metadata.validationHash };
+
+    if (selectedClaim.file_url) {
+      const signedBlob = new Blob([new Uint8Array(Array.from(signedPdfBytes))], { type: "application/pdf" });
+      const signedFile = new File([signedBlob], `firmado_${sanitizeFileName(selectedClaim.file_name || "doc.pdf")}`, { type: "application/pdf" });
+      const signedPath = `costs/${projectId}/signed/${selectedClaim.id}_${Date.now()}.pdf`;
+      const { error: upErr } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
+      if (!upErr) updates.signed_file_path = signedPath;
+    }
+
     if (dt === "certificacion") {
       if (isDEM) { updates.dem_signed_by = user.id; updates.dem_signed_at = signedAt; }
       if (isDO) { updates.do_signed_by = user.id; updates.do_signed_at = signedAt; }
       const demDone = isDEM ? true : !!(selectedClaim as any).dem_signed_by;
       const doDone = isDO ? true : !!(selectedClaim as any).do_signed_by;
       if (demDone && doDone) updates.status = "pending_payment";
-    } else if (dt === "presupuesto" && isPRO) {
-      updates.pro_signed_by = user.id;
-      updates.pro_signed_at = signedAt;
-      updates.status = "approved";
+    } else {
+      updates.technical_approved_by = user.id;
+      updates.technical_approved_at = signedAt;
+      updates.status = "pending_payment";
+      if (isDEM) { updates.dem_signed_by = user.id; updates.dem_signed_at = signedAt; }
+      if (isDO) { updates.do_signed_by = user.id; updates.do_signed_at = signedAt; }
     }
 
     await supabase.from("cost_claims").update(updates).eq("id", selectedClaim.id);
@@ -390,14 +474,6 @@ const CostsModule = () => {
       },
       geo_location: metadata.geo,
     });
-
-    // Trigger download
-    const downloadUrl = URL.createObjectURL(signedBlob);
-    const a = document.createElement("a");
-    a.href = downloadUrl;
-    a.download = `${(selectedClaim.file_name || "doc").replace(/\.pdf$/i, "")}_FIRMADO.pdf`;
-    a.click();
-    URL.revokeObjectURL(downloadUrl);
 
     toast.success("Documento firmado con certificado digital");
     await fetchClaims();
@@ -465,23 +541,22 @@ const CostsModule = () => {
     const s = claim.status;
     const actions: { label: string; action: string; icon: any; variant?: string }[] = [];
 
-    if (dt === "presupuesto") {
-      if (s === "pending_technical" && isDEM) {
-        actions.push({ label: "Validar", action: "approve_technical", icon: CheckCircle2 });
-        actions.push({ label: "Rechazar", action: "reject", icon: XCircle, variant: "destructive" });
-      }
-      // PRO signs in detail view, not button here
-      if (s === "pending_payment" && isPRO) {
-        actions.push({ label: "Rechazar", action: "reject", icon: XCircle, variant: "destructive" });
-      }
-    } else {
-      // Certificación - DEM/DO sign in detail view
+    if (dt === "certificacion") {
       if (s === "pending_technical" && (isDEM || isDO)) {
         actions.push({ label: "Rechazar", action: "reject", icon: XCircle, variant: "destructive" });
       }
       if (s === "pending_payment" && isPRO) {
         actions.push({ label: "Autorizar Pago", action: "authorize_payment", icon: CheckCircle2 });
+        actions.push({ label: "Rechazar Pago", action: "reject", icon: XCircle, variant: "destructive" });
+      }
+    } else {
+      // presupuesto/partida
+      if (s === "pending_technical" && (isDEM || isDO)) {
         actions.push({ label: "Rechazar", action: "reject", icon: XCircle, variant: "destructive" });
+      }
+      if (s === "pending_payment" && isPRO) {
+        actions.push({ label: "Autorizar Pago", action: "authorize_payment", icon: CheckCircle2 });
+        actions.push({ label: "Rechazar Pago", action: "reject", icon: XCircle, variant: "destructive" });
       }
     }
     return actions;
@@ -523,6 +598,7 @@ const CostsModule = () => {
                   const st = getStatusInfo(claim);
                   const editable = isEditable(claim);
                   const dt = (claim as any).doc_type || "certificacion";
+                  const isPartida = dt === "partida";
                   return (
                     <div
                       key={claim.id}
@@ -535,13 +611,22 @@ const CostsModule = () => {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-[10px] font-display uppercase tracking-widest px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                              {dt === "presupuesto" ? "Presupuesto" : "Certificación"}
+                              {DOC_TYPE_LABELS[dt] || dt}
                             </span>
                           </div>
                           <p className="text-sm font-medium truncate">{claim.title}</p>
-                          <p className="text-lg font-display font-bold tracking-tight">
-                            {parseFloat(claim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}
-                          </p>
+                          {isPartida ? (
+                            <div className="text-xs text-muted-foreground mt-0.5 space-y-0.5">
+                              <p>{parseFloat(claim.pem || 0).toFixed(2)} € ({claim.unidad_medida}) × {parseFloat(claim.iva_percent || 21)}% IVA</p>
+                              <p className="text-base font-display font-bold tracking-tight text-foreground">
+                                {parseFloat(claim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-lg font-display font-bold tracking-tight">
+                              {parseFloat(claim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}
+                            </p>
+                          )}
                           <p className="text-[10px] text-muted-foreground mt-0.5">
                             {new Date(claim.created_at).toLocaleDateString("es-ES")}
                           </p>
@@ -575,20 +660,27 @@ const CostsModule = () => {
               const st = getStatusInfo(selectedClaim);
               const actions = getActions(selectedClaim);
               const dt = (selectedClaim as any).doc_type || "certificacion";
+              const isPartida = dt === "partida";
               return (
                 <>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <h2 className="font-display text-lg sm:text-xl font-semibold tracking-tight truncate">{selectedClaim.title}</h2>
-                      <p className="text-xs sm:text-sm text-muted-foreground truncate">{selectedClaim.file_name}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                        {isPartida ? `Partida — ${selectedClaim.unidad_medida || ""}` : selectedClaim.file_name}
+                      </p>
                     </div>
                     <div data-tour="cost-preview" className="flex flex-wrap items-center gap-2 shrink-0">
-                      <Button data-tour="cost-download" variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
-                        <Download className="h-3.5 w-3.5" /> Descargar
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
-                        <ExternalLink className="h-3.5 w-3.5" /> Abrir
-                      </Button>
+                      {!isPartida && selectedClaim.file_url && (
+                        <>
+                          <Button data-tour="cost-download" variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
+                            <Download className="h-3.5 w-3.5" /> Descargar
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={handleOpenExternal} className="gap-1.5 text-xs">
+                            <ExternalLink className="h-3.5 w-3.5" /> Abrir
+                          </Button>
+                        </>
+                      )}
                       <span className={`inline-flex items-center rounded px-2 py-1 text-[10px] font-display uppercase tracking-widest ${st.color}`}>
                         {st.label}
                       </span>
@@ -602,23 +694,48 @@ const CostsModule = () => {
                     <p className="text-xs text-destructive border-l-2 border-destructive/30 pl-3"><strong>Motivo rechazo:</strong> {selectedClaim.rejection_reason}</p>
                   )}
 
-                  <p className="text-2xl font-display font-bold tracking-tight">
-                    {parseFloat(selectedClaim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}
-                  </p>
-
-                  {/* PDF viewer */}
-                  {selectedClaim.file_url ? (
-                    <div ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
-                      {pdfPages.length === 0 && (
-                        <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
-                          <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando PDF…
-                        </div>
+                  {/* Partida detail view */}
+                  {isPartida ? (
+                    <div className="rounded-lg border border-border bg-background p-4 space-y-3">
+                      {selectedClaim.comentario && (
+                        <p className="text-xs text-muted-foreground italic">{selectedClaim.comentario}</p>
                       )}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        {parseFloat(selectedClaim.uds) > 0 && <div><span className="text-muted-foreground">Uds:</span> {selectedClaim.uds}</div>}
+                        {parseFloat(selectedClaim.longitud) > 0 && <div><span className="text-muted-foreground">Longitud:</span> {selectedClaim.longitud}</div>}
+                        {parseFloat(selectedClaim.anchura) > 0 && <div><span className="text-muted-foreground">Anchura:</span> {selectedClaim.anchura}</div>}
+                        {parseFloat(selectedClaim.altura) > 0 && <div><span className="text-muted-foreground">Altura:</span> {selectedClaim.altura}</div>}
+                      </div>
+                      <div className="space-y-1 text-sm">
+                        <p><span className="text-muted-foreground">Medición:</span> <strong>{calcMedicion(parseFloat(selectedClaim.uds||0), parseFloat(selectedClaim.longitud||0), parseFloat(selectedClaim.anchura||0), parseFloat(selectedClaim.altura||0)).toFixed(3)}</strong> {selectedClaim.unidad_medida}</p>
+                        <p><span className="text-muted-foreground">Precio unitario:</span> {parseFloat(selectedClaim.precio_unitario || 0).toFixed(2)} €/{selectedClaim.unidad_medida}</p>
+                      </div>
+                      <div className="border-t border-border pt-3 space-y-1">
+                        <p className="text-sm">PEM: <strong>{parseFloat(selectedClaim.pem || 0).toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                        <p className="text-sm">IVA ({selectedClaim.iva_percent}%): <strong>{(parseFloat(selectedClaim.pem || 0) * parseFloat(selectedClaim.iva_percent || 21) / 100).toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                        <p className="text-lg font-display font-bold">Total: {parseFloat(selectedClaim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</p>
+                        <p className="text-[10px] text-muted-foreground italic">Los precios indicados son Precios de Ejecución Material</p>
+                      </div>
                     </div>
                   ) : (
-                    <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
-                      <FileText className="h-5 w-5 mr-2" /> Sin documento adjunto
-                    </div>
+                    <>
+                      <p className="text-2xl font-display font-bold tracking-tight">
+                        {parseFloat(selectedClaim.amount).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}
+                      </p>
+                      {selectedClaim.file_url ? (
+                        <div ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
+                          {pdfPages.length === 0 && (
+                            <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
+                              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando PDF…
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
+                          <FileText className="h-5 w-5 mr-2" /> Sin documento adjunto
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {/* Action buttons */}
@@ -643,7 +760,7 @@ const CostsModule = () => {
                     <div data-tour="cost-signature-panel" className="space-y-4 rounded-lg border border-border bg-background p-4">
                       <div>
                         <h3 className="font-display text-sm font-semibold uppercase tracking-wider">
-                          {dt === "certificacion" ? `Firma Técnica (${projectRole})` : "Firma de Aceptación (Promotor)"}
+                          {dt === "certificacion" ? `Firma Técnica (${projectRole})` : `Validación Técnica (${projectRole})`}
                         </h3>
                       </div>
                       <Tabs value={signMethod} onValueChange={handleSignMethodChange}>
@@ -657,12 +774,12 @@ const CostsModule = () => {
                             disabled={signing}
                             userRole={projectRole || "N/A"}
                             onSign={handleCertSign}
-                            originalPdfBytes={originalPdfBuffer}
+                            originalPdfBytes={isPartida ? null : originalPdfBuffer}
                           />
                         </TabsContent>
 
                         <TabsContent value="manual" className="space-y-4 mt-4">
-                          <p className="text-sm text-muted-foreground">Se estampará en el PDF con hash de validación, timestamp, rol y geolocalización.</p>
+                          <p className="text-sm text-muted-foreground">Se registrará con hash de validación, timestamp, rol y geolocalización.</p>
                           <SignatureCanvas ref={signatureRef} />
                           <div className="flex flex-wrap gap-2">
                             <Button variant="outline" size="sm" className="text-xs" onClick={() => signatureRef.current?.clear()}>Limpiar firma</Button>
@@ -711,37 +828,93 @@ const CostsModule = () => {
 
       {/* Create dialog */}
       <AlertDialog open={createOpen} onOpenChange={setCreateOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-h-[90vh] overflow-y-auto">
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display">Enviar Documento Económico</AlertDialogTitle>
           </AlertDialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Tipo de Documento</Label>
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Tipo de Documento *</Label>
               <Select value={docType} onValueChange={setDocType}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="certificacion">Certificación</SelectItem>
                   <SelectItem value="presupuesto">Presupuesto</SelectItem>
+                  <SelectItem value="partida">Partida</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Concepto</Label>
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Concepto *</Label>
               <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Certificación Nº3 - Estructura" required />
             </div>
             <div className="space-y-2">
               <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Descripción</Label>
-              <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detalles..." rows={3} />
+              <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detalles..." rows={2} />
             </div>
-            <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Importe (€)</Label>
-              <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="45000.00" required />
-            </div>
-            <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Documento PDF</Label>
-              <Input type="file" accept=".pdf" onChange={e => setFile(e.target.files?.[0] || null)} className="cursor-pointer" />
-            </div>
+
+            {docType === "partida" ? (
+              <>
+                <div className="space-y-2">
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Comentario</Label>
+                  <Textarea value={comentario} onChange={e => setComentario(e.target.value)} placeholder="Observaciones técnicas..." rows={2} />
+                </div>
+                <div className="space-y-2">
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Unidad de Medida *</Label>
+                  <Input value={unidadMedida} onChange={e => setUnidadMedida(e.target.value)} placeholder="m², m³, kg, ud, ml..." required />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Uds</Label>
+                    <Input type="number" step="any" value={pUds} onChange={e => setPUds(e.target.value)} placeholder="0" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Longitud</Label>
+                    <Input type="number" step="any" value={pLongitud} onChange={e => setPLongitud(e.target.value)} placeholder="0" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Anchura</Label>
+                    <Input type="number" step="any" value={pAnchura} onChange={e => setPAnchura(e.target.value)} placeholder="0" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Altura</Label>
+                    <Input type="number" step="any" value={pAltura} onChange={e => setPAltura(e.target.value)} placeholder="0" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Precio Unitario (€) *</Label>
+                  <Input type="number" step="0.01" value={precioUnitario} onChange={e => setPrecioUnitario(e.target.value)} placeholder="0.00" required />
+                </div>
+                <div className="space-y-2">
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Tipo de IVA *</Label>
+                  <Select value={ivaPercent} onValueChange={setIvaPercent}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {IVA_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Live calc preview */}
+                <div className="rounded-lg bg-secondary/50 p-3 space-y-1 text-sm">
+                  <p>Medición: <strong>{partidaMedicion.toFixed(3)}</strong> {unidadMedida} × {parseFloat(precioUnitario) || 0} €/{unidadMedida}</p>
+                  <p>PEM: <strong>{partidaPEM.toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                  <p>IVA ({ivaPercent}%): <strong>{partidaIVA.toLocaleString("es-ES", { minimumFractionDigits: 2 })} €</strong></p>
+                  <p className="font-display font-bold text-base">Total: {partidaTotal.toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</p>
+                  <p className="text-[10px] text-muted-foreground italic">Los precios indicados son Precios de Ejecución Material</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Importe (€) *</Label>
+                  <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="45000.00" required />
+                </div>
+                <div className="space-y-2">
+                  <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Documento PDF *</Label>
+                  <Input type="file" accept=".pdf" onChange={e => setFile(e.target.files?.[0] || null)} className="cursor-pointer" />
+                </div>
+              </>
+            )}
             <AlertDialogFooter>
               <AlertDialogCancel type="button">Cancelar</AlertDialogCancel>
               <AlertDialogAction type="submit" disabled={submitting}>
@@ -806,8 +979,8 @@ const CostsModule = () => {
           </AlertDialogHeader>
           {actionClaim?.action === "reject" && (
             <div className="space-y-2 py-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Motivo de rechazo</Label>
-              <Textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Indique el motivo..." rows={3} />
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Motivo de rechazo *</Label>
+              <Textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Indique el motivo del rechazo..." rows={3} />
             </div>
           )}
           <AlertDialogFooter>
