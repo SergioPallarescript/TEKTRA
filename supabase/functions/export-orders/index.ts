@@ -249,6 +249,22 @@ Deno.serve(async (req) => {
         order.signature_type !== "p12" ? (order.signature_image || undefined) : undefined
       ));
 
+      // Add recipient counter-signature stamp
+      if (order.recipient_signed_by && order.recipient_signed_at) {
+        const recipientProfile = profileMap[order.recipient_signed_by];
+        const recipientDate = new Date(order.recipient_signed_at).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+        stamps.push(renderStamp(
+          order.recipient_signature_type || "manual",
+          recipientProfile?.full_name || "—",
+          recipientProfile?.dni_cif || "—",
+          recipientDate,
+          order.recipient_signature_geo || "",
+          order.recipient_signature_hash || "",
+          recipientProfile?.role || "DESTINATARIO",
+          order.recipient_signature_type !== "p12" ? (order.recipient_signature_image || undefined) : undefined
+        ));
+      }
+
       // Add validation stamps
       const orderValidations = validationsByOrder[order.id] || [];
       orderValidations.forEach((v: any) => {
