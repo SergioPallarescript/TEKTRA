@@ -162,6 +162,9 @@ export type Database = {
           is_completed: boolean
           item_number: number | null
           project_id: string
+          rejected_at: string | null
+          rejected_by: string | null
+          rejection_reason: string | null
           sort_order: number
           title: string
           updated_at: string
@@ -183,6 +186,9 @@ export type Database = {
           is_completed?: boolean
           item_number?: number | null
           project_id: string
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
           sort_order?: number
           title: string
           updated_at?: string
@@ -204,6 +210,9 @@ export type Database = {
           is_completed?: boolean
           item_number?: number | null
           project_id?: string
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
           sort_order?: number
           title?: string
           updated_at?: string
@@ -222,8 +231,11 @@ export type Database = {
       }
       cost_claims: {
         Row: {
+          altura: number | null
           amount: number
+          anchura: number | null
           claim_number: number
+          comentario: string | null
           created_at: string
           dem_signed_at: string | null
           dem_signed_by: string | null
@@ -234,8 +246,12 @@ export type Database = {
           file_name: string | null
           file_url: string | null
           id: string
+          iva_percent: number | null
+          longitud: number | null
           payment_authorized_at: string | null
           payment_authorized_by: string | null
+          pem: number | null
+          precio_unitario: number | null
           pro_signed_at: string | null
           pro_signed_by: string | null
           project_id: string
@@ -248,12 +264,17 @@ export type Database = {
           technical_approved_at: string | null
           technical_approved_by: string | null
           title: string
+          uds: number | null
+          unidad_medida: string | null
           updated_at: string
           validation_hash: string | null
         }
         Insert: {
+          altura?: number | null
           amount: number
+          anchura?: number | null
           claim_number?: number
+          comentario?: string | null
           created_at?: string
           dem_signed_at?: string | null
           dem_signed_by?: string | null
@@ -264,8 +285,12 @@ export type Database = {
           file_name?: string | null
           file_url?: string | null
           id?: string
+          iva_percent?: number | null
+          longitud?: number | null
           payment_authorized_at?: string | null
           payment_authorized_by?: string | null
+          pem?: number | null
+          precio_unitario?: number | null
           pro_signed_at?: string | null
           pro_signed_by?: string | null
           project_id: string
@@ -278,12 +303,17 @@ export type Database = {
           technical_approved_at?: string | null
           technical_approved_by?: string | null
           title: string
+          uds?: number | null
+          unidad_medida?: string | null
           updated_at?: string
           validation_hash?: string | null
         }
         Update: {
+          altura?: number | null
           amount?: number
+          anchura?: number | null
           claim_number?: number
+          comentario?: string | null
           created_at?: string
           dem_signed_at?: string | null
           dem_signed_by?: string | null
@@ -294,8 +324,12 @@ export type Database = {
           file_name?: string | null
           file_url?: string | null
           id?: string
+          iva_percent?: number | null
+          longitud?: number | null
           payment_authorized_at?: string | null
           payment_authorized_by?: string | null
+          pem?: number | null
+          precio_unitario?: number | null
           pro_signed_at?: string | null
           pro_signed_by?: string | null
           project_id?: string
@@ -308,6 +342,8 @@ export type Database = {
           technical_approved_at?: string | null
           technical_approved_by?: string | null
           title?: string
+          uds?: number | null
+          unidad_medida?: string | null
           updated_at?: string
           validation_hash?: string | null
         }
