@@ -285,7 +285,7 @@ const BrainModule = () => {
             </Button>
           </div>
           <ScrollArea className="h-[calc(100%-48px)]">
-            <div className="p-2 space-y-1">
+            <div className="p-2 pr-4 space-y-1">
               {conversations.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">Sin conversaciones previas</p>
               ) : (
@@ -316,17 +316,17 @@ const BrainModule = () => {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center w-full gap-1">
-                        <button onClick={() => loadConversation(conv.id)} className="flex-1 text-left p-2 text-xs min-w-0 overflow-hidden">
-                          <p className="truncate font-medium">{conv.title}</p>
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-1 p-2 pr-3">
+                        <button onClick={() => loadConversation(conv.id)} className="min-w-0 text-left text-xs">
+                          <p className="font-medium leading-tight whitespace-normal break-words">{conv.title}</p>
                           <p className="text-[10px] text-muted-foreground mt-0.5">
                             {new Date(conv.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
                           </p>
                         </button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={e => { e.stopPropagation(); setEditingConvId(conv.id); setEditingTitle(conv.title); }}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 self-start" onClick={e => { e.stopPropagation(); setEditingConvId(conv.id); setEditingTitle(conv.title); }}>
                           <Pencil className="h-3 w-3" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive hover:text-destructive" onClick={e => { e.stopPropagation(); setDeleteConfirmId(conv.id); }}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 self-start text-destructive hover:text-destructive" onClick={e => { e.stopPropagation(); setDeleteConfirmId(conv.id); }}>
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>

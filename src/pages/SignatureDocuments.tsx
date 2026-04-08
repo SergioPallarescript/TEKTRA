@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileSignature, Loader2, PenSquare, Send, Trash2, Upload, RefreshCw, Plus, X, UserPlus } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileSignature, Loader2, PenSquare, Send, Trash2, Upload, RefreshCw, Plus, X, UserPlus, ZoomIn, ZoomOut, RotateCw } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import FiscalDataModal from "@/components/FiscalDataModal";
 import SignatureCanvas, { type SignatureCanvasHandle } from "@/components/SignatureCanvas";
@@ -65,6 +65,7 @@ const SignatureDocuments = () => {
   const [activeTab, setActiveTab] = useState<"pending" | "sent">("pending");
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfPages, setPdfPages] = useState<HTMLCanvasElement[]>([]);
+  const [previewZoom, setPreviewZoom] = useState(100);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [signing, setSigning] = useState(false);
@@ -194,17 +195,25 @@ const SignatureDocuments = () => {
   }, [selectedDocument, renderPdf]);
 
   useEffect(() => {
+    setPreviewZoom(100);
+  }, [selectedDocument?.id]);
+
+  useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container || pdfPages.length === 0) return;
     container.innerHTML = "";
     pdfPages.forEach((canvas) => {
-      canvas.style.width = "100%";
+      canvas.style.width = `${previewZoom}%`;
       canvas.style.height = "auto";
+      canvas.style.maxWidth = "none";
       canvas.style.display = "block";
+      canvas.style.transition = "width 0.2s ease";
+      canvas.style.marginLeft = "auto";
+      canvas.style.marginRight = "auto";
       canvas.style.marginBottom = "8px";
       container.appendChild(canvas);
     });
-  }, [pdfPages]);
+  }, [pdfPages, previewZoom]);
 
   // Check if user needs to sign this doc (either as primary recipient or multi-recipient)
   const userNeedsToSign = (doc: SignatureDocument) => {
@@ -690,12 +699,26 @@ const SignatureDocuments = () => {
                   return null;
                 })()}
 
-                <div data-tour="sig-preview" ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
-                  {pdfPages.length === 0 && (
-                    <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
-                      <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando PDF…
-                    </div>
-                  )}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPreviewZoom((z) => Math.max(z - 25, 25))} disabled={previewZoom <= 25}>
+                      <ZoomOut className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="w-12 text-center text-[10px] font-display uppercase tracking-wider text-muted-foreground">{previewZoom}%</span>
+                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPreviewZoom((z) => Math.min(z + 25, 300))} disabled={previewZoom >= 300}>
+                      <ZoomIn className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPreviewZoom(100)}>
+                      <RotateCw className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <div data-tour="sig-preview" ref={canvasContainerRef} className="overflow-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
+                    {pdfPages.length === 0 && (
+                      <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando PDF…
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {userNeedsToSign(selectedDocument) ? (

@@ -26,7 +26,7 @@ import { toast } from "sonner";
 import { notifyProjectMembers } from "@/lib/notifications";
 import {
   ArrowLeft, Plus, DollarSign, CheckCircle2, XCircle, Download, ExternalLink,
-  Pencil, Trash2, Loader2, FileSignature, Upload, FileText,
+  Pencil, Trash2, Loader2, FileSignature, Upload, FileText, ZoomIn, ZoomOut, RotateCw,
 } from "lucide-react";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
@@ -106,6 +106,7 @@ const CostsModule = () => {
   const [selectedClaim, setSelectedClaim] = useState<any | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfPages, setPdfPages] = useState<HTMLCanvasElement[]>([]);
+  const [previewZoom, setPreviewZoom] = useState(100);
   const [signing, setSigning] = useState(false);
 
   const [actionClaim, setActionClaim] = useState<{ id: string; action: string } | null>(null);
@@ -191,17 +192,25 @@ const CostsModule = () => {
   }, [selectedClaim, renderPdf]);
 
   useEffect(() => {
+    setPreviewZoom(100);
+  }, [selectedClaim?.id]);
+
+  useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container || pdfPages.length === 0) return;
     container.innerHTML = "";
     pdfPages.forEach(canvas => {
-      canvas.style.width = "100%";
+      canvas.style.width = `${previewZoom}%`;
       canvas.style.height = "auto";
+      canvas.style.maxWidth = "none";
       canvas.style.display = "block";
+      canvas.style.transition = "width 0.2s ease";
+      canvas.style.marginLeft = "auto";
+      canvas.style.marginRight = "auto";
       canvas.style.marginBottom = "8px";
       container.appendChild(canvas);
     });
-  }, [pdfPages]);
+  }, [pdfPages, previewZoom]);
 
   /* ───── Computed values for presupuesto/certificacion with PEM+IVA ───── */
   const pemAmount = useMemo(() => parseFloat(amount) || 0, [amount]);
@@ -755,12 +764,26 @@ const CostsModule = () => {
                         <p className="text-[10px] text-muted-foreground italic">Los precios indicados son Precios de Ejecución Material</p>
                       </div>
                       {selectedClaim.file_url ? (
-                        <div ref={canvasContainerRef} className="overflow-y-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
-                          {pdfPages.length === 0 && (
-                            <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
-                              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando PDF…
-                            </div>
-                          )}
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1">
+                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPreviewZoom((z) => Math.max(z - 25, 25))} disabled={previewZoom <= 25}>
+                              <ZoomOut className="h-3.5 w-3.5" />
+                            </Button>
+                            <span className="w-12 text-center text-[10px] font-display uppercase tracking-wider text-muted-foreground">{previewZoom}%</span>
+                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPreviewZoom((z) => Math.min(z + 25, 300))} disabled={previewZoom >= 300}>
+                              <ZoomIn className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPreviewZoom(100)}>
+                              <RotateCw className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div ref={canvasContainerRef} className="overflow-auto max-h-[420px] rounded-lg border border-border bg-background p-2">
+                            {pdfPages.length === 0 && (
+                              <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
+                                <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando PDF…
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ) : (
                         <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
