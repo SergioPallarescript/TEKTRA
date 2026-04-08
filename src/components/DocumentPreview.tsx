@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { ZoomIn, ZoomOut, RotateCw, Loader2, FileWarning } from "lucide-react";
+import * as pdfjsLib from "pdfjs-dist";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 interface DocumentPreviewProps {
   url: string;
@@ -11,6 +14,9 @@ interface DocumentPreviewProps {
 const DocumentPreview = ({ url, fileName, className = "" }: DocumentPreviewProps) => {
   const [zoom, setZoom] = useState(100);
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [pdfPages, setPdfPages] = useState<HTMLCanvasElement[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const isPdf = fileName?.toLowerCase().endsWith(".pdf");
   const isImage = /\.(jpg|jpeg|png|webp|gif|bmp|svg)$/i.test(fileName || "");
@@ -18,6 +24,52 @@ const DocumentPreview = ({ url, fileName, className = "" }: DocumentPreviewProps
   const handleZoomIn = () => setZoom((z) => Math.min(z + 25, 300));
   const handleZoomOut = () => setZoom((z) => Math.max(z - 25, 25));
   const handleReset = () => setZoom(100);
+
+  const renderPdf = useCallback(async (pdfUrl: string) => {
+    try {
+      setLoading(true);
+      const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+      const pages: HTMLCanvasElement[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+        pages.push(canvas);
+      }
+      setPdfPages(pages);
+      setLoading(false);
+    } catch {
+      setError(true);
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isPdf && url) {
+      renderPdf(url);
+    } else if (isImage && url) {
+      setLoading(false);
+    } else {
+      setLoading(false);
+    }
+  }, [url, isPdf, isImage, renderPdf]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !isPdf || pdfPages.length === 0) return;
+    container.innerHTML = "";
+    pdfPages.forEach((canvas) => {
+      canvas.style.width = `${zoom}%`;
+      canvas.style.height = "auto";
+      canvas.style.display = "block";
+      canvas.style.marginBottom = "8px";
+      canvas.style.transition = "width 0.2s ease";
+      container.appendChild(canvas);
+    });
+  }, [pdfPages, zoom, isPdf]);
 
   if (error) {
     return (
@@ -47,25 +99,12 @@ const DocumentPreview = ({ url, fileName, className = "" }: DocumentPreviewProps
 
       {/* Preview container with scroll */}
       <div className="overflow-auto rounded border border-border bg-muted/30" style={{ maxHeight: "500px" }}>
-        {isPdf ? (
-          <object
-            data={`${url}#toolbar=1&navpanes=0`}
-            type="application/pdf"
-            className="rounded"
-            style={{
-              width: `${zoom}%`,
-              height: zoom === 100 ? "450px" : `${Math.round(450 * zoom / 100)}px`,
-              minWidth: "100%",
-            }}
-            onError={() => setError(true)}
-          >
-            {/* Fallback: try embed */}
-            <embed
-              src={url}
-              type="application/pdf"
-              style={{ width: "100%", height: "450px" }}
-            />
-          </object>
+        {loading ? (
+          <div className="flex items-center justify-center h-[300px] text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin mr-2" /> Cargando previsualización...
+          </div>
+        ) : isPdf ? (
+          <div ref={containerRef} className="p-2" />
         ) : isImage ? (
           <img
             src={url}
