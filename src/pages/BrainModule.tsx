@@ -277,7 +277,7 @@ const BrainModule = () => {
     <AppLayout>
       <div className="flex" style={{ height: "calc(100vh - 56px - 40px)" }}>
         {/* History sidebar */}
-        <div className={`${showHistory ? "w-72 border-r border-border" : "w-0"} transition-all overflow-hidden bg-card shrink-0`}>
+        <div className={`${showHistory ? "w-80 border-r border-border" : "w-0"} transition-all overflow-hidden bg-card shrink-0`}>
           <div className="p-3 border-b border-border flex items-center justify-between">
             <p className="text-xs font-display uppercase tracking-wider text-muted-foreground">Historial</p>
             <Button variant="ghost" size="sm" onClick={startNewConversation} className="gap-1 text-xs">
