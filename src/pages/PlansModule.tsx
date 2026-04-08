@@ -18,8 +18,10 @@ import { toast } from "sonner";
 import { notifyProjectMembers } from "@/lib/notifications";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import {
-  ArrowLeft, Upload, FileText, CheckCircle2, Clock, Plus, Download, History, ShieldCheck, Pencil, Trash2,
+  ArrowLeft, Upload, FileText, CheckCircle2, Clock, Plus, Download, History, ShieldCheck, Pencil, Trash2, ChevronDown, ChevronUp, ZoomIn, ZoomOut, RotateCw, Loader2,
 } from "lucide-react";
+
+import DocumentPreview from "@/components/DocumentPreview";
 
 const ROLES = ["DO", "DEM", "CSS", "CON", "PRO"] as const;
 
@@ -91,7 +93,29 @@ const PlansModule = () => {
   const [deletePlanId, setDeletePlanId] = useState<string | null>(null);
   const [deletePlanSubmitting, setDeletePlanSubmitting] = useState(false);
 
+  // Preview state
+  const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
+
   const { isAdmin, projectRole } = useProjectRole(projectId);
+
+  const toggleVersionPreview = async (version: PlanVersion) => {
+    if (expandedVersionId === version.id) {
+      setExpandedVersionId(null);
+      return;
+    }
+    setExpandedVersionId(version.id);
+    if (previewUrls[version.id]) return;
+    setLoadingPreview(version.id);
+    try {
+      const { data, error } = await supabase.storage.from("plans").download(version.file_url);
+      if (error || !data) { toast.error("No se pudo cargar la previsualización"); setLoadingPreview(null); return; }
+      const url = URL.createObjectURL(data);
+      setPreviewUrls(prev => ({ ...prev, [version.id]: url }));
+    } catch { toast.error("Error al cargar archivo"); }
+    setLoadingPreview(null);
+  };
 
   const fetchPlans = useCallback(async () => {
     if (!projectId) return;
@@ -522,21 +546,44 @@ const PlansModule = () => {
             </h2>
             <div className="space-y-2">
               {versions.map((v, i) => (
-                <div key={v.id} className={`bg-card border rounded-lg p-4 flex items-center justify-between animate-fade-in ${i === 0 ? "border-foreground/20" : "border-border"}`} style={{ animationDelay: `${i * 60}ms` }}>
-                  <div className="flex items-center gap-3">
-                    <span className={`font-display text-xs font-bold px-2 py-1 rounded ${i === 0 ? "bg-foreground text-background" : "bg-secondary text-muted-foreground"}`}>v{v.version_number}</span>
-                    <div>
-                      <p className="text-sm font-medium">{v.file_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {v.notes && `${v.notes} · `}
-                        {new Date(v.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" })}
-                        {v.file_size && ` · ${(v.file_size / 1024 / 1024).toFixed(1)} MB`}
-                      </p>
+                <div key={v.id} className={`bg-card border rounded-lg animate-fade-in ${i === 0 ? "border-foreground/20" : "border-border"}`} style={{ animationDelay: `${i * 60}ms` }}>
+                  <div
+                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-secondary/30 transition-colors rounded-lg"
+                    onClick={() => toggleVersionPreview(v)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={`font-display text-xs font-bold px-2 py-1 rounded ${i === 0 ? "bg-foreground text-background" : "bg-secondary text-muted-foreground"}`}>v{v.version_number}</span>
+                      <div>
+                        <p className="text-sm font-medium">{v.file_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {v.notes && `${v.notes} · `}
+                          {new Date(v.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" })}
+                          {v.file_size && ` · ${(v.file_size / 1024 / 1024).toFixed(1)} MB`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDownload(v.file_url, v.file_name); }} title="Descargar">
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      {expandedVersionId === v.id ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => handleDownload(v.file_url, v.file_name)} title="Descargar">
-                    <Download className="h-4 w-4" />
-                  </Button>
+                  {expandedVersionId === v.id && (
+                    <div className="px-4 pb-4 border-t border-border pt-3">
+                      {loadingPreview === v.id ? (
+                        <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Cargando previsualización...
+                        </div>
+                      ) : previewUrls[v.id] ? (
+                        <DocumentPreview url={previewUrls[v.id]} fileName={v.file_name} />
+                      ) : (
+                        <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                          No se pudo cargar la previsualización
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
               {versions.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No hay versiones. Sube el primer archivo.</p>}
