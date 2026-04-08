@@ -49,7 +49,7 @@ const modules = [
   { key: "dwg", label: "Metro Digital", icon: Ruler, desc: "Toma de medidas" },
   { key: "cfo", label: "Docs Finales (CFO)", icon: ClipboardCheck, desc: "16 puntos de control" },
   { key: "gantt", label: "Diagrama Gantt", icon: BarChart3, desc: "Cronología de obra" },
-  { key: "signatures", label: "Firma de Documentos", icon: FileSignature, desc: "Privado entre emisor y receptor" },
+  { key: "signatures", label: "Documentos y Firmas", icon: FileSignature, desc: "Envío, registro y firma legal" },
 ];
 
 const ProjectDetail = () => {

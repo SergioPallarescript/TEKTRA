@@ -1175,6 +1175,8 @@ export type Database = {
           signed_file_path: string | null
           status: string
           validation_hash: string | null
+          viewed_at: string | null
+          viewed_by: string | null
         }
         Insert: {
           certificate_cn?: string | null
@@ -1188,6 +1190,8 @@ export type Database = {
           signed_file_path?: string | null
           status?: string
           validation_hash?: string | null
+          viewed_at?: string | null
+          viewed_by?: string | null
         }
         Update: {
           certificate_cn?: string | null
@@ -1201,6 +1205,8 @@ export type Database = {
           signed_file_path?: string | null
           status?: string
           validation_hash?: string | null
+          viewed_at?: string | null
+          viewed_by?: string | null
         }
         Relationships: [
           {
@@ -1219,6 +1225,7 @@ export type Database = {
           created_at: string
           file_size: number | null
           id: string
+          is_info_only: boolean
           mime_type: string | null
           original_file_name: string
           original_file_path: string
@@ -1239,6 +1246,7 @@ export type Database = {
           created_at?: string
           file_size?: number | null
           id?: string
+          is_info_only?: boolean
           mime_type?: string | null
           original_file_name: string
           original_file_path: string
@@ -1259,6 +1267,7 @@ export type Database = {
           created_at?: string
           file_size?: number | null
           id?: string
+          is_info_only?: boolean
           mime_type?: string | null
           original_file_name?: string
           original_file_path?: string

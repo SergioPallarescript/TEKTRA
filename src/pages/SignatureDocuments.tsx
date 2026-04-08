@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileSignature, Loader2, PenSquare, Send, Trash2, Upload, RefreshCw, Plus, X, UserPlus, ZoomIn, ZoomOut, RotateCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileSignature, Loader2, PenSquare, Send, Trash2, Upload, RefreshCw, Plus, X, UserPlus, ZoomIn, ZoomOut, RotateCw, Eye, FolderArchive } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import FiscalDataModal from "@/components/FiscalDataModal";
 import SignatureCanvas, { type SignatureCanvasHandle } from "@/components/SignatureCanvas";
@@ -11,6 +11,7 @@ import CertificateSignature, { type CertSignMetadata } from "@/components/Certif
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,6 +40,7 @@ type SignatureDocument = {
   validation_hash: string | null;
   signed_at: string | null;
   created_at: string;
+  is_info_only?: boolean;
 };
 
 type DocRecipient = {
@@ -49,6 +51,8 @@ type DocRecipient = {
   signed_at: string | null;
   validation_hash: string | null;
   signature_type: string | null;
+  viewed_at?: string | null;
+  viewed_by?: string | null;
 };
 
 const SignatureDocuments = () => {
@@ -62,7 +66,7 @@ const SignatureDocuments = () => {
   const [docRecipients, setDocRecipients] = useState<DocRecipient[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<SignatureDocument | null>(null);
-  const [activeTab, setActiveTab] = useState<"pending" | "sent">("pending");
+  const [activeTab, setActiveTab] = useState<"pending" | "sent" | "archive">("pending");
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfPages, setPdfPages] = useState<HTMLCanvasElement[]>([]);
   const [previewZoom, setPreviewZoom] = useState(100);
@@ -72,6 +76,7 @@ const SignatureDocuments = () => {
   const [title, setTitle] = useState("");
   const [recipientIds, setRecipientIds] = useState<string[]>([""]);
   const [file, setFile] = useState<File | null>(null);
+  const [isInfoOnly, setIsInfoOnly] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SignatureDocument | null>(null);
   const [replaceTarget, setReplaceTarget] = useState<SignatureDocument | null>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
@@ -86,14 +91,12 @@ const SignatureDocuments = () => {
 
   const fetchDocuments = async () => {
     if (!user) return;
-    // Fetch documents where user is sender or primary recipient
     const { data } = await (supabase.from("signature_documents" as any) as any)
       .select("*")
       .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
       .eq("project_id", projectId)
       .order("created_at", { ascending: false });
     
-    // Also fetch documents where user is a secondary recipient
     const { data: recipientRows } = await (supabase.from("signature_document_recipients" as any) as any)
       .select("*")
       .eq("recipient_id", user.id);
@@ -142,14 +145,12 @@ const SignatureDocuments = () => {
     void load();
   }, [projectId, user]);
 
-  // Re-fetch recipients when documents change
   useEffect(() => {
     if (documents.length > 0) {
       fetchAllRecipients(documents.map(d => d.id));
     }
   }, [documents.length]);
 
-  // Render PDF with PDF.js
   const renderPdf = useCallback(async (url: string) => {
     try {
       const loadingTask = pdfjsLib.getDocument(url);
@@ -172,6 +173,19 @@ const SignatureDocuments = () => {
     }
   }, []);
 
+  // Record read receipt when opening an info-only document
+  const recordViewReceipt = useCallback(async (doc: SignatureDocument) => {
+    if (!user || !doc.is_info_only) return;
+    const myRecipientRow = docRecipients.find(r => r.document_id === doc.id && r.recipient_id === user.id);
+    if (myRecipientRow && !myRecipientRow.viewed_at) {
+      await (supabase.from("signature_document_recipients" as any) as any)
+        .update({ viewed_at: new Date().toISOString(), viewed_by: user.id })
+        .eq("id", myRecipientRow.id);
+      // Refresh recipients
+      fetchAllRecipients(documents.map(d => d.id));
+    }
+  }, [user, docRecipients, documents]);
+
   useEffect(() => {
     if (!selectedDocument) {
       setPdfBlobUrl((c) => { if (c) URL.revokeObjectURL(c); return null; });
@@ -183,12 +197,14 @@ const SignatureDocuments = () => {
       const targetPath = selectedDocument.signed_file_path || selectedDocument.original_file_path;
       const { data, error } = await supabase.storage.from("plans").download(targetPath);
       if (error || !data) { toast.error("No se pudo abrir el PDF"); return; }
-      if (selectedDocument.status === "pending") {
+      if (selectedDocument.status === "pending" && !selectedDocument.is_info_only) {
         setOriginalPdfBuffer(await data.arrayBuffer());
       }
       const url = URL.createObjectURL(data);
       setPdfBlobUrl((c) => { if (c) URL.revokeObjectURL(c); return url; });
       await renderPdf(url);
+      // Record view receipt for info-only docs
+      recordViewReceipt(selectedDocument);
     };
     void loadPreview();
     return () => { setPdfBlobUrl((c) => { if (c) URL.revokeObjectURL(c); return null; }); };
@@ -215,22 +231,32 @@ const SignatureDocuments = () => {
     });
   }, [pdfPages, previewZoom]);
 
-  // Check if user needs to sign this doc (either as primary recipient or multi-recipient)
   const userNeedsToSign = (doc: SignatureDocument) => {
+    if (doc.is_info_only) return false;
     if (doc.recipient_id === user?.id && doc.status === "pending") return true;
     const myRecipientRow = docRecipients.find(r => r.document_id === doc.id && r.recipient_id === user?.id);
     return myRecipientRow?.status === "pending";
   };
 
+  // Documents needing signature action
   const pendingDocuments = useMemo(
-    () => documents.filter((d) => userNeedsToSign(d)),
+    () => documents.filter((d) => !d.is_info_only && userNeedsToSign(d)),
     [documents, user?.id, docRecipients],
   );
+
+  // Sent + completed (non-info-only)
   const sentAndCompletedDocuments = useMemo(
-    () => documents.filter((d) => d.sender_id === user?.id || d.status === "signed" || (!userNeedsToSign(d) && d.recipient_id !== user?.id)),
+    () => documents.filter((d) => !d.is_info_only && (d.sender_id === user?.id || d.status === "signed" || (!userNeedsToSign(d) && d.recipient_id !== user?.id))),
     [documents, user?.id, docRecipients],
   );
-  const activeDocuments = activeTab === "pending" ? pendingDocuments : sentAndCompletedDocuments;
+
+  // Archive / Mi Carpeta — info-only documents
+  const archiveDocuments = useMemo(
+    () => documents.filter((d) => d.is_info_only),
+    [documents],
+  );
+
+  const activeDocuments = activeTab === "pending" ? pendingDocuments : activeTab === "sent" ? sentAndCompletedDocuments : archiveDocuments;
 
   // Multi-recipient helpers
   const addRecipient = () => {
@@ -258,33 +284,28 @@ const SignatureDocuments = () => {
       const { error: uploadError } = await uploadFileWithFallback({ path, file });
       if (uploadError) throw uploadError;
 
-      // Use the first recipient as the primary recipient (backwards compat)
       const primaryRecipient = validRecipients[0];
+      const docStatus = isInfoOnly ? "signed" : "pending"; // info-only docs don't need signing
       const { data: insertedDoc, error: insertError } = await (supabase.from("signature_documents" as any) as any).insert({
         project_id: projectId, sender_id: user.id, recipient_id: primaryRecipient,
         title: title.trim(), original_file_name: file.name, original_file_path: path,
         file_size: file.size, mime_type: file.type || "application/pdf",
+        is_info_only: isInfoOnly, status: docStatus,
       }).select().single();
       if (insertError) throw insertError;
 
-      // Insert additional recipients into the junction table
-      if (validRecipients.length > 1) {
-        const additionalRecipients = validRecipients.slice(1).map(rid => ({
-          document_id: insertedDoc.id,
-          recipient_id: rid,
-        }));
-        await (supabase.from("signature_document_recipients" as any) as any).insert(additionalRecipients);
-      }
-
-      // Also insert the primary recipient into the junction table for consistency
-      await (supabase.from("signature_document_recipients" as any) as any).insert({
+      // Insert all recipients into the junction table
+      const allRecipientRows = validRecipients.map(rid => ({
         document_id: insertedDoc.id,
-        recipient_id: primaryRecipient,
-      });
+        recipient_id: rid,
+        status: isInfoOnly ? "signed" : "pending",
+      }));
+      await (supabase.from("signature_document_recipients" as any) as any).insert(allRecipientRows);
 
       await supabase.from("audit_logs").insert({
-        user_id: user.id, project_id: projectId, action: "signature_document_created",
-        details: { title: title.trim(), recipients: validRecipients, file_name: file.name },
+        user_id: user.id, project_id: projectId,
+        action: isInfoOnly ? "document_sent_info_only" : "signature_document_created",
+        details: { title: title.trim(), recipients: validRecipients, file_name: file.name, is_info_only: isInfoOnly },
       });
 
       // Notify all recipients
@@ -292,16 +313,18 @@ const SignatureDocuments = () => {
         await notifyUser({
           userId: rid,
           projectId: projectId!,
-          title: "Firma pendiente",
-          message: `Tienes un nuevo documento para firmar: "${title.trim()}"`,
-          type: "signature",
+          title: isInfoOnly ? "📄 Nuevo documento de registro" : "Firma pendiente",
+          message: isInfoOnly
+            ? `Has recibido un nuevo documento de registro en tu carpeta: "${title.trim()}"`
+            : `Tienes un nuevo documento para firmar: "${title.trim()}"`,
+          type: isInfoOnly ? "info" : "signature",
         });
       }
 
-      setTitle(""); setRecipientIds([""]); setFile(null);
-      toast.success("Documento enviado para firma");
+      setTitle(""); setRecipientIds([""]); setFile(null); setIsInfoOnly(false);
+      toast.success(isInfoOnly ? "Documento enviado a carpeta de destinatarios" : "Documento enviado para firma");
       await fetchDocuments();
-      setActiveTab("sent");
+      setActiveTab(isInfoOnly ? "archive" : "sent");
     } catch (err: any) {
       toast.error(err?.message || "No se pudo enviar el documento");
     } finally {
@@ -407,14 +430,12 @@ const SignatureDocuments = () => {
       const { error: uploadError } = await uploadFileWithFallback({ path: signedPath, file: signedFile });
       if (uploadError) throw uploadError;
 
-      // Update primary document if this is the primary recipient
       if (selectedDocument.recipient_id === user?.id) {
         await (supabase.from("signature_documents" as any) as any)
           .update({ status: "signed", signed_file_path: signedPath, signed_at: signedAt, validation_hash: validationHash, signature_type: "manual" })
           .eq("id", selectedDocument.id);
       }
 
-      // Update the junction table recipient record
       await (supabase.from("signature_document_recipients" as any) as any)
         .update({ status: "signed", signed_at: signedAt, validation_hash: validationHash, signature_type: "manual", signed_file_path: signedPath })
         .eq("document_id", selectedDocument.id)
@@ -457,7 +478,6 @@ const SignatureDocuments = () => {
         .eq("id", selectedDocument.id);
     }
 
-    // Update junction table
     await (supabase.from("signature_document_recipients" as any) as any)
       .update({
         status: "signed", signed_at: signedAt, validation_hash: metadata.validationHash,
@@ -508,7 +528,6 @@ const SignatureDocuments = () => {
     window.open(pdfBlobUrl, "_blank");
   };
 
-  // Get signing status for multi-recipient docs
   const getDocSigningStatus = (doc: SignatureDocument) => {
     const recipients = docRecipients.filter(r => r.document_id === doc.id);
     if (recipients.length === 0) return null;
@@ -519,6 +538,15 @@ const SignatureDocuments = () => {
   const getMemberName = (userId: string) => {
     const m = members.find((m: any) => m.user_id === userId);
     return m?.profile?.full_name || m?.invited_email || userId;
+  };
+
+  // Get view status for info-only docs
+  const getViewStatus = (doc: SignatureDocument) => {
+    const recipients = docRecipients.filter(r => r.document_id === doc.id);
+    return recipients.map(r => ({
+      ...r,
+      name: getMemberName(r.recipient_id),
+    }));
   };
 
   if (loading) {
@@ -540,15 +568,15 @@ const SignatureDocuments = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">Firma de Documentos</p>
+          <p className="text-xs font-display uppercase tracking-[0.2em] text-muted-foreground">Documentos y Firmas</p>
         </div>
 
         <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
           {/* Left panel */}
           <div className="space-y-4 min-w-0">
             <div className="rounded-lg border border-border bg-card p-4">
-              <h1 className="font-display text-2xl font-bold tracking-tighter">Firma de Documentos</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Flujo privado con validación legal y hash único.</p>
+              <h1 className="font-display text-2xl font-bold tracking-tighter">Documentos y Firmas</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Envío, registro y firma legal con trazabilidad.</p>
             </div>
 
             <form data-tour="send-signature" onSubmit={handleCreateDocument} className="rounded-lg border border-border bg-card p-4 space-y-4">
@@ -580,23 +608,36 @@ const SignatureDocuments = () => {
                   </Button>
                 )}
               </div>
+
+              {/* Info-only switch */}
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/20 p-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-display uppercase tracking-wider text-foreground">Solo Envío/Registro</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Sin firma — el documento irá a «Archivo / Mi Carpeta»</p>
+                </div>
+                <Switch checked={isInfoOnly} onCheckedChange={setIsInfoOnly} />
+              </div>
+
               <div data-tour="sig-file" className="space-y-2">
                 <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">PDF</Label>
                 <Input type="file" accept="application/pdf,.pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} required />
               </div>
               <Button type="submit" className="w-full gap-2 font-display text-xs uppercase tracking-wider" disabled={creating}>
-                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {creating ? "Enviando..." : `Enviar a firma (${recipientIds.filter(r => r).length} dest.)`}
+                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : isInfoOnly ? <FolderArchive className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                {creating ? "Enviando..." : isInfoOnly ? `Enviar a carpeta (${recipientIds.filter(r => r).length} dest.)` : `Enviar a firma (${recipientIds.filter(r => r).length} dest.)`}
               </Button>
             </form>
 
             <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-              <div className="flex gap-2">
-                <Button variant={activeTab === "pending" ? "default" : "outline"} className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider" onClick={() => setActiveTab("pending")}>
+              <div className="flex gap-1">
+                <Button variant={activeTab === "pending" ? "default" : "outline"} className="flex-1 text-[9px] sm:text-xs font-display uppercase tracking-wider px-2" onClick={() => setActiveTab("pending")}>
                   Pendientes ({pendingDocuments.length})
                 </Button>
-                <Button variant={activeTab === "sent" ? "default" : "outline"} className="flex-1 text-[10px] sm:text-xs font-display uppercase tracking-wider" onClick={() => setActiveTab("sent")}>
-                  Enviados
+                <Button variant={activeTab === "sent" ? "default" : "outline"} className="flex-1 text-[9px] sm:text-xs font-display uppercase tracking-wider px-2" onClick={() => setActiveTab("sent")}>
+                  Firmados
+                </Button>
+                <Button variant={activeTab === "archive" ? "default" : "outline"} className="flex-1 text-[9px] sm:text-xs font-display uppercase tracking-wider px-2 gap-1" onClick={() => setActiveTab("archive")}>
+                  <FolderArchive className="h-3 w-3" /> Archivo ({archiveDocuments.length})
                 </Button>
               </div>
 
@@ -606,8 +647,14 @@ const SignatureDocuments = () => {
                 ) : (
                   activeDocuments.map((doc) => {
                     const isSender = doc.sender_id === user?.id;
-                    const canModify = isSender && doc.status === "pending";
+                    const canModify = isSender && doc.status === "pending" && !doc.is_info_only;
+                    const canDelete = isSender;
                     const sigStatus = getDocSigningStatus(doc);
+                    const isInfoDoc = doc.is_info_only;
+
+                    // For info-only docs sent by current user, show view status
+                    const viewRecipients = isInfoDoc && isSender ? getViewStatus(doc) : [];
+
                     return (
                       <div key={doc.id}
                         className={`rounded-lg border p-3 transition-colors cursor-pointer ${
@@ -617,12 +664,34 @@ const SignatureDocuments = () => {
                       >
                         <div className="flex items-start justify-between gap-2 min-w-0">
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">{doc.title}</p>
+                            <div className="flex items-center gap-1.5">
+                              {isInfoDoc && <FolderArchive className="h-3 w-3 text-muted-foreground shrink-0" />}
+                              <p className="truncate text-sm font-medium">{doc.title}</p>
+                            </div>
                             <p className="truncate text-xs text-muted-foreground mt-0.5">{doc.original_file_name}</p>
                             <p className="text-[10px] text-muted-foreground mt-0.5">
                               {new Date(doc.created_at).toLocaleDateString("es-ES")}
                             </p>
-                            {sigStatus && sigStatus.total > 1 && (
+                            {/* View status for info-only docs */}
+                            {viewRecipients.length > 0 && (
+                              <div className="mt-1 space-y-0.5">
+                                {viewRecipients.map(r => (
+                                  <p key={r.id} className="text-[10px]">
+                                    {r.viewed_at ? (
+                                      <span className="text-success">
+                                        <Eye className="h-2.5 w-2.5 inline mr-0.5" />
+                                        Visto por {r.name} el {new Date(r.viewed_at).toLocaleString("es-ES")}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">
+                                        ⏳ {r.name} — No visto
+                                      </span>
+                                    )}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                            {!isInfoDoc && sigStatus && sigStatus.total > 1 && (
                               <p className="text-[10px] mt-1 font-display">
                                 <span className={sigStatus.signed === sigStatus.total ? "text-success" : "text-warning"}>
                                   {sigStatus.signed}/{sigStatus.total} firmados
@@ -632,16 +701,18 @@ const SignatureDocuments = () => {
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             {canModify && (
-                              <>
-                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setReplaceTarget(doc); }}>
-                                  <RefreshCw className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteTarget(doc); }}>
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </>
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setReplaceTarget(doc); }}>
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              </Button>
                             )}
-                            {doc.status === "signed" ? (
+                            {canDelete && (
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteTarget(doc); }}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            {isInfoDoc ? (
+                              <FolderArchive className="h-4 w-4 text-muted-foreground" />
+                            ) : doc.status === "signed" ? (
                               <CheckCircle2 className="h-4 w-4 text-success" />
                             ) : (
                               <PenSquare className="h-4 w-4 text-warning" />
@@ -664,6 +735,11 @@ const SignatureDocuments = () => {
                   <div className="min-w-0">
                     <h2 className="font-display text-lg sm:text-xl font-semibold tracking-tight truncate">{selectedDocument.title}</h2>
                     <p className="text-xs sm:text-sm text-muted-foreground truncate">{selectedDocument.original_file_name}</p>
+                    {selectedDocument.is_info_only && (
+                      <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-display uppercase tracking-wider bg-secondary text-muted-foreground border border-border">
+                        Solo Registro
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Button data-tour="sig-download" variant="outline" size="sm" onClick={handleDownload} className="gap-1.5 text-xs">
@@ -675,8 +751,8 @@ const SignatureDocuments = () => {
                   </div>
                 </div>
 
-                {/* Multi-recipient status */}
-                {(() => {
+                {/* Multi-recipient status for signature docs */}
+                {!selectedDocument.is_info_only && (() => {
                   const sigStatus = getDocSigningStatus(selectedDocument);
                   if (sigStatus && sigStatus.total > 1) {
                     const recipients = docRecipients.filter(r => r.document_id === selectedDocument.id);
@@ -697,6 +773,32 @@ const SignatureDocuments = () => {
                     );
                   }
                   return null;
+                })()}
+
+                {/* View receipts for info-only docs */}
+                {selectedDocument.is_info_only && selectedDocument.sender_id === user?.id && (() => {
+                  const viewRecipients = getViewStatus(selectedDocument);
+                  if (viewRecipients.length === 0) return null;
+                  return (
+                    <div className="p-3 rounded-lg border border-border bg-secondary/10">
+                      <p className="text-xs font-display uppercase tracking-wider text-muted-foreground mb-2">Acuse de Recibo</p>
+                      <div className="space-y-1">
+                        {viewRecipients.map(r => (
+                          <div key={r.id} className="flex items-center justify-between text-xs">
+                            <span>{r.name}</span>
+                            {r.viewed_at ? (
+                              <span className="text-success font-display">
+                                <Eye className="h-3 w-3 inline mr-1" />
+                                Visto {new Date(r.viewed_at).toLocaleString("es-ES")}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground font-display">⏳ No visto</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
                 })()}
 
                 <div className="space-y-2">
@@ -721,7 +823,8 @@ const SignatureDocuments = () => {
                   </div>
                 </div>
 
-                {userNeedsToSign(selectedDocument) ? (
+                {/* Signing panel — only for non-info-only docs that need signing */}
+                {!selectedDocument.is_info_only && userNeedsToSign(selectedDocument) ? (
                   <div data-tour="sig-signature-panel" className="space-y-4 rounded-lg border border-border bg-background p-4">
                     <Tabs value={signMethod} onValueChange={handleSignMethodChange}>
                       <TabsList className="w-full">
@@ -751,7 +854,7 @@ const SignatureDocuments = () => {
                       </TabsContent>
                     </Tabs>
                   </div>
-                ) : selectedDocument.validation_hash ? (
+                ) : !selectedDocument.is_info_only && selectedDocument.validation_hash ? (
                   <div className="rounded-lg border border-success/20 bg-success/5 p-4 space-y-1">
                     <p className="text-xs font-semibold text-success">Hash de Integridad</p>
                     <p className="text-sm font-mono text-success break-all">{selectedDocument.validation_hash}</p>
