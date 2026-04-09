@@ -6,8 +6,9 @@ import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Upload, FileText, Trash2, FolderOpen, Loader2, Download, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Trash2, FolderOpen, Loader2, Download, RefreshCw, ChevronDown, ChevronUp, ScanLine } from "lucide-react";
 import DocumentPreview from "@/components/DocumentPreview";
+import DocumentScanner from "@/components/DocumentScanner";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 
 const ProjectDocs = () => {
@@ -20,6 +21,7 @@ const ProjectDocs = () => {
   const [uploading, setUploading] = useState(false);
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const fetchDocs = useCallback(async () => {
     if (!projectId) return;
@@ -139,19 +141,24 @@ const ProjectDocs = () => {
             </p>
           </div>
           {canUpload && (
-            <label data-tour="upload-docs" className="cursor-pointer shrink-0">
-              <input
-                type="file" multiple className="hidden"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt"
-                onChange={(e) => { if (e.target.files) void handleUpload(e.target.files); e.currentTarget.value = ""; }}
-              />
-              <Button asChild variant="outline" className="font-display text-xs uppercase tracking-wider gap-2" disabled={uploading}>
-                <span>
-                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  {uploading ? "Subiendo..." : "Subir Documentos"}
-                </span>
+            <div className="flex gap-2 shrink-0">
+              <Button variant="outline" className="font-display text-xs uppercase tracking-wider gap-2" onClick={() => setScannerOpen(true)}>
+                <ScanLine className="h-4 w-4" /> Escanear
               </Button>
-            </label>
+              <label data-tour="upload-docs" className="cursor-pointer">
+                <input
+                  type="file" multiple className="hidden"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt"
+                  onChange={(e) => { if (e.target.files) void handleUpload(e.target.files); e.currentTarget.value = ""; }}
+                />
+                <Button asChild variant="outline" className="font-display text-xs uppercase tracking-wider gap-2" disabled={uploading}>
+                  <span>
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {uploading ? "Subiendo..." : "Subir"}
+                  </span>
+                </Button>
+              </label>
+            </div>
           )}
         </div>
 
@@ -238,6 +245,15 @@ const ProjectDocs = () => {
           </div>
         )}
       </div>
+
+      <DocumentScanner
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScanComplete={(scannedFile) => {
+          setScannerOpen(false);
+          void handleUpload([scannedFile] as unknown as FileList);
+        }}
+      />
     </AppLayout>
   );
 };
