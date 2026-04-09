@@ -335,7 +335,16 @@ const SignatureDocuments = () => {
   const handleDelete = async () => {
     if (!deleteTarget || !user) return;
     try {
+      // 1. Delete all recipient rows first (FK constraint)
+      await (supabase.from("signature_document_recipients" as any) as any)
+        .delete()
+        .eq("document_id", deleteTarget.id);
+      // 2. Remove file from storage
       await supabase.storage.from("plans").remove([deleteTarget.original_file_path]);
+      if (deleteTarget.signed_file_path) {
+        await supabase.storage.from("plans").remove([deleteTarget.signed_file_path]);
+      }
+      // 3. Delete the document record
       await (supabase.from("signature_documents" as any) as any).delete().eq("id", deleteTarget.id);
       await supabase.from("audit_logs").insert({
         user_id: user.id, project_id: projectId,
