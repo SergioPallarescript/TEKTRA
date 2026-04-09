@@ -566,7 +566,7 @@ export type Database = {
           dirigida_a?: string | null
           escrita_por?: string | null
           id?: string
-          incident_number?: number
+          incident_number: number
           is_locked?: boolean | null
           photos?: string[] | null
           project_id: string
@@ -791,7 +791,7 @@ export type Database = {
           escrita_por?: string | null
           id?: string
           is_locked?: boolean | null
-          order_number?: number
+          order_number: number
           photos?: string[] | null
           project_id: string
           recipient_signature_geo?: string | null
