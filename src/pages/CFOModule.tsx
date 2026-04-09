@@ -11,9 +11,10 @@ import { notifyUser } from "@/lib/notifications";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import {
   ArrowLeft, CheckCircle2, Circle, Upload, FileText,
-  Shield, Bell, Download, RefreshCw, Trash2, ChevronDown, ChevronUp, XCircle, Loader2,
+  Shield, Bell, Download, RefreshCw, Trash2, ChevronDown, ChevronUp, XCircle, Loader2, ScanLine,
 } from "lucide-react";
 import DocumentPreview from "@/components/DocumentPreview";
+import DocumentScanner from "@/components/DocumentScanner";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -61,6 +62,8 @@ const CFOModule = () => {
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [rejectDialog, setRejectDialog] = useState<{ open: boolean; item: any | null }>({ open: false, item: null });
   const [rejectReason, setRejectReason] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanTargetItemId, setScanTargetItemId] = useState<string | null>(null);
 
   const { isDEM, projectRole } = useProjectRole(projectId);
   const userRole = projectRole as AppRole | undefined;
