@@ -48,7 +48,7 @@ const ProjectDocs = () => {
     }
   };
 
-  const handleUpload = async (files: FileList) => {
+  const handleUpload = async (files: FileList | File[]) => {
     if (!projectId || !user || !canUpload) return;
     setUploading(true);
     let successCount = 0;
