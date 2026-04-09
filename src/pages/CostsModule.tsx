@@ -26,8 +26,9 @@ import { toast } from "sonner";
 import { notifyProjectMembers } from "@/lib/notifications";
 import {
   ArrowLeft, Plus, DollarSign, CheckCircle2, XCircle, Download, ExternalLink,
-  Pencil, Trash2, Loader2, FileSignature, Upload, FileText, ZoomIn, ZoomOut, RotateCw,
+  Pencil, Trash2, Loader2, FileSignature, Upload, FileText, ZoomIn, ZoomOut, RotateCw, ScanLine,
 } from "lucide-react";
+import DocumentScanner from "@/components/DocumentScanner";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
@@ -118,6 +119,7 @@ const CostsModule = () => {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [deleteClaim, setDeleteClaim] = useState<string | null>(null);
   const [fiscalModalOpen, setFiscalModalOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [signMethod, setSignMethod] = useState<string>(() => {
     const saved = localStorage.getItem("tektra_sign_method");
     return saved === "autofirma" ? "certificate" : (saved || "certificate");
