@@ -371,15 +371,17 @@ const CFOModule = () => {
                           </div>
                           <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                             {isPending && canUpload_ && (
-                              <label className="cursor-pointer">
-                                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFileUpload(item.id, f); e.currentTarget.value = ""; }} />
-                                <span className={`flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer ${uploadingId === item.id ? "opacity-50" : ""}`}>
-                                  <Upload className="h-3 w-3" /> {uploadingId === item.id ? "Subiendo..." : "Subir"}
-                                </span>
-                              </label>
-                              <button type="button" className="flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer" onClick={() => { setScanTargetItemId(item.id); setScannerOpen(true); }}>
-                                <ScanLine className="h-3 w-3" /> Escanear
-                              </button>
+                              <>
+                                <label className="cursor-pointer">
+                                  <input type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFileUpload(item.id, f); e.currentTarget.value = ""; }} />
+                                  <span className={`flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer ${uploadingId === item.id ? "opacity-50" : ""}`}>
+                                    <Upload className="h-3 w-3" /> {uploadingId === item.id ? "Subiendo..." : "Subir"}
+                                  </span>
+                                </label>
+                                <button type="button" className="flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer" onClick={() => { setScanTargetItemId(item.id); setScannerOpen(true); }}>
+                                  <ScanLine className="h-3 w-3" /> Scan
+                                </button>
+                              </>
                             )}
                             {isDEM && isCompleted && !isValidated && (
                               <>
