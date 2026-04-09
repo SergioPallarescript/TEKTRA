@@ -945,6 +945,15 @@ const SignatureDocuments = () => {
         onComplete={handleFiscalComplete}
         onCancel={() => setFiscalModalOpen(false)}
       />
+
+      <DocumentScanner
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScanComplete={(scannedFile) => {
+          setFile(scannedFile);
+          setScannerOpen(false);
+        }}
+      />
     </AppLayout>
   );
 };
