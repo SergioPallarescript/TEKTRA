@@ -336,25 +336,32 @@ const SignatureDocuments = () => {
     if (!deleteTarget || !user) return;
     try {
       // 1. Delete all recipient rows first (FK constraint)
-      await (supabase.from("signature_document_recipients" as any) as any)
+      const { error: recErr } = await (supabase.from("signature_document_recipients" as any) as any)
         .delete()
         .eq("document_id", deleteTarget.id);
+      if (recErr) console.warn("Error deleting recipients:", recErr);
       // 2. Remove file from storage
       await supabase.storage.from("plans").remove([deleteTarget.original_file_path]);
       if (deleteTarget.signed_file_path) {
         await supabase.storage.from("plans").remove([deleteTarget.signed_file_path]);
       }
       // 3. Delete the document record
-      await (supabase.from("signature_documents" as any) as any).delete().eq("id", deleteTarget.id);
+      const { error: docErr } = await (supabase.from("signature_documents" as any) as any)
+        .delete()
+        .eq("id", deleteTarget.id)
+        .eq("sender_id", user.id);
+      if (docErr) throw docErr;
       await supabase.from("audit_logs").insert({
         user_id: user.id, project_id: projectId,
         action: "signature_document_deleted", details: { document_id: deleteTarget.id, title: deleteTarget.title },
       });
-      toast.success("Documento eliminado");
+      toast.success("Documento eliminado completamente");
       if (selectedDocument?.id === deleteTarget.id) setSelectedDocument(null);
+      // Remove from local state immediately
+      setDocuments(prev => prev.filter(d => d.id !== deleteTarget.id));
+      setDocRecipients(prev => prev.filter(r => r.document_id !== deleteTarget.id));
       setDeleteTarget(null);
-      await fetchDocuments();
-    } catch { toast.error("Error al eliminar"); }
+    } catch (err: any) { toast.error(err?.message || "Error al eliminar"); }
   };
 
   const handleReplace = async () => {
@@ -638,15 +645,15 @@ const SignatureDocuments = () => {
             </form>
 
             <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-              <div className="flex gap-1">
-                <Button variant={activeTab === "pending" ? "default" : "outline"} className="flex-1 text-[9px] sm:text-xs font-display uppercase tracking-wider px-2" onClick={() => setActiveTab("pending")}>
-                  Pendientes ({pendingDocuments.length})
+              <div className="flex gap-1 w-full overflow-hidden">
+                <Button variant={activeTab === "pending" ? "default" : "outline"} className="flex-1 min-w-0 text-[9px] sm:text-xs font-display uppercase tracking-wider px-1.5 truncate" onClick={() => setActiveTab("pending")}>
+                  Pend. ({pendingDocuments.length})
                 </Button>
-                <Button variant={activeTab === "sent" ? "default" : "outline"} className="flex-1 text-[9px] sm:text-xs font-display uppercase tracking-wider px-2" onClick={() => setActiveTab("sent")}>
+                <Button variant={activeTab === "sent" ? "default" : "outline"} className="flex-1 min-w-0 text-[9px] sm:text-xs font-display uppercase tracking-wider px-1.5 truncate" onClick={() => setActiveTab("sent")}>
                   Firmados
                 </Button>
-                <Button variant={activeTab === "archive" ? "default" : "outline"} className="flex-1 text-[9px] sm:text-xs font-display uppercase tracking-wider px-2 gap-1" onClick={() => setActiveTab("archive")}>
-                  <FolderArchive className="h-3 w-3" /> Archivo ({archiveDocuments.length})
+                <Button variant={activeTab === "archive" ? "default" : "outline"} className="flex-1 min-w-0 text-[9px] sm:text-xs font-display uppercase tracking-wider px-1.5 gap-1 truncate" onClick={() => setActiveTab("archive")}>
+                  <FolderArchive className="h-3 w-3 shrink-0" /> <span className="truncate">Archivo ({archiveDocuments.length})</span>
                 </Button>
               </div>
 
