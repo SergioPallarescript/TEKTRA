@@ -29,7 +29,7 @@ import {
 import { toast } from "sonner";
 import { notifyProjectMembers, notifyUser } from "@/lib/notifications";
 import {
-  ArrowLeft, Plus, BookOpen, AlertTriangle, Mic, MicOff, Camera, Image, Paperclip, X, Download, Lock, ShieldCheck, FileSignature, PenLine,
+  ArrowLeft, Plus, BookOpen, AlertTriangle, Mic, MicOff, Camera, Image, Paperclip, X, Download, Lock, ShieldCheck, FileSignature, PenLine, Sparkles,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -437,33 +437,63 @@ const OrdersModule = () => {
     finally { setCleaning(false); }
   };
 
+  // Accumulates only final (committed) speech results to avoid mobile duplication
+  const finalTranscriptRef = useRef("");
+
   const toggleRecording = () => {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
       toast.error("Tu navegador no soporta reconocimiento de voz"); return;
     }
     if (recording) {
       recognitionRef.current?.stop(); recognitionRef.current = null; setRecording(false);
-      if (content.trim()) cleanDictation(content);
       return;
     }
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
     recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
+    finalTranscriptRef.current = content; // preserve any manually typed text
+
     recognition.onresult = (event: any) => {
-      let transcript = "";
-      for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
-      setContent(transcript);
+      let finalPart = "";
+      let interimPart = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalPart += result[0].transcript;
+        } else {
+          interimPart += result[0].transcript;
+        }
+      }
+      // Only accumulate final results to avoid duplication on mobile
+      if (finalPart) {
+        finalTranscriptRef.current = (finalTranscriptRef.current + " " + finalPart).trim();
+      }
+      // Show final + current interim for live feedback
+      const display = interimPart
+        ? (finalTranscriptRef.current + " " + interimPart).trim()
+        : finalTranscriptRef.current;
+      setContent(display);
     };
     recognition.onerror = (e: any) => {
       if (e.error === "no-speech" || e.error === "aborted") return;
       setRecording(false); recognitionRef.current = null;
     };
+    // Silently restart on end (permissive silence handling – no beep, no partial flush)
     recognition.onend = () => {
-      if (recognitionRef.current) { try { recognition.start(); } catch {} }
+      if (recognitionRef.current) {
+        try { recognition.start(); } catch { /* already started */ }
+      }
     };
     recognition.start();
     setRecording(true);
+  };
+
+  // AI restructure: takes current text (dictated or manual) and structures it
+  const handleAIRestructure = () => {
+    const text = content.trim();
+    if (!text) { toast.error("Escribe o dicta algo antes de reestructurar"); return; }
+    cleanDictation(text);
   };
 
   useEffect(() => {
@@ -576,11 +606,16 @@ const OrdersModule = () => {
 
                     {/* Content with voice dictation */}
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between flex-wrap gap-1">
                         <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Cuerpo de la Orden *</Label>
-                        <Button type="button" variant={recording ? "destructive" : "outline"} size="sm" onClick={toggleRecording} disabled={cleaning} className="gap-1 text-xs">
-                          {cleaning ? <><span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> Procesando...</> : recording ? <><MicOff className="h-3 w-3" /> Parar</> : <><Mic className="h-3 w-3" /> Dictar</>}
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button type="button" variant={recording ? "destructive" : "outline"} size="sm" onClick={toggleRecording} disabled={cleaning} className="gap-1 text-xs">
+                            {cleaning ? <><span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> Procesando...</> : recording ? <><MicOff className="h-3 w-3" /> Parar</> : <><Mic className="h-3 w-3" /> Dictar</>}
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={handleAIRestructure} disabled={cleaning || recording || !content.trim()} className="gap-1 text-xs">
+                            <Sparkles className="h-3 w-3" /> Reestructurar IA
+                          </Button>
+                        </div>
                       </div>
                       {structuredSections ? (
                         <StructuredSectionsEditor
