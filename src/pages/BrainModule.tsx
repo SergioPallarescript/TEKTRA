@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { ArrowLeft, Brain, Send, Bot, User, Loader2, FileText, Mic, MicOff, History, Plus, MessageSquare, Pencil, Trash2, Check, X } from "lucide-react";
+import { ArrowLeft, Brain, Send, Bot, User, Loader2, FileText, Mic, MicOff, History, Plus, MessageSquare, Pencil, Trash2, Check, X, Camera, Image as ImageIcon, Paperclip } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import ReactMarkdown from "react-markdown";
 import { syncProjectMemory } from "@/lib/projectMemory";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type MsgContent = string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+type Msg = { role: "user" | "assistant"; content: MsgContent };
 type Conversation = { id: string; title: string; created_at: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/brain-chat`;
@@ -33,6 +35,13 @@ const BrainModule = () => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const voiceRecognitionRef = useRef<any>(null);
+  const isMobile = useIsMobile();
+
+  // Image upload for vision
+  const [chatImage, setChatImage] = useState<File | null>(null);
+  const [chatImagePreview, setChatImagePreview] = useState<string | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // Conversation history
   const [conversations, setConversations] = useState<Conversation[]>([]);
