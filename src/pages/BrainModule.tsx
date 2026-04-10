@@ -453,6 +453,9 @@ const BrainModule = () => {
                   <div className="shrink-0 w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center mt-1"><Bot className="h-4 w-4 text-accent" /></div>
                 )}
                 <div className={`max-w-[80%] rounded-lg px-4 py-3 ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border"}`}>
+                  {msg.imageUrl && (
+                    <img src={msg.imageUrl} alt="Imagen adjunta" className="max-w-full max-h-48 rounded mb-2 object-contain" />
+                  )}
                   {msg.role === "assistant" ? (
                     <div className="prose prose-sm max-w-none text-foreground"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
                   ) : (
@@ -475,13 +478,35 @@ const BrainModule = () => {
           </div>
 
           <div className="border-t border-border px-4 py-3">
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { if (e.target.files?.[0]) handleImageSelect(e.target.files[0]); e.target.value = ""; }} />
+            <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleImageSelect(e.target.files[0]); e.target.value = ""; }} />
+            {chatImagePreview && (
+              <div className="max-w-3xl mx-auto mb-2 flex items-center gap-2">
+                <img src={chatImagePreview} alt="Preview" className="h-16 w-16 object-cover rounded border border-border" />
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearChatImage}><X className="h-3 w-3" /></Button>
+              </div>
+            )}
             <div className="flex gap-2 max-w-3xl mx-auto items-end">
               <Button type="button" variant={voiceRecording ? "destructive" : "outline"} size="icon" onClick={toggleVoiceRecording} className="shrink-0 relative">
                 {voiceRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                 {voiceRecording && <span className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full animate-pulse" />}
               </Button>
+              {isMobile ? (
+                <>
+                  <Button type="button" variant="outline" size="icon" onClick={() => cameraInputRef.current?.click()} className="shrink-0">
+                    <Camera className="h-4 w-4" />
+                  </Button>
+                  <Button type="button" variant="outline" size="icon" onClick={() => galleryInputRef.current?.click()} className="shrink-0">
+                    <ImageIcon className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <Button type="button" variant="outline" size="icon" onClick={() => galleryInputRef.current?.click()} className="shrink-0">
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+              )}
               <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Pregunta sobre los documentos del proyecto..." rows={1} className="resize-none min-h-[40px] max-h-[120px]" />
-              <Button onClick={sendMessage} disabled={!input.trim() || isLoading} size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
+              <Button onClick={sendMessage} disabled={(!input.trim() && !chatImage) || isLoading} size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
             </div>
           </div>
         </div>
