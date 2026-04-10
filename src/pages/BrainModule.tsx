@@ -13,8 +13,7 @@ import ReactMarkdown from "react-markdown";
 import { syncProjectMemory } from "@/lib/projectMemory";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type MsgContent = string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
-type Msg = { role: "user" | "assistant"; content: MsgContent };
+type Msg = { role: "user" | "assistant"; content: string; imageUrl?: string };
 type Conversation = { id: string; title: string; created_at: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/brain-chat`;
