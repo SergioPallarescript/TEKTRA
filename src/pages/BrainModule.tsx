@@ -183,16 +183,62 @@ const BrainModule = () => {
     });
   };
 
+  const compressImage = async (file: File, maxWidth = 1200, quality = 0.7): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new window.Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const scale = Math.min(1, maxWidth / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleImageSelect = async (file: File) => {
+    setChatImage(file);
+    const preview = URL.createObjectURL(file);
+    setChatImagePreview(preview);
+  };
+
+  const clearChatImage = () => {
+    if (chatImagePreview) URL.revokeObjectURL(chatImagePreview);
+    setChatImage(null);
+    setChatImagePreview(null);
+  };
+
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-    const userMsg: Msg = { role: "user", content: input.trim() };
+    if ((!input.trim() && !chatImage) || isLoading) return;
+    
+    let imageDataUrl: string | undefined;
+    if (chatImage) {
+      try {
+        imageDataUrl = await compressImage(chatImage);
+      } catch {
+        toast.error("Error al procesar la imagen");
+        return;
+      }
+    }
+
+    const userMsg: Msg = { role: "user", content: input.trim() || (chatImage ? "Analiza esta imagen" : ""), imageUrl: imageDataUrl };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
+    clearChatImage();
     setIsLoading(true);
 
     const isFirstMessage = messages.length === 0;
     const convTitle = isFirstMessage ? userMsg.content.substring(0, 80) : undefined;
-    await saveMessage("user", userMsg.content, convTitle);
+    await saveMessage("user", userMsg.content + (imageDataUrl ? " [📷 Imagen adjunta]" : ""), convTitle);
 
     let assistantSoFar = "";
     const upsertAssistant = (chunk: string) => {
@@ -225,10 +271,24 @@ const BrainModule = () => {
           ].join("\n")
         : undefined;
 
+      // Build messages for API – convert imageUrl to multimodal format
+      const apiMessages = [...messages, userMsg].map(m => {
+        if (m.imageUrl) {
+          return {
+            role: m.role,
+            content: [
+              { type: "text" as const, text: m.content || "Analiza esta imagen en el contexto de la obra" },
+              { type: "image_url" as const, image_url: { url: m.imageUrl } },
+            ],
+          };
+        }
+        return { role: m.role, content: m.content };
+      });
+
       const resp = await fetch(CHAT_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
-        body: JSON.stringify({ messages: [...messages, userMsg], projectContext, projectId, dynamicContext: freshDynamicMemory }),
+        body: JSON.stringify({ messages: apiMessages, projectContext, projectId, dynamicContext: freshDynamicMemory, hasImages: !!imageDataUrl }),
       });
 
       if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.error || "Error del servidor"); }
