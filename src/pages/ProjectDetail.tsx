@@ -47,7 +47,7 @@ const modules = [
   { key: "subcontracting", label: "Libro de Subcontratación", icon: ClipboardCheck, desc: "Solo Constructor" },
   { key: "costs", label: "Validación Económica", icon: DollarSign, desc: "Certificaciones y presupuestos" },
   { key: "dwg", label: "Metro Digital", icon: Ruler, desc: "Toma de medidas" },
-  { key: "cfo", label: "Docs Finales (CFO)", icon: ClipboardCheck, desc: "16 puntos de control" },
+  { key: "cfo", label: "CFO y Libro del Edificio", icon: ClipboardCheck, desc: "Gestión documental de cierre" },
   { key: "gantt", label: "Diagrama Gantt", icon: BarChart3, desc: "Cronología de obra" },
   { key: "signatures", label: "Documentos y Firmas", icon: FileSignature, desc: "Envío, registro y firma legal" },
 ];
