@@ -525,7 +525,7 @@ const CFOModule = () => {
         // Separator page
         const sepPage = pdfDoc.addPage([595, 842]);
         const { width: sw, height: sh } = sepPage.getSize();
-        sepPage.drawText(folder.icon, { x: sw / 2 - 20, y: sh / 2 + 40, size: 40, font });
+        sepPage.drawText(`Seccion ${folder.index}`, { x: sw / 2 - 30, y: sh / 2 + 40, size: 28, font: fontBold, color: rgb(0.8, 0.8, 0.8) });
         sepPage.drawText(folder.title.toUpperCase(), { x: 50, y: sh / 2 - 10, size: 16, font: fontBold, color: rgb(0, 0, 0) });
         sepPage.drawText(`Sección ${folder.index} de 5`, { x: 50, y: sh / 2 - 35, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
 
