@@ -134,12 +134,80 @@ const CFOModule = () => {
     });
   }, [projectId]);
 
+  const migrateOldStructure = useCallback(async (existingItems: any[]) => {
+    if (!projectId) return;
+
+    // Detect old structure: items exist but all non-custom items have folder_index=1
+    const nonCustom = existingItems.filter(i => !i.is_custom);
+    const hasNewStructure = nonCustom.some(i => i.folder_index > 1);
+    if (hasNewStructure) return null; // already migrated
+
+    // Separate items with uploaded files (preserve) from empty ones (delete & re-seed)
+    const withFiles = existingItems.filter(i => i.is_completed && i.file_url);
+    const emptyNonCustom = existingItems.filter(i => !i.is_custom && !(i.is_completed && i.file_url));
+    const customItems = existingItems.filter(i => i.is_custom);
+
+    // Delete empty non-custom old items
+    if (emptyNonCustom.length > 0) {
+      const ids = emptyNonCustom.map(i => i.id);
+      await supabase.from("cfo_items").delete().in("id", ids);
+    }
+
+    // Try to map old items with files to new slots by title similarity
+    const mappedFileIds = new Set<string>();
+    for (const item of withFiles) {
+      const match = DEFAULT_SLOTS.find(s => item.title?.toLowerCase().includes(s.title.toLowerCase().slice(0, 15)));
+      if (match) {
+        await supabase.from("cfo_items").update({
+          folder_index: match.folderIndex,
+          sort_order: match.sortOrder,
+          allowed_roles: match.allowedRoles,
+          category: FOLDERS.find(f => f.index === match.folderIndex)?.title || "",
+        }).eq("id", item.id);
+        mappedFileIds.add(item.id);
+      } else {
+        // Put unmapped files in folder 1
+        await supabase.from("cfo_items").update({ folder_index: 1, sort_order: 99 }).eq("id", item.id);
+      }
+    }
+
+    // Insert new default slots that don't conflict with preserved file items
+    const preservedTitles = new Set(withFiles.map(i => i.title?.toLowerCase()));
+    const newInserts = DEFAULT_SLOTS
+      .filter(slot => !preservedTitles.has(slot.title.toLowerCase()))
+      .map((slot, idx) => ({
+        project_id: projectId,
+        category: FOLDERS.find(f => f.index === slot.folderIndex)?.title || "",
+        title: slot.title,
+        sort_order: slot.sortOrder,
+        item_number: idx + 1,
+        allowed_roles: slot.allowedRoles,
+        folder_index: slot.folderIndex,
+        is_custom: false,
+      }));
+
+    if (newInserts.length > 0) {
+      await supabase.from("cfo_items").insert(newInserts);
+    }
+
+    // Re-fetch after migration
+    const { data: fresh } = await supabase.from("cfo_items").select("*").eq("project_id", projectId).order("folder_index", { ascending: true }).order("sort_order", { ascending: true });
+    return fresh;
+  }, [projectId]);
+
   const fetchItems = useCallback(async () => {
     if (!projectId) return;
     const { data } = await supabase.from("cfo_items").select("*").eq("project_id", projectId).order("folder_index", { ascending: true }).order("sort_order", { ascending: true });
-    if (data && data.length > 0) { setItems(data); setLoading(false); }
-    else { await initializeChecklist(); setLoading(false); }
-  }, [projectId]);
+    if (data && data.length > 0) {
+      // Check if old structure needs migration
+      const migrated = await migrateOldStructure(data);
+      setItems(migrated || data);
+      setLoading(false);
+    } else {
+      await initializeChecklist();
+      setLoading(false);
+    }
+  }, [projectId, migrateOldStructure]);
 
   const initializeChecklist = async () => {
     if (!projectId) return;
