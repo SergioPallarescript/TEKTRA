@@ -444,23 +444,15 @@ const CFOModule = () => {
       interface TocEntry { title: string; page: number; isFolder: boolean; }
       const tocEntries: TocEntry[] = [];
 
-      // We'll add pages in order: cover (1), TOC (2), then folders with separators and docs
-      // First pass: calculate structure
-      let currentPage = 3; // after cover + TOC
+      // First: download all completed docs and calculate page counts
       const folderDocsMap: { folder: FolderDef; items: any[]; docBlobs: { item: any; blob: Blob; pageCount: number }[] }[] = [];
 
       for (const folder of FOLDERS) {
         const folderItems = items.filter(i => (i.folder_index || 1) === folder.index);
         const completedDocs = folderItems.filter(i => i.is_completed && i.file_url);
-
-        // Separator page
-        tocEntries.push({ title: folder.title, page: currentPage, isFolder: true });
-        currentPage++;
-
         const docBlobs: { item: any; blob: Blob; pageCount: number }[] = [];
 
         for (const item of completedDocs) {
-          tocEntries.push({ title: item.title, page: currentPage, isFolder: false });
           const { data } = await supabase.storage.from("plans").download(item.file_url);
           if (data) {
             const ext = (item.file_name || "").toLowerCase();
@@ -468,37 +460,52 @@ const CFOModule = () => {
               try {
                 const arrBuf = await data.arrayBuffer();
                 const srcDoc = await PDFDocument.load(arrBuf);
-                const pageCount = srcDoc.getPageCount();
-                docBlobs.push({ item, blob: data, pageCount });
-                currentPage += pageCount;
+                docBlobs.push({ item, blob: data, pageCount: srcDoc.getPageCount() });
               } catch {
-                // non-embeddable PDF, add as placeholder
                 docBlobs.push({ item, blob: data, pageCount: 1 });
-                currentPage += 1;
               }
             } else {
-              // Image or other → 1 page
               docBlobs.push({ item, blob: data, pageCount: 1 });
-              currentPage += 1;
             }
           }
         }
-
-        // Items without files → listed as pending (no extra pages)
         folderDocsMap.push({ folder, items: folderItems, docBlobs });
       }
 
+      // Calculate TOC entry count to determine how many TOC pages we need
+      let tocEntryCount = 0;
+      for (const { folder, docBlobs } of folderDocsMap) {
+        tocEntryCount++; // folder header
+        tocEntryCount += docBlobs.length; // docs
+      }
+      const tocLineHeight = 18; // average between folder (22) and doc (16)
+      const tocLinesPerPage = Math.floor((842 - 100 - 60) / tocLineHeight);
+      const tocPageCount = Math.max(1, Math.ceil(tocEntryCount / tocLinesPerPage));
+
+      // Now calculate page numbers: cover (1) + TOC pages + content
+      let currentPage = 1 + tocPageCount + 1; // +1 because currentPage starts at next page after TOC
+      for (const { folder, docBlobs } of folderDocsMap) {
+        tocEntries.push({ title: folder.title, page: currentPage, isFolder: true });
+        currentPage++; // separator page
+        for (const { item, pageCount } of docBlobs) {
+          tocEntries.push({ title: item.title, page: currentPage, isFolder: false });
+          currentPage += pageCount;
+        }
+      }
       const totalPages = currentPage - 1;
 
-      // ── Page 2: TOC ──
-      const tocPage = pdfDoc.addPage([595, 842]);
-      const { height: th } = tocPage.getSize();
-      tocPage.drawText("ÍNDICE", { x: 50, y: th - 60, size: 18, font: fontBold, color: rgb(0, 0, 0) });
-      let tocY = th - 100;
+      // ── TOC Pages ──
+      const tocPages: any[] = [];
+      let tocY = 842 - 100;
+      let currentTocPage = pdfDoc.addPage([595, 842]);
+      currentTocPage.drawText("ÍNDICE", { x: 50, y: 842 - 60, size: 18, font: fontBold, color: rgb(0, 0, 0) });
+      tocPages.push(currentTocPage);
+
       for (const entry of tocEntries) {
         if (tocY < 60) {
-          // Would need a new TOC page — simplified: just stop
-          break;
+          currentTocPage = pdfDoc.addPage([595, 842]);
+          tocPages.push(currentTocPage);
+          tocY = 842 - 60;
         }
         const label = entry.isFolder ? `${entry.title}` : `    ${entry.title}`;
         const pageLabel = `Pág. ${entry.page}`;
@@ -507,9 +514,9 @@ const CFOModule = () => {
         const dotsStart = 50 + labelWidth + 5;
         const dotsEnd = 545 - pageWidth - 5;
         const dotStr = ".".repeat(Math.max(0, Math.floor((dotsEnd - dotsStart) / 3)));
-        tocPage.drawText(label, { x: 50, y: tocY, size: entry.isFolder ? 11 : 9, font: entry.isFolder ? fontBold : font, color: rgb(0, 0, 0) });
-        if (dotStr.length > 0) tocPage.drawText(dotStr, { x: dotsStart, y: tocY, size: 8, font, color: rgb(0.7, 0.7, 0.7) });
-        tocPage.drawText(pageLabel, { x: 545 - pageWidth, y: tocY, size: 9, font, color: rgb(0.3, 0.3, 0.3) });
+        currentTocPage.drawText(label, { x: 50, y: tocY, size: entry.isFolder ? 11 : 9, font: entry.isFolder ? fontBold : font, color: rgb(0, 0, 0) });
+        if (dotStr.length > 0) currentTocPage.drawText(dotStr, { x: dotsStart, y: tocY, size: 8, font, color: rgb(0.7, 0.7, 0.7) });
+        currentTocPage.drawText(pageLabel, { x: 545 - pageWidth, y: tocY, size: 9, font, color: rgb(0.3, 0.3, 0.3) });
         tocY -= entry.isFolder ? 22 : 16;
       }
 
