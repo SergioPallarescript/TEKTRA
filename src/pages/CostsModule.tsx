@@ -78,6 +78,8 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 
 const CostsModule = () => {
   const { id: projectId } = useParams<{ id: string }>();
+  const [searchParams] = [new URLSearchParams(window.location.search)];
+  const deepLinkItem = searchParams.get("item");
   const { user } = useAuth();
   const { isDO, isDEM, isCON, isPRO, projectRole } = useProjectRole(projectId);
   const navigate = useNavigate();
@@ -137,6 +139,17 @@ const CostsModule = () => {
   }, [projectId]);
 
   useEffect(() => { fetchClaims(); }, [fetchClaims]);
+
+  // Deep link: auto-select item from URL
+  useEffect(() => {
+    if (!deepLinkItem || claims.length === 0) return;
+    if (deepLinkItem === "latest") {
+      setSelectedClaim(claims[0]);
+    } else {
+      const found = claims.find(c => c.id === deepLinkItem);
+      if (found) setSelectedClaim(found);
+    }
+  }, [deepLinkItem, claims]);
 
   /* ───── Partida computed values ───── */
   const partidaMedicion = useMemo(() => {
