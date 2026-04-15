@@ -59,6 +59,8 @@ type DocRecipient = {
 
 const SignatureDocuments = () => {
   const { id: projectId } = useParams<{ id: string }>();
+  const [searchParams] = [new URLSearchParams(window.location.search)];
+  const deepLinkItem = searchParams.get("item");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { projectRole } = useProjectRole(projectId);
