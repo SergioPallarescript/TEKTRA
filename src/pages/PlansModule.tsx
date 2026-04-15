@@ -15,7 +15,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { notifyProjectMembers } from "@/lib/notifications";
+import { notifyProjectMembers, pushNewPlan } from "@/lib/notifications";
+import ShareButton from "@/components/ShareButton";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import {
   ArrowLeft, Upload, FileText, CheckCircle2, Clock, Plus, Download, History, ShieldCheck, Pencil, Trash2, ChevronDown, ChevronUp, ZoomIn, ZoomOut, RotateCw, Loader2,

@@ -18,7 +18,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import { toast } from "sonner";
-import { notifyUser } from "@/lib/notifications";
+import { notifyUser, pushSignatureRequest } from "@/lib/notifications";
+import ShareButton from "@/components/ShareButton";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
