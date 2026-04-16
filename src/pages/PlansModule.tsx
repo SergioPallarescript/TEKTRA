@@ -459,7 +459,7 @@ const PlansModule = () => {
           </>
         ) : (
           <>
-            <div className="flex items-end justify-between mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
               <div>
                 <button
                   onClick={() => { setSelectedPlan(null); setVersions([]); setConformities([]); }}
@@ -470,7 +470,7 @@ const PlansModule = () => {
                 <h1 className="font-display text-2xl font-bold tracking-tighter">{selectedPlan.name}</h1>
                 {selectedPlan.description && <p className="text-sm text-muted-foreground mt-1">{selectedPlan.description}</p>}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {isAdmin && (
                   <>
                     <Button variant="outline" size="sm" className="gap-1 text-xs font-display uppercase tracking-wider" onClick={() => {

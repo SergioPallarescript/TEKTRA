@@ -2,7 +2,7 @@ import { Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
-const APP_URL = "https://gescon-legal-flow.lovable.app";
+const APP_URL = "https://tektra.es";
 
 export type ShareModule = "order" | "plan" | "cost" | "signature";
 
@@ -32,8 +32,10 @@ function buildShareText(data: ShareData): { title: string; text: string } {
   switch (data.module) {
     case "order":
       return {
-        title: "🏗️ TEKTRA - Nueva Orden Registrada",
+        title: "TEKTRA - Nueva Orden Registrada",
         text: [
+          "🔔 NUEVA ORDEN EN EL LIBRO DE ÓRDENES",
+          "",
           `Obra: ${data.projectName}`,
           data.meta.emitidaPor ? `Emitida por: ${data.meta.emitidaPor}` : "",
           `Fecha: ${data.meta.fecha || new Date().toLocaleDateString("es-ES")}`,
@@ -48,8 +50,10 @@ function buildShareText(data: ShareData): { title: string; text: string } {
 
     case "plan":
       return {
-        title: "📐 TEKTRA - Actualización de Planos",
+        title: "TEKTRA - Actualización de Planos",
         text: [
+          "📐 NUEVA VERSIÓN DE PLANO DISPONIBLE",
+          "",
           `Se ha subido la Versión ${data.meta.version || "?"} del plano: ${data.meta.planName || ""}`,
           "",
           "⚠️ Acción requerida: Esta versión desactiva la anterior y requiere tu conformidad digital para continuar con la ejecución.",
@@ -60,11 +64,15 @@ function buildShareText(data: ShareData): { title: string; text: string } {
         ].join("\n"),
       };
 
-    case "cost":
+    case "cost": {
+      const docType = data.meta.docType || "Certificación";
+      const headerType = docType.toUpperCase();
       return {
-        title: "💰 TEKTRA - Validación Económica",
+        title: "TEKTRA - Validación Económica",
         text: [
-          `Tienes pendiente una ${data.meta.docType || "Certificación"} enviada por ${data.meta.emisor || "un agente"}.`,
+          `💸 NUEVA ${headerType} PENDIENTE`,
+          "",
+          `Tienes pendiente una ${docType} enviada por ${data.meta.emisor || "un agente"}.`,
           `Estado: Pendiente de ${data.meta.estado || "Validación"}.`,
           data.meta.importe ? `Importe: ${data.meta.importe} €` : "",
           "",
@@ -73,11 +81,16 @@ function buildShareText(data: ShareData): { title: string; text: string } {
           "⚠️ Compartir este aviso no sustituye la firma legal dentro de TEKTRA.",
         ].filter(Boolean).join("\n"),
       };
+    }
 
-    case "signature":
+    case "signature": {
+      const isInfoOnly = data.meta.estado === "Solo Lectura";
+      const header = isInfoOnly ? "📂 DOCUMENTO RECIBIDO" : "✍️ DOCUMENTO PENDIENTE DE FIRMA";
       return {
-        title: "📩 TEKTRA - Nuevo Documento Recibido",
+        title: "TEKTRA - Documento",
         text: [
+          header,
+          "",
           `Documento: ${data.meta.docName || ""}`,
           `Estado: ${data.meta.estado || "Firma Requerida"}`,
           "",
@@ -86,6 +99,7 @@ function buildShareText(data: ShareData): { title: string; text: string } {
           "⚠️ Compartir este aviso no sustituye la firma legal dentro de TEKTRA.",
         ].join("\n"),
       };
+    }
   }
 }
 
