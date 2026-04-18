@@ -749,29 +749,71 @@ const CFOModule = () => {
 
       const totalPages = currentPage - 1;
 
-      /* ── TOC Pages ── */
+      /* ── TOC Pages (hierarchical: volume → folder/slot → custom file) ── */
       let tocY = 842 - 90;
       let currentTocPage = pdfDoc.addPage([595, 842]);
       currentTocPage.drawText("INDICE GENERAL", { x: 50, y: 842 - 55, size: 16, font: fontBold });
+
+      const indents = { 0: 50, 1: 65, 2: 90 } as const;
+      const sizes = { 0: 11, 1: 10, 2: 8 } as const;
+      const spacing = { 0: 24, 1: 18, 2: 14 } as const;
+
+      const embedDocument = async (
+        title: string,
+        fileName: string,
+        blob: Blob,
+      ) => {
+        const ext = (fileName || "").toLowerCase();
+        if (ext.endsWith(".pdf")) {
+          try {
+            const arrBuf = await blob.arrayBuffer();
+            const srcDoc = await PDFDocument.load(arrBuf);
+            const copiedPages = await pdfDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+            copiedPages.forEach((p) => pdfDoc.addPage(p));
+          } catch {
+            const errPage = pdfDoc.addPage([595, 842]);
+            errPage.drawText(`Documento: ${title}`, { x: 50, y: 780, size: 12, font: fontBold });
+            errPage.drawText(`Archivo: ${fileName} (no embebible)`, { x: 50, y: 760, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
+          }
+        } else if (ext.endsWith(".jpg") || ext.endsWith(".jpeg") || ext.endsWith(".png")) {
+          try {
+            const arrBuf = await blob.arrayBuffer();
+            const image = ext.endsWith(".png") ? await pdfDoc.embedPng(arrBuf) : await pdfDoc.embedJpg(arrBuf);
+            const imgPage = pdfDoc.addPage([595, 842]);
+            const imgDims = image.scaleToFit(495, 700);
+            imgPage.drawImage(image, { x: (595 - imgDims.width) / 2, y: (842 - imgDims.height) / 2, width: imgDims.width, height: imgDims.height });
+            imgPage.drawText(title, { x: 50, y: 820, size: 9, font, color: rgb(0.3, 0.3, 0.3) });
+          } catch {
+            const errPage = pdfDoc.addPage([595, 842]);
+            errPage.drawText(`Imagen: ${fileName} (error)`, { x: 50, y: 780, size: 10, font });
+          }
+        } else {
+          const docPage = pdfDoc.addPage([595, 842]);
+          docPage.drawText(`Documento: ${title}`, { x: 50, y: 780, size: 12, font: fontBold });
+          docPage.drawText(`Archivo: ${fileName}`, { x: 50, y: 760, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
+        }
+      };
 
       for (const entry of tocEntries) {
         if (tocY < 55) {
           currentTocPage = pdfDoc.addPage([595, 842]);
           tocY = 842 - 55;
         }
-        const label = entry.isFolder ? entry.title : `    ${entry.title}`;
+        const x = indents[entry.level];
+        const size = sizes[entry.level];
+        const useFont = entry.level === 0 ? fontBold : entry.level === 1 ? fontBold : font;
+        const prefix = entry.level === 2 ? "→ " : "";
+        const label = `${prefix}${entry.title}`;
         const pageLabel = `Pag. ${entry.page}`;
-        const entryFont = entry.isFolder ? fontBold : font;
-        const entrySize = entry.isFolder ? 10 : 9;
-        const labelWidth = entryFont.widthOfTextAtSize(label, entrySize);
+        const labelWidth = useFont.widthOfTextAtSize(label, size);
         const pageWidth = font.widthOfTextAtSize(pageLabel, 8);
-        const dotsStart = 50 + labelWidth + 4;
+        const dotsStart = x + labelWidth + 4;
         const dotsEnd = 545 - pageWidth - 4;
         const dotStr = ".".repeat(Math.max(0, Math.floor((dotsEnd - dotsStart) / 3)));
-        currentTocPage.drawText(label, { x: 50, y: tocY, size: entrySize, font: entryFont, color: rgb(0, 0, 0) });
+        currentTocPage.drawText(label, { x, y: tocY, size, font: useFont, color: rgb(0, 0, 0) });
         if (dotStr.length > 0) currentTocPage.drawText(dotStr, { x: dotsStart, y: tocY, size: 7, font, color: rgb(0.7, 0.7, 0.7) });
         currentTocPage.drawText(pageLabel, { x: 545 - pageWidth, y: tocY, size: 8, font, color: rgb(0.3, 0.3, 0.3) });
-        tocY -= entry.isFolder ? 22 : 16;
+        tocY -= spacing[entry.level];
       }
 
       /* ── Volume 1 Content ── */
@@ -783,20 +825,17 @@ const CFOModule = () => {
         sepPage.drawText(folder.title.toUpperCase(), { x: 50, y: sh / 2 - 10, size: 14, font: fontBold });
         sepPage.drawText("Volumen 1", { x: 50, y: sh / 2 - 35, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
 
-        const folderItems = items.filter(i => (i.folder_index || 1) === folder.index);
+        const folderItems = items.filter((i) => (i.folder_index || 1) === folder.index);
 
         // Text content page
-        const textItems = folderItems.filter(i => isTextSlot(i) && i.text_content?.trim());
+        const textItems = folderItems.filter((i) => isTextSlot(i) && i.text_content?.trim());
         if (textItems.length > 0) {
           const textPage = pdfDoc.addPage([595, 842]);
           let ty = 842 - 60;
           textPage.drawText(folder.title, { x: 50, y: ty, size: 12, font: fontBold });
           ty -= 30;
           for (const ti of textItems) {
-            if (ty < 80) {
-              const np = pdfDoc.addPage([595, 842]);
-              ty = 842 - 60;
-            }
+            if (ty < 80) { ty = 842 - 60; }
             textPage.drawText(`${ti.title}:`, { x: 50, y: ty, size: 9, font: fontBold, color: rgb(0.2, 0.2, 0.2) });
             ty -= 14;
             const lines = (ti.text_content || "").split("\n");
@@ -809,37 +848,11 @@ const CFOModule = () => {
           }
         }
 
-        // Embedded documents
-        const docBlobs = folderDocsMap.get(folder.index) || [];
-        for (const { item, blob } of docBlobs) {
-          const ext = (item.file_name || "").toLowerCase();
-          if (ext.endsWith(".pdf")) {
-            try {
-              const arrBuf = await blob.arrayBuffer();
-              const srcDoc = await PDFDocument.load(arrBuf);
-              const copiedPages = await pdfDoc.copyPages(srcDoc, srcDoc.getPageIndices());
-              copiedPages.forEach(p => pdfDoc.addPage(p));
-            } catch {
-              const errPage = pdfDoc.addPage([595, 842]);
-              errPage.drawText(`Documento: ${item.title}`, { x: 50, y: 780, size: 12, font: fontBold });
-              errPage.drawText(`Archivo: ${item.file_name} (no embebible)`, { x: 50, y: 760, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
-            }
-          } else if (ext.endsWith(".jpg") || ext.endsWith(".jpeg") || ext.endsWith(".png")) {
-            try {
-              const arrBuf = await blob.arrayBuffer();
-              const image = ext.endsWith(".png") ? await pdfDoc.embedPng(arrBuf) : await pdfDoc.embedJpg(arrBuf);
-              const imgPage = pdfDoc.addPage([595, 842]);
-              const imgDims = image.scaleToFit(495, 700);
-              imgPage.drawImage(image, { x: (595 - imgDims.width) / 2, y: (842 - imgDims.height) / 2, width: imgDims.width, height: imgDims.height });
-              imgPage.drawText(item.title, { x: 50, y: 820, size: 9, font, color: rgb(0.3, 0.3, 0.3) });
-            } catch {
-              const errPage = pdfDoc.addPage([595, 842]);
-              errPage.drawText(`Imagen: ${item.file_name} (error)`, { x: 50, y: 780, size: 10, font });
-            }
-          } else {
-            const docPage = pdfDoc.addPage([595, 842]);
-            docPage.drawText(`Documento: ${item.title}`, { x: 50, y: 780, size: 12, font: fontBold });
-            docPage.drawText(`Archivo: ${item.file_name} (formato no embebible)`, { x: 50, y: 760, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
+        // Multi-files per slot
+        const docItems = folderItems.filter((i) => !isTextSlot(i) && (slotFilesMap.get(i.id) || []).length > 0);
+        for (const di of docItems) {
+          for (const sf of slotFilesMap.get(di.id) || []) {
+            await embedDocument(sf.file.custom_title, sf.file.file_name, sf.blob);
           }
         }
       }
@@ -863,35 +876,11 @@ const CFOModule = () => {
         sepPage.drawText(folder.title.toUpperCase(), { x: 50, y: sh / 2 - 10, size: 14, font: fontBold });
         sepPage.drawText("Volumen 2 — Archivo Vivo", { x: 50, y: sh / 2 - 35, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
 
-        const docBlobs = folderDocsMap.get(folder.index) || [];
-        for (const { item, blob } of docBlobs) {
-          const ext = (item.file_name || "").toLowerCase();
-          if (ext.endsWith(".pdf")) {
-            try {
-              const arrBuf = await blob.arrayBuffer();
-              const srcDoc = await PDFDocument.load(arrBuf);
-              const copiedPages = await pdfDoc.copyPages(srcDoc, srcDoc.getPageIndices());
-              copiedPages.forEach(p => pdfDoc.addPage(p));
-            } catch {
-              const errPage = pdfDoc.addPage([595, 842]);
-              errPage.drawText(`Documento: ${item.title} (no embebible)`, { x: 50, y: 780, size: 12, font: fontBold });
-            }
-          } else if (ext.endsWith(".jpg") || ext.endsWith(".jpeg") || ext.endsWith(".png")) {
-            try {
-              const arrBuf = await blob.arrayBuffer();
-              const image = ext.endsWith(".png") ? await pdfDoc.embedPng(arrBuf) : await pdfDoc.embedJpg(arrBuf);
-              const imgPage = pdfDoc.addPage([595, 842]);
-              const imgDims = image.scaleToFit(495, 700);
-              imgPage.drawImage(image, { x: (595 - imgDims.width) / 2, y: (842 - imgDims.height) / 2, width: imgDims.width, height: imgDims.height });
-              imgPage.drawText(item.title, { x: 50, y: 820, size: 9, font, color: rgb(0.3, 0.3, 0.3) });
-            } catch {
-              const errPage = pdfDoc.addPage([595, 842]);
-              errPage.drawText(`Imagen: ${item.file_name} (error)`, { x: 50, y: 780, size: 10, font });
-            }
-          } else {
-            const docPage = pdfDoc.addPage([595, 842]);
-            docPage.drawText(`Documento: ${item.title}`, { x: 50, y: 780, size: 12, font: fontBold });
-            docPage.drawText(`Archivo: ${item.file_name}`, { x: 50, y: 760, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
+        const folderItems = items.filter((i) => (i.folder_index || 1) === folder.index);
+        const docItems = folderItems.filter((i) => !isTextSlot(i) && (slotFilesMap.get(i.id) || []).length > 0);
+        for (const di of docItems) {
+          for (const sf of slotFilesMap.get(di.id) || []) {
+            await embedDocument(sf.file.custom_title, sf.file.file_name, sf.blob);
           }
         }
       }
