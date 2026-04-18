@@ -1275,14 +1275,24 @@ const SlotRow = ({
   const isText = checkText(item);
   const isVisual = checkVisual(item);
   const isDoc = !isText && !isVisual;
-  const isCompleted = item.is_completed;
+  const isCompleted = filled;
   const isValidated = item.validated_by_deo;
   const isRejected = !!item.rejection_reason && !isValidated;
   const isPending = !filled;
-  const isExpanded = expandedItem === item.id;
   const canUp = canUpload(item);
   const canMan = canManage(item);
   const isMandatory = item.is_mandatory;
+
+  return (
+    <div>
+      <div
+        className={`flex flex-col sm:flex-row sm:items-start justify-between p-3 rounded border transition-all gap-2 ${
+          isRejected ? "border-destructive/50 bg-destructive/5" :
+          isValidated ? "border-success/50 bg-success/10" :
+          filled ? "border-success/30 bg-success/5" :
+          item.claimed_at ? "border-destructive/30 bg-destructive/5" : "border-border hover:border-foreground/10"
+        }`}
+      >
 
   return (
     <div>
