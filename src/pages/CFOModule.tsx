@@ -139,6 +139,7 @@ const CFOModule = () => {
   const navigate = useNavigate();
 
   const [items, setItems] = useState<any[]>([]);
+  const [filesByItem, setFilesByItem] = useState<Record<string, CfoFile[]>>({});
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
