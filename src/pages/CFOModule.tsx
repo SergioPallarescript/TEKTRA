@@ -1293,20 +1293,6 @@ const SlotRow = ({
           item.claimed_at ? "border-destructive/30 bg-destructive/5" : "border-border hover:border-foreground/10"
         }`}
       >
-
-  return (
-    <div>
-      <div
-        className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded border transition-all gap-2 ${
-          isRejected ? "border-destructive/50 bg-destructive/5" :
-          isValidated ? "border-success/50 bg-success/10" :
-          filled ? "border-success/30 bg-success/5" :
-          item.claimed_at ? "border-destructive/30 bg-destructive/5" : "border-border hover:border-foreground/10"
-        } ${(isDoc || isVisual) && isCompleted && item.file_url ? "cursor-pointer" : ""}`}
-        onClick={() => {
-          if ((isDoc || isVisual) && isCompleted && item.file_url) togglePreview(item);
-        }}
-      >
         <div className="flex items-start gap-3 flex-1 min-w-0">
           {isRejected ? <XCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" /> :
            filled ? <CheckCircle2 className={`h-5 w-5 ${isValidated ? "text-success" : "text-success/60"} shrink-0 mt-0.5`} /> :
@@ -1319,9 +1305,13 @@ const SlotRow = ({
               {isMandatory && <span className="text-[9px] px-1.5 py-0.5 bg-destructive/10 text-destructive rounded font-display uppercase tracking-wider">Obligatorio</span>}
               {isText && <span className="text-[9px] px-1.5 py-0.5 bg-primary/10 text-primary rounded font-display uppercase tracking-wider">Texto</span>}
               {isVisual && <span className="text-[9px] px-1.5 py-0.5 bg-primary/10 text-primary rounded font-display uppercase tracking-wider">Visual</span>}
+              {(isDoc || isVisual) && filesCount > 0 && (
+                <span className="text-[9px] px-1.5 py-0.5 bg-secondary text-foreground rounded font-display uppercase tracking-wider">
+                  {filesCount} {filesCount === 1 ? "archivo" : "archivos"}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              {item.file_name && <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><FileText className="h-3 w-3" />{item.file_name}</span>}
               {item.claimed_at && !filled && <span className="text-[10px] text-destructive font-display uppercase tracking-wider">Reclamado</span>}
               {isValidated && <span className="text-[10px] text-success font-display uppercase tracking-wider">Validado</span>}
               {isRejected && <span className="text-[10px] text-destructive font-display uppercase tracking-wider">Rechazado</span>}
@@ -1335,33 +1325,7 @@ const SlotRow = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0 flex-wrap pl-8 sm:pl-0" onClick={e => e.stopPropagation()}>
-          {/* Text slot inline editing */}
-          {isText && canEditText(item) && (
-            <div className="w-full sm:w-auto flex gap-1">
-              {textDirty && (
-                <Button size="sm" variant="outline" onClick={() => { handleSaveTextContent(item.id, localText); setTextDirty(false); }} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7">
-                  Guardar
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* Document/Visual upload */}
-          {(isDoc || isVisual) && isPending && canUp && (
-            <label className="cursor-pointer">
-              <input type="file" className="hidden" accept={isVisual ? ".jpg,.jpeg,.png,.pdf" : ".pdf,.doc,.docx,.jpg,.jpeg,.png"} onChange={(e) => {
-                const files = e.target.files;
-                if (files) Array.from(files).forEach(f => void handleFileUpload(item.id, f));
-                e.currentTarget.value = "";
-              }} />
-              <span className={`flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer ${uploadingId === item.id ? "opacity-50" : ""}`}>
-                <Upload className="h-3 w-3" /> {uploadingId === item.id ? "..." : "Subir"}
-              </span>
-            </label>
-          )}
-
-          {/* Admin validation */}
+        <div className="flex items-center gap-1 shrink-0 flex-wrap pl-8 sm:pl-0">
           {isAdmin && (isDoc || isVisual) && isCompleted && !isValidated && (
             <>
               <Button size="sm" variant="outline" onClick={() => handleValidate(item.id)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7">
@@ -1373,35 +1337,25 @@ const SlotRow = ({
             </>
           )}
 
-          {/* Claim */}
           {isAdmin && isPending && !isText && (
-            <Button size="sm" variant="ghost" onClick={() => setClaimDialog({ open: true, item })} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive">
+            <Button size="sm" variant="ghost" onClick={() => setClaimDialog({ open: true, item })} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive" title="Reclamar">
               <Bell className="h-3 w-3" />
             </Button>
           )}
 
-          {/* Admin edit/delete */}
           {isAdmin && (
             <>
-              <Button size="sm" variant="ghost" onClick={() => { setEditSlotItem(item); setEditSlotTitle(item.title); setEditSlotOpen(true); }} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
+              <Button size="sm" variant="ghost" onClick={() => { setEditSlotItem(item); setEditSlotTitle(item.title); setEditSlotOpen(true); }} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" title="Editar slot">
                 <Edit2 className="h-3 w-3" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => handleDeleteSlot(item)} className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive">
+              <Button size="sm" variant="ghost" onClick={() => handleDeleteSlot(item)} className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" title="Eliminar slot">
                 <Trash2 className="h-3 w-3" />
               </Button>
             </>
           )}
-
-          {/* Expand */}
-          {(isDoc || isVisual) && isCompleted && item.file_url && (
-            <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
-              {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </Button>
-          )}
         </div>
       </div>
 
-      {/* Text slot inline editor */}
       {isText && canEditText(item) && (
         <div className="border border-t-0 border-border rounded-b-lg p-3 bg-background">
           <Textarea
@@ -1421,34 +1375,14 @@ const SlotRow = ({
         </div>
       )}
 
-      {/* File preview */}
-      {isExpanded && (isDoc || isVisual) && isCompleted && item.file_url && (
-        <div className="border border-t-0 border-border rounded-b-lg p-4 bg-background animate-in slide-in-from-top-2 duration-200">
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <Button size="sm" variant="outline" onClick={() => handleDownloadItem(item)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7">
-              <Download className="h-3 w-3" /> Descargar
-            </Button>
-            {canMan && (
-              <>
-                <label className="cursor-pointer">
-                  <input type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleReplaceFile(item, f); e.currentTarget.value = ""; }} />
-                  <span className="flex items-center gap-1 px-2 py-1 text-[10px] font-display uppercase tracking-widest rounded border border-border hover:border-foreground/20 transition-colors cursor-pointer">
-                    <RefreshCw className="h-3 w-3" /> Sustituir
-                  </span>
-                </label>
-                <Button size="sm" variant="ghost" onClick={() => void handleDeleteFile(item)} className="text-[10px] font-display uppercase tracking-widest gap-1 h-7 text-destructive hover:text-destructive">
-                  <Trash2 className="h-3 w-3" /> Eliminar
-                </Button>
-              </>
-            )}
-          </div>
-          {previewUrls[item.id] ? (
-            <DocumentPreview url={previewUrls[item.id]} fileName={item.file_name || ""} />
-          ) : (
-            <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" /> Cargando...
-            </div>
-          )}
+      {(isDoc || isVisual) && (
+        <div className="border border-t-0 border-border rounded-b-lg p-3 bg-background/60">
+          <MultiFileSlotManager
+            itemId={item.id}
+            projectId={projectId}
+            canManage={canUp || canMan}
+            acceptVisualOnly={isVisual}
+          />
         </div>
       )}
     </div>
