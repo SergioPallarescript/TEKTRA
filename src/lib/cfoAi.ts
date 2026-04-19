@@ -87,11 +87,11 @@ export const upsertVolume1Field = async (
   value: string | number | null,
 ) => {
   const aiField = `${field}_ai`;
-  const payload: Record<string, any> = {
+  const payload = {
     project_id: projectId,
     [field]: value,
     [aiField]: false, // edición manual = validado
-  };
+  } as never;
   const { error } = await supabase
     .from("cfo_volume1_data")
     .upsert(payload, { onConflict: "project_id" });
