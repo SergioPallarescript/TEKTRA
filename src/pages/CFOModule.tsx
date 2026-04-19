@@ -72,25 +72,16 @@ interface SlotDef {
 }
 
 const DEFAULT_SLOTS: SlotDef[] = [
-  /* ── Folder 1: Datos Identificativos (text slots) ───── */
-  { title: "Municipio", folderIndex: 1, sortOrder: 1, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: true, volume: 1 },
-  { title: "Emplazamiento", folderIndex: 1, sortOrder: 2, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: true, volume: 1 },
-  { title: "Código Postal", folderIndex: 1, sortOrder: 3, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: true, volume: 1 },
-  { title: "Referencia Catastral (NRC)", folderIndex: 1, sortOrder: 4, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: true, volume: 1 },
-  { title: "Registro Nº", folderIndex: 1, sortOrder: 5, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: false, volume: 1 },
-  { title: "Tomo", folderIndex: 1, sortOrder: 6, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: false, volume: 1 },
-  { title: "Libro", folderIndex: 1, sortOrder: 7, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: false, volume: 1 },
-  { title: "Folio", folderIndex: 1, sortOrder: 8, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: false, volume: 1 },
-  { title: "Finca", folderIndex: 1, sortOrder: 9, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: false, volume: 1 },
-  { title: "Póliza Decenal — Compañía", folderIndex: 1, sortOrder: 10, allowedRoles: ["PRO"], agentLabel: "Promotor", slotType: "text", isMandatory: false, volume: 1 },
-  { title: "Póliza Decenal — Número", folderIndex: 1, sortOrder: 11, allowedRoles: ["PRO"], agentLabel: "Promotor", slotType: "text", isMandatory: false, volume: 1 },
+  /* ── Folder 1: Datos Identificativos ───────────────────
+     NOTA: todos los datos administrativos, registrales y de seguros
+     se gestionan en formato tabla mediante <Volume1DataPanel /> que se
+     monta encima de los slots cuando folder.index === 1. NO se duplican
+     aquí como slots de texto. */
 
   /* ── Folder 2: Parte I – Características ──────────── */
   { title: "Plano de Emplazamiento", folderIndex: 2, sortOrder: 1, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "visual", isMandatory: true, volume: 1 },
   { title: "Fotos de Fachada", folderIndex: 2, sortOrder: 2, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "visual", isMandatory: false, volume: 1 },
   { title: "Relación de Agentes Intervinientes", folderIndex: 2, sortOrder: 3, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "document", isMandatory: true, volume: 1 },
-  { title: "Cuadro Cronológico de las Obras (Fechas y Licencias)", folderIndex: 2, sortOrder: 4, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: false, volume: 1 },
-  { title: "Tabla de Superficies y Coeficientes", folderIndex: 2, sortOrder: 5, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: false, volume: 1 },
   { title: "Memoria Detallada de Materiales y Calidades", folderIndex: 2, sortOrder: 6, allowedRoles: ["DO", "DEM"], agentLabel: "DF", slotType: "text", isMandatory: false, volume: 1 },
 
   /* ── Folder 3: Parte II – Mantenimiento ─────────── */
@@ -635,24 +626,25 @@ const CFOModule = () => {
       const refCatastral = projectInfo?.referencia_catastral || "";
       const today = new Date().toLocaleDateString("es-ES", { day: "2-digit", month: "long", year: "numeric" });
 
-      // Get registration data from text slots
-      const getTextValue = (title: string) => {
-        const item = items.find(i => i.title === title && isTextSlot(i));
-        return item?.text_content?.trim() || "";
-      };
+      // Read registration data from structured cfo_volume1_data table
+      const { data: vol1 } = await supabase
+        .from("cfo_volume1_data")
+        .select("*")
+        .eq("project_id", projectId)
+        .maybeSingle();
 
       const registroData = {
-        municipio: getTextValue("Municipio"),
-        emplazamiento: getTextValue("Emplazamiento"),
-        cp: getTextValue("Código Postal"),
-        nrc: getTextValue("Referencia Catastral (NRC)") || refCatastral,
-        registro: getTextValue("Registro Nº"),
-        tomo: getTextValue("Tomo"),
-        libro: getTextValue("Libro"),
-        folio: getTextValue("Folio"),
-        finca: getTextValue("Finca"),
-        polizaCompania: getTextValue("Póliza Decenal — Compañía"),
-        polizaNumero: getTextValue("Póliza Decenal — Número"),
+        municipio: vol1?.municipio || "",
+        emplazamiento: vol1?.emplazamiento || projectAddress || "",
+        cp: vol1?.codigo_postal || "",
+        nrc: vol1?.nrc || refCatastral,
+        registro: vol1?.registro_numero || "",
+        tomo: vol1?.tomo || "",
+        libro: vol1?.libro || "",
+        folio: vol1?.folio || "",
+        finca: vol1?.finca || "",
+        polizaCompania: vol1?.poliza_decenal_compania || "",
+        polizaNumero: vol1?.poliza_decenal_numero || "",
       };
 
       const addFooter = (page: any, pageNum: number, totalPages: number) => {

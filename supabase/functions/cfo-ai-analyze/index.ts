@@ -6,10 +6,19 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `Eres un asistente experto en redacción del Libro del Edificio (España, CTE/LOE).
-Recibes el texto extraído de la Memoria del Proyecto y otros documentos. Debes:
-1. Extraer datos administrativos, registrales y de superficies (Volumen 1).
-2. Detectar materiales/sistemas constructivos relevantes y proponer fichas de Mantenimiento (Limpieza, Inspección, Normas de uso, Reparación) ajustadas a normativa vigente.
-NO inventes datos: si no aparecen en el texto, deja el campo en null.`;
+Recibirás:
+1. Información básica del proyecto.
+2. El TEXTO INTEGRO de los documentos del proyecto (memorias, proyectos, escrituras, certificados, etc.).
+3. Historial de órdenes e incidencias.
+
+Tareas:
+A. Extraer DATOS ADMINISTRATIVOS, REGISTRALES y DE SUPERFICIES (Volumen 1) de cualquier punto de los documentos.
+B. Detectar materiales/sistemas constructivos y proponer fichas de Mantenimiento (Limpieza, Inspección, Normas de uso, Reparación) ajustadas a CTE.
+
+REGLAS:
+- NO inventes datos. Si un dato no aparece literalmente, deja el campo en null.
+- Lee con detalle: superficies, agentes, número de viviendas, plantas, fechas de licencia/inicio/fin, póliza decenal, datos registrales (Tomo/Libro/Folio/Finca).
+- Si encuentras varios valores contradictorios, prioriza el del documento más reciente o el de la Memoria.`;
 
 const TOOL_DEFINITION = {
   type: "function",
@@ -74,6 +83,26 @@ const TOOL_DEFINITION = {
   },
 };
 
+// Convierte un Blob a data URI base64 (para multimodal Gemini)
+const blobToDataUri = async (blob: Blob, mime: string): Promise<string> => {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < buf.length; i += chunk) {
+    bin += String.fromCharCode(...buf.subarray(i, i + chunk));
+  }
+  return `data:${mime};base64,${btoa(bin)}`;
+};
+
+const guessMime = (name: string, fallback?: string | null): string => {
+  if (fallback && fallback !== "application/octet-stream") return fallback;
+  const ext = name.toLowerCase().split(".").pop() || "";
+  if (ext === "pdf") return "application/pdf";
+  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return `image/${ext === "jpg" ? "jpeg" : ext}`;
+  if (ext === "txt") return "text/plain";
+  return fallback || "application/octet-stream";
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -111,9 +140,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Verify access
     const [{ data: project }, { data: member }] = await Promise.all([
-      supabase.from("projects").select("id, name, address, referencia_catastral, created_by").eq("id", projectId).single(),
+      supabase.from("projects").select("id, name, address, referencia_catastral, description, created_by").eq("id", projectId).single(),
       supabase.from("project_members").select("id, role").eq("project_id", projectId).eq("user_id", authData.user.id).eq("status", "accepted").maybeSingle(),
     ]);
 
@@ -132,30 +160,97 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Load existing memory file (built by sync-project-memory) and project documents text content if any
+    // 1. Memoria sincronizada (órdenes/incidencias)
     const memoryPath = `project-memory/${projectId}/memoria_dinamica_${projectId}.txt`;
     const { data: memoryFile } = await supabase.storage.from("plans").download(memoryPath);
     const memoryText = memoryFile ? await memoryFile.text() : "";
 
+    // 2. TODOS los documentos del proyecto (project_documents)
     const { data: docs } = await supabase
       .from("project_documents")
-      .select("file_name, file_type")
+      .select("file_name, file_type, file_url, file_size")
       .eq("project_id", projectId)
-      .limit(50);
+      .order("created_at", { ascending: false })
+      .limit(20);
 
-    const docsList = (docs || []).map((d) => `- ${d.file_name} (${d.file_type || "?"})`).join("\n");
+    // 3. Texto libre de slots tipo "text" del CFO ya rellenados (memoria de materiales, etc.)
+    const { data: cfoTextSlots } = await supabase
+      .from("cfo_items")
+      .select("title, text_content")
+      .eq("project_id", projectId)
+      .eq("slot_type", "text")
+      .not("text_content", "is", null);
 
-    const userPrompt = `PROYECTO: ${project.name}
+    const cfoTextBlock = (cfoTextSlots || [])
+      .filter((s: any) => (s.text_content || "").trim().length > 0)
+      .map((s: any) => `### ${s.title}\n${s.text_content}`)
+      .join("\n\n");
+
+    // 4. Construir contenido multimodal: descargamos hasta 8 PDFs/imágenes (límite de tamaño total ~15MB)
+    const MAX_FILES = 8;
+    const MAX_TOTAL_BYTES = 15 * 1024 * 1024;
+    let totalBytes = 0;
+    const attachments: { name: string; dataUri: string; mime: string }[] = [];
+    const skipped: string[] = [];
+
+    for (const d of (docs || []).slice(0, MAX_FILES)) {
+      const mime = guessMime(d.file_name, d.file_type);
+      const isPdf = mime === "application/pdf";
+      const isImg = mime.startsWith("image/");
+      if (!isPdf && !isImg) {
+        skipped.push(`${d.file_name} (formato no soportado)`);
+        continue;
+      }
+      const size = Number(d.file_size || 0);
+      if (size > 0 && totalBytes + size > MAX_TOTAL_BYTES) {
+        skipped.push(`${d.file_name} (excede tamaño)`);
+        continue;
+      }
+      try {
+        const { data: blob, error: dlErr } = await supabase.storage.from("plans").download(d.file_url);
+        if (dlErr || !blob) {
+          skipped.push(`${d.file_name} (no descargable)`);
+          continue;
+        }
+        if (totalBytes + blob.size > MAX_TOTAL_BYTES) {
+          skipped.push(`${d.file_name} (excede tamaño tras descarga)`);
+          continue;
+        }
+        const dataUri = await blobToDataUri(blob, mime);
+        attachments.push({ name: d.file_name, dataUri, mime });
+        totalBytes += blob.size;
+      } catch (e) {
+        console.error("download error", d.file_name, e);
+        skipped.push(`${d.file_name} (error de descarga)`);
+      }
+    }
+
+    console.log(`cfo-ai-analyze: ${attachments.length} adjuntos cargados (${(totalBytes / 1024).toFixed(0)}KB), ${skipped.length} omitidos`);
+
+    const userTextHeader = `PROYECTO: ${project.name}
 DIRECCIÓN: ${project.address || "N/D"}
 REF. CATASTRAL: ${project.referencia_catastral || "N/D"}
+DESCRIPCIÓN: ${project.description || "N/D"}
 
-DOCUMENTOS DEL PROYECTO DISPONIBLES:
-${docsList || "(ninguno)"}
+DOCUMENTOS ADJUNTOS (${attachments.length}): ${attachments.map((a) => a.name).join(", ") || "(ninguno)"}
+${skipped.length ? `OMITIDOS: ${skipped.join("; ")}` : ""}
 
-HISTORIAL Y MEMORIA SINCRONIZADA:
-${memoryText.slice(0, 12000) || "(sin historial)"}
+CONTENIDO DE SLOTS DE TEXTO YA RELLENADOS EN EL LDE:
+${cfoTextBlock || "(vacío)"}
 
-Extrae los datos del Volumen 1 y propone fichas de mantenimiento para los materiales detectados.`;
+HISTORIAL (Órdenes/Incidencias):
+${memoryText.slice(0, 8000) || "(sin historial)"}
+
+INSTRUCCIONES: Analiza CUIDADOSAMENTE el contenido completo de los documentos adjuntos (memorias, planos, escrituras, certificados…) y extrae todos los datos que puedas. Devuelve null donde no haya evidencia.`;
+
+    // Mensaje multimodal: texto + cada documento como image_url (Gemini acepta PDFs vía data URI)
+    const userContent: any[] = [{ type: "text", text: userTextHeader }];
+    for (const att of attachments) {
+      userContent.push({
+        type: "image_url",
+        image_url: { url: att.dataUri },
+      });
+    }
 
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -164,10 +259,10 @@ Extrae los datos del Volumen 1 y propone fichas de mantenimiento para los materi
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-pro",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
+          { role: "user", content: userContent },
         ],
         tools: [TOOL_DEFINITION],
         tool_choice: { type: "function", function: { name: "extract_lde_data" } },
@@ -176,7 +271,7 @@ Extrae los datos del Volumen 1 y propone fichas de mantenimiento para los materi
 
     if (!aiResp.ok) {
       const errText = await aiResp.text();
-      console.error("AI gateway error:", aiResp.status, errText);
+      console.error("AI gateway error:", aiResp.status, errText.slice(0, 500));
       if (aiResp.status === 429) {
         return new Response(JSON.stringify({ error: "Demasiadas consultas. Inténtalo de nuevo en unos segundos." }), {
           status: 429,
@@ -218,7 +313,6 @@ Extrae los datos del Volumen 1 y propone fichas de mantenimiento para los materi
     const vol1 = parsed.volume1 || {};
     const drafts = Array.isArray(parsed.lir_drafts) ? parsed.lir_drafts : [];
 
-    // Load existing volume1 row to preserve manually validated fields
     const { data: existing } = await supabase
       .from("cfo_volume1_data")
       .select("*")
@@ -246,7 +340,6 @@ Extrae los datos del Volumen 1 y propone fichas de mantenimiento para los materi
       const existingValue = existing?.[f];
       const existingAi = existing?.[`${f}_ai`];
 
-      // Solo sobrescribimos si: (a) no hay valor existente, o (b) el existente venía de IA sin validar
       const shouldOverride = aiValue !== null && aiValue !== undefined &&
         (existingValue === null || existingValue === undefined || existingValue === "" || existingAi === true);
 
@@ -272,7 +365,6 @@ Extrae los datos del Volumen 1 y propone fichas de mantenimiento para los materi
       });
     }
 
-    // L/I/N/R drafts
     let draftsCreated = 0;
     for (const d of drafts) {
       if (!d.material_key) continue;
@@ -283,7 +375,7 @@ Extrae los datos del Volumen 1 y propone fichas de mantenimiento para los materi
         .eq("material_key", d.material_key)
         .maybeSingle();
 
-      if (existingDraft?.is_validated) continue; // no tocar fichas validadas
+      if (existingDraft?.is_validated) continue;
 
       const payload = {
         project_id: projectId,
@@ -312,6 +404,8 @@ Extrae los datos del Volumen 1 y propone fichas de mantenimiento para los materi
       suggestionsApplied,
       draftsCreated,
       totalDrafts: drafts.length,
+      documentsAnalyzed: attachments.length,
+      documentsSkipped: skipped.length,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
