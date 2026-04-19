@@ -119,7 +119,7 @@ export const fetchLirDrafts = async (projectId: string): Promise<LirDraft[]> => 
 };
 
 export const updateLirDraft = async (id: string, patch: Partial<LirDraft>) => {
-  const { error } = await supabase.from("cfo_lir_drafts").update(patch).eq("id", id);
+  const { error } = await supabase.from("cfo_lir_drafts").update(patch as never).eq("id", id);
   if (error) throw error;
 };
 
