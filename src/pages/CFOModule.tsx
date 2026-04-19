@@ -1069,7 +1069,17 @@ const CFOModule = () => {
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <div className="border border-t-0 border-border rounded-b-lg bg-card/50 p-3 space-y-2">
-                          {folderItems.length === 0 && (
+                          {folder.index === 1 && (
+                            <div className="mb-3">
+                              <Volume1DataPanel projectId={projectId!} canEdit={isAdmin} refreshKey={aiRefreshKey} />
+                            </div>
+                          )}
+                          {folder.index === 3 && (
+                            <div className="mb-3">
+                              <LirDraftsPanel projectId={projectId!} canEdit={isAdmin} refreshKey={aiRefreshKey} />
+                            </div>
+                          )}
+                          {folderItems.length === 0 && folder.index !== 1 && folder.index !== 3 && (
                             <p className="text-xs text-muted-foreground text-center py-4">Sin elementos</p>
                           )}
                           {folderItems.map((item) => (
