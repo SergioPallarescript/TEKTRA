@@ -149,6 +149,8 @@ const CFOModule = () => {
   const [claimDialog, setClaimDialog] = useState<{ open: boolean; item: any | null }>({ open: false, item: null });
   const [auditing, setAuditing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [analyzingAi, setAnalyzingAi] = useState(false);
+  const [aiRefreshKey, setAiRefreshKey] = useState(0);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [rejectDialog, setRejectDialog] = useState<{ open: boolean; item: any | null }>({ open: false, item: null });
