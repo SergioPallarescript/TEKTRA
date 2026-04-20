@@ -25,6 +25,25 @@ Deno.serve(async (req) => {
     const { projectId } = await req.json();
     if (!projectId) throw new Error("projectId required");
 
+    // Verify caller is a project member or creator
+    const { data: projectCheck } = await supabase.from("projects").select("created_by").eq("id", projectId).single();
+    if (!projectCheck) throw new Error("Project not found");
+    if (projectCheck.created_by !== user.id) {
+      const { data: memberCheck } = await supabase
+        .from("project_members")
+        .select("id")
+        .eq("project_id", projectId)
+        .eq("user_id", user.id)
+        .eq("status", "accepted")
+        .maybeSingle();
+      if (!memberCheck) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const [
       { data: project },
       { data: cover },
