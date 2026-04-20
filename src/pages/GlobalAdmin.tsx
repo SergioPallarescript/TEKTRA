@@ -37,6 +37,14 @@ const roleLabels: Record<AppRole, string> = {
 
 const ADMIN_EMAILS = ["info@tektra.es"];
 
+// Server-side admin check via RPC
+async function checkIsAdmin(): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data, error } = await supabase.rpc("is_platform_admin", { _user_id: user.id });
+  return !error && data === true;
+}
+
 interface UserProfile {
   id: string;
   user_id: string;
@@ -84,7 +92,11 @@ const GlobalAdmin = () => {
     fetchData();
   };
 
-  const isAdmin = ADMIN_EMAILS.includes(profile?.email?.toLowerCase() || "");
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    checkIsAdmin().then(setIsAdmin);
+  }, [user]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);

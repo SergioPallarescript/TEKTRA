@@ -108,6 +108,38 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Authenticate: require a valid JWT or the service role key
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    const token = authHeader.replace("Bearer ", "");
+
+    // Allow service role calls (from other edge functions)
+    const isServiceRole = token === serviceRoleKey;
+
+    if (!isServiceRole) {
+      // Validate user JWT
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data, error } = await userClient.auth.getUser(token);
+      if (error || !data?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const { user_ids, title, message, url } = await req.json();
 
     if (!user_ids || !Array.isArray(user_ids) || user_ids.length === 0) {
@@ -119,8 +151,6 @@ Deno.serve(async (req) => {
 
     const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY")!;
     const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY")!;
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 

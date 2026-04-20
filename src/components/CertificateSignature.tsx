@@ -28,9 +28,12 @@ export interface CertSignMetadata {
 // Key for localStorage password store
 const CERT_PASSWORDS_KEY = "tektra_cert_passwords";
 
+// Migration: clear any passwords left in localStorage from previous versions
+try { localStorage.removeItem(CERT_PASSWORDS_KEY); } catch {}
+
 function getSavedPasswords(): Record<string, string> {
   try {
-    return JSON.parse(localStorage.getItem(CERT_PASSWORDS_KEY) || "{}");
+    return JSON.parse(sessionStorage.getItem(CERT_PASSWORDS_KEY) || "{}");
   } catch {
     return {};
   }
@@ -38,9 +41,8 @@ function getSavedPasswords(): Record<string, string> {
 
 function savePassword(fileName: string, fileSize: number, password: string) {
   const saved = getSavedPasswords();
-  // Use fileName + size as key to identify unique certificates
   saved[`${fileName}__${fileSize}`] = password;
-  localStorage.setItem(CERT_PASSWORDS_KEY, JSON.stringify(saved));
+  sessionStorage.setItem(CERT_PASSWORDS_KEY, JSON.stringify(saved));
 }
 
 function findSavedPassword(fileName: string, fileSize: number): string | null {
