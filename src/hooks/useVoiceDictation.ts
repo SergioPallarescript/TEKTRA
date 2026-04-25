@@ -96,13 +96,13 @@ export function useVoiceDictation(opts?: {
 
     const startInstance = () => {
       const recognition = new SR();
-      const autoRestart = !isMobileOrTablet();
       recognitionRef.current = recognition;
       recognition.lang = lang;
-      // En móvil/tablet los reinicios automáticos tras silencio suelen reemitir
-      // el bloque anterior completo. Preferimos finalizar la toma y que el
-      // usuario pulse de nuevo, antes que triplicar texto legalmente sensible.
-      recognition.continuous = autoRestart;
+      // Mantenemos modo continuo y, si el navegador corta tras un silencio,
+      // re-arrancamos en onend para que el usuario pueda pensar o buscar una
+      // imagen sin perder la sesión. La deduplicación de mergeFinal evita que
+      // el bloque previo se repita aunque el navegador lo reemita.
+      recognition.continuous = true;
       recognition.interimResults = true;
       // Reseteamos el índice porque cada instancia tiene su propia lista.
       nextIndexRef.current = 0;
@@ -145,7 +145,7 @@ export function useVoiceDictation(opts?: {
       };
 
       recognition.onend = () => {
-        if (wantRecordingRef.current && autoRestart) {
+        if (wantRecordingRef.current) {
           // Reinicio controlado tras silencio. Esperamos un tick para no
           // colisionar con la instancia actual y re-creamos un reconocedor
           // limpio (índices a 0). El texto final ya confirmado se mantiene.
@@ -227,11 +227,22 @@ function mergeFinal(existing: string, addition: string): string {
   const base = existing.trimEnd();
   if (!base) return add;
 
-  const baseLower = base.toLowerCase();
-  const addLower = add.toLowerCase();
+  const baseLower = normalize(base);
+  const addLower = normalize(add);
 
-  // Caso 1: el nuevo fragmento ya está exactamente al final.
+  // Caso 1: el nuevo fragmento ya está contenido al final del texto base.
+  // Cubre el caso típico al pausar en móvil: el navegador reemite el último
+  // bloque dictado en lugar de solo lo nuevo.
   if (baseLower.endsWith(addLower)) return existing;
+
+  // Caso 1b: el nuevo fragmento está contenido completo en cualquier punto del
+  // texto base (Chrome móvil a veces reemite el bloque entero al reanudar).
+  if (addLower.length >= 8 && baseLower.includes(addLower)) {
+    // Sólo lo descartamos si la coincidencia está cerca del final (últimos
+    // 200 caracteres) para no perder repeticiones legítimas distantes.
+    const tail = baseLower.slice(-Math.max(addLower.length + 200, 200));
+    if (tail.includes(addLower)) return existing;
+  }
 
   // Caso 2: solapamiento parcial entre el final de base y el inicio de add.
   const maxOverlap = Math.min(baseLower.length, addLower.length, 80);
@@ -258,8 +269,17 @@ function mergeFinal(existing: string, addition: string): string {
   return `${base}${sep}${trimmedAdd}`;
 }
 
-function isMobileOrTablet(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent || "";
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(ua);
+/**
+ * Normaliza para comparación: minúsculas, sin acentos, espacios colapsados y
+ * sin signos de puntuación finales. Permite que la deduplicación detecte
+ * "Hola mundo." == "hola mundo" cuando el navegador reemite el segmento.
+ */
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[.,;:!?¡¿"'()\[\]{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
