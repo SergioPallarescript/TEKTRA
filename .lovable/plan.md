@@ -1,58 +1,58 @@
+## Plan
 
+Voy a corregir el dictado por voz en los tres puntos afectados: Libro de Órdenes, Libro de Incidencias y Cerebro de Obra.
 
-## Plan: Personalización completa de emails con herramientas gestionadas
+### 1. Unificar la lógica de reconocimiento de voz
+- Crear una lógica compartida para el dictado en móvil/tablet en lugar de mantener tres implementaciones distintas.
+- Sustituir el patrón actual por uno estable basado en:
+  - texto final confirmado
+  - texto provisional/intermedio separado
+  - bandera explícita de reinicio controlado
+  - parada limpia al pulsar “Parar”
+- Mantener siempre `lang = "es-ES"`.
 
-### Problema diagnosticado
+### 2. Eliminar la causa principal de la duplicación
+- Corregir el flujo de `IncidentsModule`, que ahora recompone el texto desde `event.results` completo en cada callback y por eso duplica frases en móviles.
+- Revisar `OrdersModule` y `BrainModule` para evitar que resultados intermedios y reinicios automáticos vuelvan a inyectar texto ya reconocido.
+- Añadir deduplicación ligera de segmentos consecutivos repetidos, pensada para los casos típicos de móviles/tablets donde el navegador repite palabras o fragmentos muy próximos.
 
-El sistema actual tiene un fallo fundamental: **el auth-email-hook no está correctamente activado** en el sistema de autenticación. Por eso:
-- El campo "From" muestra "TECTRA" (nombre antiguo por defecto) en lugar de "TEKTRA"
-- El "Subject" aparece en inglés ("Confirm your email") — es la plantilla por defecto, no la personalizada
-- El cuerpo tiene errores de codificación ("gesti��n")
+### 3. Separar dictado en vivo de edición manual
+- Evitar que el texto provisional del micrófono machaque continuamente el `Textarea` mientras el usuario dicta.
+- Mostrar el texto provisional como vista en vivo independiente y pasar al campo editable solo el texto final confirmado.
+- Así el usuario podrá revisar y editar el contenido sin esperar a la reestructuración por IA.
 
-Esto significa que las plantillas personalizadas en el código **no se están usando** para los emails de auth. El sistema cae al comportamiento por defecto.
+### 4. Ajustar el comportamiento específico en móvil/tablet
+- Hacer el reconocimiento más conservador en dispositivos móviles:
+  - controlar mejor el auto-reinicio
+  - evitar bucles de reinicio inestables
+  - tolerar `no-speech` y `aborted` sin romper el estado
+- Si hace falta, usar un modo “solo resultados finales” en móvil para priorizar estabilidad frente a inmediatez visual.
 
-### Solución
+### 5. Mantener intacta la reestructuración con IA
+- No cambiar el flujo funcional de “Reestructurar IA” / `clean-dictation`.
+- Solo asegurar que el texto que llega a IA ya no llegue contaminado por repeticiones generadas por el reconocimiento de voz.
 
-Usaremos las herramientas gestionadas de Lovable para reconstruir y activar correctamente todo el sistema de emails:
+### 6. Verificación
+- Probar los tres módulos con foco en móvil/tablet y comprobar:
+  - que no se repiten palabras ni frases
+  - que no se entremezclan segmentos
+  - que el botón de parar realmente detiene el dictado
+  - que el usuario puede editar el texto antes de reestructurarlo
+  - que el Cerebro de Obra sigue permitiendo dictar consultas de forma estable
 
-#### Paso 1: Re-scaffolding de plantillas Auth
-- Ejecutar `scaffold_auth_email_templates` para regenerar correctamente el auth-email-hook con la integración adecuada al sistema gestionado
-- Esto asegura que el hook esté correctamente registrado y activado
+## Hallazgos ya confirmados
+- `IncidentsModule` tiene una causa clara de duplicación: concatena todos los resultados de voz en cada evento, incluido contenido ya emitido antes.
+- `OrdersModule` y `BrainModule` ya intentan separar resultados finales e intermedios, pero siguen escribiendo texto dictado en el mismo campo editable y mantienen una lógica de reinicio que en móvil puede seguir generando inestabilidad visual y repeticiones parciales.
+- No hay evidencia de que el problema venga de la IA de limpieza; el origen está antes, en la captura/transcripción de voz del navegador.
 
-#### Paso 2: Personalización de plantillas
-- Aplicar la marca TEKTRA a todas las plantillas
-- Remitente visible: **TEKTRA : gestión integral de obra**
-- Todos los textos en español
-- Subjects en español
-- Corregir los problemas de codificación de caracteres
-- Botones negros (#000000) con texto blanco
-- Tipografía Montserrat
+## Detalles técnicos
+- Archivos a tocar:
+  - `src/pages/OrdersModule.tsx`
+  - `src/pages/IncidentsModule.tsx`
+  - `src/pages/BrainModule.tsx`
+  - posiblemente una nueva utilidad compartida en `src/lib/` o un hook en `src/hooks/`
+- En móvil priorizaré robustez del reconocimiento sobre mostrar cada cambio intermedio del navegador.
+- No hace falta tocar base de datos ni backend para esta corrección.
+- La IA seguirá funcionando solo en español y sobre el texto final depurado.
 
-#### Paso 3: Configurar invitaciones como App Email (correo propio)
-- Ejecutar `scaffold_transactional_email` para crear la infraestructura de correos de la app
-- Crear plantilla de invitación personalizada con nombre de proyecto dinámico
-- Asunto: "🏗️ Invitación al proyecto: {{projectName}} en TEKTRA"
-- Modificar el flujo de invitación en `ProjectDetail.tsx` para usar `send-transactional-email` en lugar del `inviteUserByEmail` de auth
-- Crear página de cancelación de suscripción
-
-#### Paso 4: Despliegue
-- Desplegar `auth-email-hook` y `send-transactional-email`
-- Verificar que los emails llegan correctamente
-
-### Detalle técnico
-
-**Archivos que se modificarán:**
-- `supabase/functions/_shared/email-templates/` — 6 plantillas auth (regeneradas por herramienta + personalizadas)
-- `supabase/functions/auth-email-hook/index.ts` — Regenerado por herramienta + personalizado
-- `supabase/functions/_shared/transactional-email-templates/` — Nueva plantilla de invitación
-- `supabase/functions/send-transactional-email/` — Nuevo edge function
-- `src/pages/ProjectDetail.tsx` — Cambiar flujo de invitación a correo propio
-- `supabase/functions/manage-project/index.ts` — Eliminar acción `send_invite_email` antigua
-- Nueva página de cancelación de suscripción en la app
-
-**Resultado esperado:**
-- From: "TEKTRA : gestión integral de obra <noreply@tektra.es>"
-- Subjects todos en español
-- Sin errores de codificación
-- Invitaciones como correo propio con nombre de proyecto dinámico
-
+Cuando apruebes, lo implemento.

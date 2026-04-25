@@ -1,0 +1,249 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+/**
+ * Hook unificado de dictado por voz para móvil/tablet/escritorio.
+ *
+ * Soluciona la duplicación de palabras observada en móviles/tablets:
+ * - Acumula únicamente resultados FINALES (isFinal === true) por su índice global,
+ *   de modo que un mismo resultado nunca se inserta dos veces aunque el navegador
+ *   reemita eventos.
+ * - Al reiniciarse el reconocimiento (onend → start automático en navegadores que
+ *   cortan tras silencios), reinicia el contador de índice procesado, pero el
+ *   texto ya confirmado permanece intacto.
+ * - Deduplicación defensiva de cola: si el nuevo trozo final ya termina la cadena
+ *   acumulada, no se añade (caso típico de Chrome móvil emitiendo el último
+ *   segmento dos veces).
+ * - Mantiene el texto provisional (interim) separado del texto confirmado, para
+ *   que el usuario pueda editar el campo sin que se machaque mientras dicta.
+ */
+export function useVoiceDictation(opts?: {
+  lang?: string;
+  /** Llamado cada vez que cambia el texto confirmado acumulado. */
+  onFinalChange?: (finalText: string) => void;
+  /** Llamado cada vez que cambia el texto provisional. */
+  onInterimChange?: (interimText: string) => void;
+}) {
+  const lang = opts?.lang ?? "es-ES";
+  const onFinalRef = useRef(opts?.onFinalChange);
+  const onInterimRef = useRef(opts?.onInterimChange);
+  useEffect(() => {
+    onFinalRef.current = opts?.onFinalChange;
+    onInterimRef.current = opts?.onInterimChange;
+  }, [opts?.onFinalChange, opts?.onInterimChange]);
+
+  const [recording, setRecording] = useState(false);
+  const [supported, setSupported] = useState(true);
+  const [interim, setInterim] = useState("");
+
+  const recognitionRef = useRef<any>(null);
+  // Texto confirmado acumulado durante esta sesión de dictado.
+  const finalRef = useRef("");
+  // Bandera: el usuario quiere seguir grabando (para re-arrancar tras onend).
+  const wantRecordingRef = useRef(false);
+  // Índice del próximo resultado por procesar dentro del SpeechRecognitionResultList actual.
+  const nextIndexRef = useRef(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const SR =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+    if (!SR) setSupported(false);
+  }, []);
+
+  const cleanup = useCallback(() => {
+    const r = recognitionRef.current;
+    if (r) {
+      try { r.onresult = null; } catch {}
+      try { r.onerror = null; } catch {}
+      try { r.onend = null; } catch {}
+      try { r.stop(); } catch {}
+      try { r.abort?.(); } catch {}
+    }
+    recognitionRef.current = null;
+  }, []);
+
+  const stop = useCallback(() => {
+    wantRecordingRef.current = false;
+    cleanup();
+    setRecording(false);
+    setInterim("");
+    onInterimRef.current?.("");
+  }, [cleanup]);
+
+  const start = useCallback((seedText = "") => {
+    if (typeof window === "undefined") return;
+    const SR =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setSupported(false);
+      return;
+    }
+    // Si ya estaba grabando, paramos limpio antes de arrancar de nuevo.
+    cleanup();
+
+    finalRef.current = seedText ?? "";
+    nextIndexRef.current = 0;
+    setInterim("");
+    onInterimRef.current?.("");
+    onFinalRef.current?.(finalRef.current);
+
+    const startInstance = () => {
+      const recognition = new SR();
+      recognitionRef.current = recognition;
+      recognition.lang = lang;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      // Reseteamos el índice porque cada instancia tiene su propia lista.
+      nextIndexRef.current = 0;
+
+      recognition.onresult = (event: any) => {
+        let addedFinal = "";
+        let interimPart = "";
+        const results = event.results;
+        // Procesamos desde el siguiente índice no visto.
+        for (let i = nextIndexRef.current; i < results.length; i++) {
+          const r = results[i];
+          const text = r[0]?.transcript ?? "";
+          if (r.isFinal) {
+            addedFinal += text;
+            // Avanzamos el cursor: este índice ya está confirmado.
+            nextIndexRef.current = i + 1;
+          } else {
+            interimPart += text;
+          }
+        }
+        if (addedFinal) {
+          const next = mergeFinal(finalRef.current, addedFinal);
+          if (next !== finalRef.current) {
+            finalRef.current = next;
+            onFinalRef.current?.(next);
+          }
+        }
+        const cleanInterim = interimPart.trim();
+        setInterim(cleanInterim);
+        onInterimRef.current?.(cleanInterim);
+      };
+
+      recognition.onerror = (e: any) => {
+        const err = e?.error;
+        // Errores benignos: dejamos que onend decida si reiniciar.
+        if (err === "no-speech" || err === "aborted") return;
+        // Errores duros: paramos completamente.
+        wantRecordingRef.current = false;
+        cleanup();
+        setRecording(false);
+        setInterim("");
+        onInterimRef.current?.("");
+      };
+
+      recognition.onend = () => {
+        if (wantRecordingRef.current) {
+          // Reinicio controlado tras silencio. Esperamos un tick para no
+          // colisionar con la instancia actual y re-creamos un reconocedor
+          // limpio (índices a 0). El texto final ya confirmado se mantiene.
+          setTimeout(() => {
+            if (!wantRecordingRef.current) return;
+            try {
+              startInstance();
+            } catch {
+              wantRecordingRef.current = false;
+              setRecording(false);
+              setInterim("");
+              onInterimRef.current?.("");
+            }
+          }, 80);
+        } else {
+          setRecording(false);
+        }
+      };
+
+      try {
+        recognition.start();
+      } catch {
+        // Si el navegador se queja porque hay otra instancia, reintentamos breve.
+        setTimeout(() => {
+          try { recognition.start(); } catch {}
+        }, 120);
+      }
+    };
+
+    wantRecordingRef.current = true;
+    setRecording(true);
+    startInstance();
+  }, [cleanup, lang]);
+
+  const toggle = useCallback((seedText = "") => {
+    if (recording) stop();
+    else start(seedText);
+  }, [recording, start, stop]);
+
+  const reset = useCallback((value = "") => {
+    finalRef.current = value;
+    setInterim("");
+    onInterimRef.current?.("");
+    onFinalRef.current?.(value);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      wantRecordingRef.current = false;
+      cleanup();
+    };
+  }, [cleanup]);
+
+  return {
+    recording,
+    supported,
+    interim,
+    /** Texto confirmado acumulado en esta sesión. */
+    getFinal: () => finalRef.current,
+    start,
+    stop,
+    toggle,
+    reset,
+  };
+}
+
+/**
+ * Combina el texto ya confirmado con un nuevo fragmento final,
+ * evitando repeticiones inmediatas (tail dedup) que algunos navegadores
+ * móviles producen al reemitir el último segmento.
+ */
+function mergeFinal(existing: string, addition: string): string {
+  const add = addition.trim();
+  if (!add) return existing;
+  const base = existing.trimEnd();
+  if (!base) return add;
+
+  const baseLower = base.toLowerCase();
+  const addLower = add.toLowerCase();
+
+  // Caso 1: el nuevo fragmento ya está exactamente al final.
+  if (baseLower.endsWith(addLower)) return existing;
+
+  // Caso 2: solapamiento parcial entre el final de base y el inicio de add.
+  const maxOverlap = Math.min(baseLower.length, addLower.length, 80);
+  let overlap = 0;
+  for (let n = maxOverlap; n > 0; n--) {
+    if (baseLower.slice(-n) === addLower.slice(0, n)) {
+      // Validamos que el solapamiento esté en frontera de palabra para
+      // no comernos contenido legítimo.
+      const charBefore = baseLower.slice(-n - 1, -n);
+      const charAfter = addLower.slice(n, n + 1);
+      const wordBoundaryBefore = !charBefore || /\s/.test(charBefore);
+      const wordBoundaryAfter = !charAfter || /\s/.test(charAfter) || n === addLower.length;
+      if (wordBoundaryBefore && (wordBoundaryAfter || n >= 6)) {
+        overlap = n;
+        break;
+      }
+    }
+  }
+
+  const trimmedAdd = add.slice(overlap).trimStart();
+  if (!trimmedAdd) return existing;
+
+  const sep = base && !/\s$/.test(existing) ? " " : "";
+  return `${base}${sep}${trimmedAdd}`;
+}

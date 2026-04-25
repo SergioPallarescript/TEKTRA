@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AlertTriangle } from "lucide-react";
+import { useVoiceDictation } from "@/hooks/useVoiceDictation";
 
 const severityLabels: Record<string, { label: string; color: string }> = {
   low: { label: "Baja", color: "text-success bg-success/10" },
@@ -57,9 +58,11 @@ const IncidentsModule = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
   const [submitting, setSubmitting] = useState(false);
-  const [recording, setRecording] = useState(false);
   const [cleaning, setCleaning] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const dictation = useVoiceDictation({
+    onFinalChange: (text) => setContent(text),
+  });
+  const recording = dictation.recording;
 
   // Legal fields
   const [dirigidaA, setDirigidaA] = useState("CONSTRUCTOR");
@@ -232,29 +235,17 @@ const IncidentsModule = () => {
   };
 
   const toggleRecording = () => {
-    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
-      toast.error("Tu navegador no soporta reconocimiento de voz"); return;
-    }
-    if (recording) {
-      recognitionRef.current?.stop(); recognitionRef.current = null; setRecording(false);
-      if (content.trim()) cleanDictation(content);
+    if (!dictation.supported) {
+      toast.error("Tu navegador no soporta reconocimiento de voz");
       return;
     }
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
-    recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
-    recognition.onresult = (event: any) => {
-      let transcript = "";
-      for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
-      setContent(transcript);
-    };
-    recognition.onerror = (e: any) => {
-      if (e.error === "no-speech" || e.error === "aborted") return;
-      setRecording(false); recognitionRef.current = null;
-    };
-    recognition.onend = () => { if (recognitionRef.current) { try { recognition.start(); } catch {} } };
-    recognition.start(); setRecording(true);
+    if (recording) {
+      dictation.stop();
+      const finalText = dictation.getFinal().trim();
+      if (finalText) cleanDictation(finalText);
+      return;
+    }
+    dictation.start(content);
   };
 
   const roleLabel = profile?.role === "CSS" ? "COORD. SEGURIDAD Y SALUD" : "DIRECCIÓN FACULTATIVA";
@@ -331,6 +322,11 @@ const IncidentsModule = () => {
                         </Button>
                       </div>
                       <Textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Describa la incidencia de seguridad..." rows={5} required />
+                      {recording && dictation.interim && (
+                        <p className="text-xs text-muted-foreground italic mt-1">
+                          Escuchando: <span className="opacity-70">{dictation.interim}</span>
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Acciones Correctoras</Label>

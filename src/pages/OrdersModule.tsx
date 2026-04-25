@@ -33,6 +33,7 @@ import {
   ArrowLeft, Plus, BookOpen, AlertTriangle, Mic, MicOff, Camera, Image, Paperclip, X, Download, Lock, ShieldCheck, FileSignature, PenLine, Sparkles,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useVoiceDictation } from "@/hooks/useVoiceDictation";
 
 const ORDER_FIELDS = [
   { key: "estado", label: "Estado de la Obra", placeholder: "Describa el estado actual de la obra..." },
@@ -62,12 +63,14 @@ const OrdersModule = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [recording, setRecording] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
   const [cleaning, setCleaning] = useState(false);
   const [structuredSections, setStructuredSections] = useState<Record<string, string> | null>(null);
   const [crossAlert, setCrossAlert] = useState<{ show: boolean; incidents: any[] }>({ show: false, incidents: [] });
-  const recognitionRef = useRef<any>(null);
+  const dictation = useVoiceDictation({
+    onFinalChange: (text) => setContent(text),
+  });
+  const recording = dictation.recording;
 
   // Legal fields
   const [dirigidaA, setDirigidaA] = useState("CONSTRUCTOR");
@@ -438,63 +441,16 @@ const OrdersModule = () => {
     finally { setCleaning(false); }
   };
 
-  // Accumulates only final (committed) speech results to avoid mobile duplication
-  const finalTranscriptRef = useRef("");
-  const lastResultIndexRef = useRef(0);
-
   const toggleRecording = () => {
-    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
-      toast.error("Tu navegador no soporta reconocimiento de voz"); return;
-    }
-    if (recording) {
-      recognitionRef.current?.stop(); recognitionRef.current = null; setRecording(false);
+    if (!dictation.supported) {
+      toast.error("Tu navegador no soporta reconocimiento de voz");
       return;
     }
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
-    recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
-    finalTranscriptRef.current = content; // preserve any manually typed text
-    lastResultIndexRef.current = 0;
-
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-    recognition.onresult = (event: any) => {
-      // Only process NEW results starting from resultIndex to avoid mobile duplication
-      let newFinal = "";
-      let interimPart = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          newFinal += result[0].transcript;
-        } else {
-          interimPart += result[0].transcript;
-        }
-      }
-      if (newFinal) {
-        finalTranscriptRef.current = (finalTranscriptRef.current + " " + newFinal).trim();
-      }
-
-      // Debounced state update to prevent rapid re-renders on mobile
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        const display = interimPart
-          ? (finalTranscriptRef.current + " " + interimPart).trim()
-          : finalTranscriptRef.current;
-        setContent(display);
-      }, 80);
-    };
-    recognition.onerror = (e: any) => {
-      if (e.error === "no-speech" || e.error === "aborted") return;
-      setRecording(false); recognitionRef.current = null;
-    };
-    recognition.onend = () => {
-      if (recognitionRef.current) {
-        try { recognition.start(); } catch { /* already started */ }
-      }
-    };
-    recognition.start();
-    setRecording(true);
+    if (recording) {
+      dictation.stop();
+      return;
+    }
+    dictation.start(content);
   };
 
   // AI restructure: takes current text (dictated or manual) and structures it
@@ -624,7 +580,7 @@ const OrdersModule = () => {
                              <Sparkles className="h-3 w-3" /> Reestructurar IA
                           </Button>
                           {(content.trim() || structuredSections) && !recording && !cleaning && (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => { setContent(""); setStructuredSections(null); finalTranscriptRef.current = ""; }} className="gap-1 text-xs text-muted-foreground">
+                            <Button type="button" variant="ghost" size="sm" onClick={() => { setContent(""); setStructuredSections(null); dictation.reset(""); }} className="gap-1 text-xs text-muted-foreground">
                               <X className="h-3 w-3" /> Limpiar
                             </Button>
                           )}
@@ -639,6 +595,11 @@ const OrdersModule = () => {
                         />
                       ) : (
                         <Textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Describa la orden o use el dictado por voz..." rows={5} required={!structuredSections} />
+                      )}
+                      {recording && dictation.interim && (
+                        <p className="text-xs text-muted-foreground italic mt-1">
+                          Escuchando: <span className="opacity-70">{dictation.interim}</span>
+                        </p>
                       )}
                     </div>
 

@@ -12,6 +12,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import ReactMarkdown from "react-markdown";
 import { syncProjectMemory } from "@/lib/projectMemory";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useVoiceDictation } from "@/hooks/useVoiceDictation";
 
 type Msg = { role: "user" | "assistant"; content: string; imageUrls?: string[] };
 type Conversation = { id: string; title: string; created_at: string };
@@ -32,8 +33,10 @@ const BrainModule = () => {
   const [incidentsHistory, setIncidentsHistory] = useState<string>("");
   const [dynamicMemory, setDynamicMemory] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [voiceRecording, setVoiceRecording] = useState(false);
-  const voiceRecognitionRef = useRef<any>(null);
+  const dictation = useVoiceDictation({
+    onFinalChange: (text) => setInput(text),
+  });
+  const voiceRecording = dictation.recording;
   const isMobile = useIsMobile();
 
   // Multi-image upload for vision
@@ -332,32 +335,16 @@ const BrainModule = () => {
     } finally { setIsLoading(false); }
   };
 
-  const brainFinalRef = useRef("");
-
   const toggleVoiceRecording = () => {
-    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) { toast.error("Tu navegador no soporta reconocimiento de voz"); return; }
-    if (voiceRecording) { voiceRecognitionRef.current?.stop(); voiceRecognitionRef.current = null; setVoiceRecording(false); return; }
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SR();
-    voiceRecognitionRef.current = recognition;
-    recognition.lang = "es-ES"; recognition.continuous = true; recognition.interimResults = true;
-    brainFinalRef.current = input;
-    let debounce: ReturnType<typeof setTimeout> | null = null;
-    recognition.onresult = (event: any) => {
-      let newFinal = ""; let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) newFinal += event.results[i][0].transcript;
-        else interim += event.results[i][0].transcript;
-      }
-      if (newFinal) brainFinalRef.current = (brainFinalRef.current + " " + newFinal).trim();
-      if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(() => {
-        setInput(interim ? (brainFinalRef.current + " " + interim).trim() : brainFinalRef.current);
-      }, 80);
-    };
-    recognition.onerror = (e: any) => { if (e.error === "no-speech" || e.error === "aborted") return; setVoiceRecording(false); voiceRecognitionRef.current = null; };
-    recognition.onend = () => { if (voiceRecognitionRef.current) { try { recognition.start(); } catch { /* already started */ } } };
-    recognition.start(); setVoiceRecording(true);
+    if (!dictation.supported) {
+      toast.error("Tu navegador no soporta reconocimiento de voz");
+      return;
+    }
+    if (voiceRecording) {
+      dictation.stop();
+      return;
+    }
+    dictation.start(input);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
@@ -540,6 +527,11 @@ const BrainModule = () => {
               <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Pregunta sobre los documentos del proyecto..." rows={1} className="resize-none min-h-[40px] max-h-[120px]" />
               <Button onClick={sendMessage} disabled={(!input.trim() && chatImages.length === 0) || isLoading} size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
             </div>
+            {voiceRecording && dictation.interim && (
+              <p className="text-xs text-muted-foreground italic mt-1 max-w-3xl mx-auto">
+                Escuchando: <span className="opacity-70">{dictation.interim}</span>
+              </p>
+            )}
           </div>
         </div>
       </div>
