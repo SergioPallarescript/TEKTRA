@@ -527,6 +527,11 @@ const BrainModule = () => {
               <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Pregunta sobre los documentos del proyecto..." rows={1} className="resize-none min-h-[40px] max-h-[120px]" />
               <Button onClick={sendMessage} disabled={(!input.trim() && chatImages.length === 0) || isLoading} size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
             </div>
+            {voiceRecording && dictation.interim && (
+              <p className="text-xs text-muted-foreground italic mt-1 max-w-3xl mx-auto">
+                Escuchando: <span className="opacity-70">{dictation.interim}</span>
+              </p>
+            )}
           </div>
         </div>
       </div>
