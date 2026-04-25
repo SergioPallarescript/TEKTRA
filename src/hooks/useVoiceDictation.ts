@@ -296,3 +296,17 @@ function normalize(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+function getWordOverlapCount(existing: string, addition: string): number {
+  const baseWords = normalize(existing).split(" ").filter(Boolean);
+  const addWords = normalize(addition).split(" ").filter(Boolean);
+  const max = Math.min(baseWords.length, addWords.length, 80);
+
+  for (let n = max; n >= 3; n--) {
+    const baseTail = baseWords.slice(-n).join(" ");
+    const addHead = addWords.slice(0, n).join(" ");
+    if (baseTail === addHead) return n;
+  }
+
+  return 0;
+}
