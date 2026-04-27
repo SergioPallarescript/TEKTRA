@@ -61,8 +61,8 @@ export function usePushSubscription() {
 
     const clearDelivered = () => {
       // Reset PWA app badge if available
-      // @ts-expect-error: clearAppBadge is not in lib.dom yet on all TS versions
-      if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+      const nav = navigator as Navigator & { clearAppBadge?: () => Promise<void> };
+      if (nav.clearAppBadge) nav.clearAppBadge().catch(() => {});
       // Ask the service worker to close any visible notifications
       navigator.serviceWorker?.ready
         .then((reg) => reg.active?.postMessage({ type: "CLEAR_NOTIFICATIONS" }))
