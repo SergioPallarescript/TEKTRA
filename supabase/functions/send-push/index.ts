@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY")!;
+    const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY") || VAPID_PUBLIC_KEY_FALLBACK;
     const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY")!;
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const payload = JSON.stringify({
+    const payload = {
       title,
       body: message,
       url,
@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
       senderName: senderName || null,
       senderRole: senderRole || null,
       id: id || null,
-    });
+    };
     let sent = 0;
     const staleEndpoints: string[] = [];
 
