@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { consumeIntendedRoute } from "@/lib/authRedirect";
 
 const ROLES = [
   { value: "DO", label: "Director de Obra", desc: "Arquitecto — Administrador" },
@@ -36,7 +37,8 @@ const Auth = () => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         toast.success("Sesión iniciada correctamente");
-        navigate("/");
+        const target = consumeIntendedRoute();
+        navigate(target || "/", { replace: true });
       } else {
         const { data, error } = await supabase.auth.signUp({
           email,
@@ -57,7 +59,8 @@ const Auth = () => {
 
         if (data.session) {
           toast.success("Cuenta creada correctamente");
-          navigate("/");
+          const target = consumeIntendedRoute();
+          navigate(target || "/", { replace: true });
         } else {
           toast.success("Cuenta creada. Revisa tu correo para confirmar.");
         }
