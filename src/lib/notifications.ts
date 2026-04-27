@@ -224,6 +224,7 @@ export async function pushSignatureRequest({
   docName,
   isInfoOnly,
   docId,
+  actorId,
 }: {
   projectId: string;
   recipientId: string;
@@ -231,6 +232,7 @@ export async function pushSignatureRequest({
   docName: string;
   isInfoOnly: boolean;
   docId: string;
+  actorId?: string;
 }) {
   const title = isInfoOnly ? "📂 Archivo Recibido" : "✍️ Firma Pendiente";
   const message = isInfoOnly
@@ -243,5 +245,6 @@ export async function pushSignatureRequest({
     message,
     type: "signature",
     url: `/project/${projectId}/signatures?item=${docId}`,
+    actorId,
   });
 }
