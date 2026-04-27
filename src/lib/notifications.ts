@@ -3,14 +3,46 @@ import { supabase } from "@/integrations/supabase/client";
 /**
  * Trigger push notifications via edge function for given user IDs.
  */
-async function triggerPush(userIds: string[], title: string, message: string, url?: string) {
+async function triggerPush(
+  userIds: string[],
+  title: string,
+  message: string,
+  url?: string,
+  meta?: { projectId?: string; senderName?: string; senderRole?: string; id?: string }
+) {
   try {
     await supabase.functions.invoke("send-push", {
-      body: { user_ids: userIds, title, message, url },
+      body: {
+        user_ids: userIds,
+        title,
+        message,
+        url,
+        projectId: meta?.projectId,
+        senderName: meta?.senderName,
+        senderRole: meta?.senderRole,
+        id: meta?.id,
+      },
     });
   } catch (e) {
     console.error("Push trigger failed:", e);
   }
+}
+
+/** Resolve actor display name + project-scoped role for push enrichment. */
+async function resolveActor(actorId: string, projectId: string) {
+  const [{ data: profile }, { data: member }] = await Promise.all([
+    supabase.from("profiles").select("full_name").eq("user_id", actorId).maybeSingle(),
+    supabase
+      .from("project_members")
+      .select("role")
+      .eq("project_id", projectId)
+      .eq("user_id", actorId)
+      .maybeSingle(),
+  ]);
+  return {
+    senderName: (profile as any)?.full_name || "",
+    senderRole: (member as any)?.role || "",
+  };
 }
 
 /**
@@ -65,7 +97,12 @@ export async function notifyProjectMembers({
   await supabase.from("notifications").insert(notifications);
 
   const pushUrl = url || `/project/${projectId}`;
-  triggerPush(uidArray, title, message, pushUrl);
+  const actor = await resolveActor(actorId, projectId);
+  triggerPush(uidArray, title, message, pushUrl, {
+    projectId,
+    senderName: actor.senderName,
+    senderRole: actor.senderRole,
+  });
 }
 
 /**
@@ -78,6 +115,7 @@ export async function notifyUser({
   message,
   type = "info",
   url,
+  actorId,
 }: {
   userId: string;
   projectId: string;
@@ -85,6 +123,7 @@ export async function notifyUser({
   message: string;
   type?: string;
   url?: string;
+  actorId?: string;
 }) {
   await supabase.from("notifications").insert({
     user_id: userId,
@@ -95,7 +134,12 @@ export async function notifyUser({
   });
 
   const pushUrl = url || `/project/${projectId}`;
-  triggerPush([userId], title, message, pushUrl);
+  const actor = actorId ? await resolveActor(actorId, projectId) : { senderName: "", senderRole: "" };
+  triggerPush([userId], title, message, pushUrl, {
+    projectId,
+    senderName: actor.senderName,
+    senderRole: actor.senderRole,
+  });
 }
 
 /* ───── Module-specific push helpers ───── */
