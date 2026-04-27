@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 const VAPID_PUBLIC_KEY =
-  "BCZM86VhvCpT2YGg_JmWNu9_sp-QvyVC7DyvYanfgQRZTAPrjqwnChaXHGbNS2pJAg5OaLG5iVYvm71FavqmC0g";
+  "BNKqCnIeLk2naunWgUNTLqOVPtBmK7qFWCHxQitetMnR3Kgdg5tPakKFZjTGYDg_z15fAZuLcXG6Q7M0h_ORu08";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -29,11 +29,29 @@ export function usePushSubscription() {
 
     if (supported) {
       setPermission(Notification.permission);
-      // Check existing subscription
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.pushManager.getSubscription().then((sub) => {
-          setIsSubscribed(!!sub);
-        });
+      // Check existing subscription. If it was created with an older VAPID key
+      // (e.g. before a key rotation) the push service will reject it, so we
+      // unsubscribe automatically and let the user re-grant when ready.
+      navigator.serviceWorker.ready.then(async (reg) => {
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          setIsSubscribed(false);
+          return;
+        }
+        const currentKey = sub.options?.applicationServerKey
+          ? new Uint8Array(sub.options.applicationServerKey as ArrayBuffer)
+          : null;
+        const expectedKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+        const sameKey =
+          !!currentKey &&
+          currentKey.length === expectedKey.length &&
+          currentKey.every((b, i) => b === expectedKey[i]);
+        if (!sameKey) {
+          try { await sub.unsubscribe(); } catch {}
+          setIsSubscribed(false);
+          return;
+        }
+        setIsSubscribed(true);
       });
     }
   }, []);
