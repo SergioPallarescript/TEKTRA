@@ -334,6 +334,7 @@ const SignatureDocuments = () => {
           docName: title.trim(),
           isInfoOnly,
           docId: insertedDoc.id,
+          actorId: user.id,
         });
       }
 
