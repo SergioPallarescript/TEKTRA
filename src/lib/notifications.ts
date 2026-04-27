@@ -142,6 +142,57 @@ export async function notifyUser({
   });
 }
 
+/**
+ * Send a notification to all project members that have any of the specified roles
+ * (matched against role OR secondary_role). Excludes the actor.
+ */
+export async function notifyProjectMembersByRole({
+  projectId,
+  actorId,
+  roles,
+  title,
+  message,
+  type = "info",
+  url,
+}: {
+  projectId: string;
+  actorId: string;
+  roles: string[];
+  title: string;
+  message: string;
+  type?: string;
+  url?: string;
+}) {
+  const { data: members } = await supabase
+    .from("project_members")
+    .select("user_id, role, secondary_role")
+    .eq("project_id", projectId)
+    .eq("status", "accepted");
+
+  const userIds = new Set<string>();
+  (members || []).forEach((m: any) => {
+    if (!m.user_id || m.user_id === actorId) return;
+    if (roles.includes(m.role) || (m.secondary_role && roles.includes(m.secondary_role))) {
+      userIds.add(m.user_id);
+    }
+  });
+
+  if (userIds.size === 0) return;
+
+  const uidArray = Array.from(userIds);
+  await supabase.from("notifications").insert(
+    uidArray.map((uid) => ({ user_id: uid, project_id: projectId, title, message, type }))
+  );
+
+  const pushUrl = url || `/project/${projectId}`;
+  const actor = await resolveActor(actorId, projectId);
+  triggerPush(uidArray, title, message, pushUrl, {
+    projectId,
+    senderName: actor.senderName,
+    senderRole: actor.senderRole,
+  });
+}
+
 /* ───── Module-specific push helpers ───── */
 
 export async function pushNewOrder({
