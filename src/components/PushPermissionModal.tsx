@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -7,32 +7,54 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 const STORAGE_KEY = "tektra:push-prompt-dismissed-at";
-const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const SESSION_SHOWN_KEY = "tektra:push-prompt-shown-session";
+// Si el usuario pulsa "Ahora no", esperamos 24h antes de volver a preguntar
+// dentro de la misma sesión/navegador. En cada nuevo login se vuelve a mostrar
+// (los usuarios que ya tenían la app instalada verán el modal sin reinstalar).
+const DISMISS_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Solicita el permiso de notificaciones tras el primer login con la estética
+ * Solicita el permiso de notificaciones tras CADA login con la estética
  * arquitectónica de Tektra. Solo se muestra cuando:
  *  - el navegador soporta push,
  *  - el permiso aún está en "default",
  *  - el usuario aún no se ha suscrito,
- *  - no ha pulsado "Ahora no" en los últimos 7 días.
+ *  - no ha pulsado "Ahora no" en las últimas 24h.
+ *
+ * Importante: NO requiere reinstalar la PWA. El service worker se actualiza
+ * automáticamente y este modal aparece a cualquier usuario existente que aún
+ * no haya concedido el permiso, en su próximo inicio de sesión.
  */
 const PushPermissionModal = () => {
   const { user } = useAuth();
   const { isSupported, isSubscribed, permission, subscribe } = usePushSubscription();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const lastUserId = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user || !isSupported) return;
     if (isSubscribed) return;
     if (permission !== "default") return;
 
+    // Detecta un cambio de usuario (nuevo login) → resetea el dismiss para
+    // garantizar que se muestre el modal a ese usuario.
+    if (lastUserId.current !== user.id) {
+      lastUserId.current = user.id;
+      sessionStorage.removeItem(SESSION_SHOWN_KEY);
+    }
+
+    // Evita re-abrir el modal si ya se mostró en esta sesión de pestaña
+    if (sessionStorage.getItem(SESSION_SHOWN_KEY) === user.id) return;
+
     const dismissedAt = Number(localStorage.getItem(STORAGE_KEY) || 0);
     if (dismissedAt && Date.now() - dismissedAt < DISMISS_TTL_MS) return;
 
     // Pequeño delay para que aparezca tras la transición del splash
-    const t = setTimeout(() => setOpen(true), 1200);
+    const t = setTimeout(() => {
+      setOpen(true);
+      sessionStorage.setItem(SESSION_SHOWN_KEY, user.id);
+    }, 1200);
     return () => clearTimeout(t);
   }, [user, isSupported, isSubscribed, permission]);
 
