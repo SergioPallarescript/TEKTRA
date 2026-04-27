@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
-import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileSignature, Loader2, PenSquare, Send, Trash2, Upload, RefreshCw, Plus, X, UserPlus, ZoomIn, ZoomOut, RotateCw, Eye, FolderArchive } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileSignature, Loader2, PenSquare, Send, Trash2, Upload, RefreshCw, Plus, X, UserPlus, ZoomIn, ZoomOut, RotateCw, Eye, FolderArchive, Archive } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import FiscalDataModal from "@/components/FiscalDataModal";
 import SignatureCanvas, { type SignatureCanvasHandle } from "@/components/SignatureCanvas";
@@ -23,6 +23,10 @@ import ShareButton from "@/components/ShareButton";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
@@ -43,6 +47,9 @@ type SignatureDocument = {
   signed_at: string | null;
   created_at: string;
   is_info_only?: boolean;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  deletion_reason?: string | null;
 };
 
 type DocRecipient = {
@@ -70,7 +77,7 @@ const SignatureDocuments = () => {
   const [docRecipients, setDocRecipients] = useState<DocRecipient[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<SignatureDocument | null>(null);
-  const [activeTab, setActiveTab] = useState<"pending" | "sent" | "archive">("pending");
+  const [activeTab, setActiveTab] = useState<"pending" | "sent" | "archive" | "deleted">("pending");
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfPages, setPdfPages] = useState<HTMLCanvasElement[]>([]);
   const [previewZoom, setPreviewZoom] = useState(100);
@@ -82,6 +89,8 @@ const SignatureDocuments = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isInfoOnly, setIsInfoOnly] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SignatureDocument | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [replaceTarget, setReplaceTarget] = useState<SignatureDocument | null>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   
@@ -111,7 +120,8 @@ const SignatureDocuments = () => {
       if (extraDocIds.length > 0) {
         const { data: extraDocs } = await (supabase.from("signature_documents" as any) as any)
           .select("*")
-          .in("id", extraDocIds);
+          .in("id", extraDocIds)
+          .eq("project_id", projectId);
         if (extraDocs) data?.push(...extraDocs);
       }
     }
@@ -256,23 +266,36 @@ const SignatureDocuments = () => {
 
   // Documents needing signature action
   const pendingDocuments = useMemo(
-    () => documents.filter((d) => !d.is_info_only && userNeedsToSign(d)),
+    () => documents.filter((d) => !d.deleted_at && !d.is_info_only && userNeedsToSign(d)),
     [documents, user?.id, docRecipients],
   );
 
   // Sent + completed (non-info-only)
   const sentAndCompletedDocuments = useMemo(
-    () => documents.filter((d) => !d.is_info_only && (d.sender_id === user?.id || d.status === "signed" || (!userNeedsToSign(d) && d.recipient_id !== user?.id))),
+    () => documents.filter((d) => !d.deleted_at && !d.is_info_only && (d.sender_id === user?.id || d.status === "signed" || (!userNeedsToSign(d) && d.recipient_id !== user?.id))),
     [documents, user?.id, docRecipients],
   );
 
   // Archive / Mi Carpeta — info-only documents
   const archiveDocuments = useMemo(
-    () => documents.filter((d) => d.is_info_only),
+    () => documents.filter((d) => !d.deleted_at && d.is_info_only),
     [documents],
   );
 
-  const activeDocuments = activeTab === "pending" ? pendingDocuments : activeTab === "sent" ? sentAndCompletedDocuments : archiveDocuments;
+  // Eliminados — registro inmutable de documentos borrados (todos los del proyecto)
+  const deletedDocuments = useMemo(
+    () => documents.filter((d) => !!d.deleted_at).sort((a, b) => (b.deleted_at || "").localeCompare(a.deleted_at || "")),
+    [documents],
+  );
+
+  const activeDocuments =
+    activeTab === "pending" ? pendingDocuments
+    : activeTab === "sent" ? sentAndCompletedDocuments
+    : activeTab === "archive" ? archiveDocuments
+    : deletedDocuments;
+
+  // DO/DEM pueden borrar cualquier documento del proyecto
+  const isProjectAdmin = projectRole === "DO" || projectRole === "DEM";
 
   // Multi-recipient helpers
   const addRecipient = () => {
@@ -351,34 +374,42 @@ const SignatureDocuments = () => {
 
   const handleDelete = async () => {
     if (!deleteTarget || !user) return;
+    const reason = deleteReason.trim();
+    if (reason.length < 5) { toast.error("Indica el motivo de la eliminación (mínimo 5 caracteres)"); return; }
+    setDeleting(true);
     try {
-      // 1. Delete all recipient rows first (FK constraint)
-      const { error: recErr } = await (supabase.from("signature_document_recipients" as any) as any)
-        .delete()
-        .eq("document_id", deleteTarget.id);
-      if (recErr) console.warn("Error deleting recipients:", recErr);
-      // 2. Remove file from storage
-      await supabase.storage.from("plans").remove([deleteTarget.original_file_path]);
-      if (deleteTarget.signed_file_path) {
-        await supabase.storage.from("plans").remove([deleteTarget.signed_file_path]);
-      }
-      // 3. Delete the document record
-      const { error: docErr } = await (supabase.from("signature_documents" as any) as any)
-        .delete()
-        .eq("id", deleteTarget.id)
-        .eq("sender_id", user.id);
-      if (docErr) throw docErr;
+      // Soft-delete: preservamos el registro y los archivos para trazabilidad legal.
+      const { error: updErr } = await (supabase.from("signature_documents" as any) as any)
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: user.id,
+          deletion_reason: reason,
+        })
+        .eq("id", deleteTarget.id);
+      if (updErr) throw updErr;
       await supabase.from("audit_logs").insert({
         user_id: user.id, project_id: projectId,
-        action: "signature_document_deleted", details: { document_id: deleteTarget.id, title: deleteTarget.title },
+        action: "signature_document_deleted",
+        details: {
+          document_id: deleteTarget.id,
+          title: deleteTarget.title,
+          reason,
+          deleted_by_role: projectRole || "N/A",
+        },
       });
-      toast.success("Documento eliminado completamente");
+      toast.success("Documento movido a Eliminados");
       if (selectedDocument?.id === deleteTarget.id) setSelectedDocument(null);
-      // Remove from local state immediately
-      setDocuments(prev => prev.filter(d => d.id !== deleteTarget.id));
-      setDocRecipients(prev => prev.filter(r => r.document_id !== deleteTarget.id));
+      // Marcar como eliminado en estado local inmediatamente
+      setDocuments(prev => prev.map(d => d.id === deleteTarget.id
+        ? { ...d, deleted_at: new Date().toISOString(), deleted_by: user.id, deletion_reason: reason }
+        : d));
       setDeleteTarget(null);
-    } catch (err: any) { toast.error(err?.message || "Error al eliminar"); }
+      setDeleteReason("");
+    } catch (err: any) {
+      toast.error(err?.message || "Error al eliminar");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleReplace = async () => {
@@ -663,7 +694,7 @@ const SignatureDocuments = () => {
             </form>
 
             <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-              <div className="flex gap-1 w-full overflow-hidden">
+              <div className="grid grid-cols-2 gap-1 w-full overflow-hidden sm:grid-cols-4">
                 <Button variant={activeTab === "pending" ? "default" : "outline"} className="flex-1 min-w-0 text-[9px] sm:text-xs font-display uppercase tracking-wider px-1.5 truncate" onClick={() => setActiveTab("pending")}>
                   Pend. ({pendingDocuments.length})
                 </Button>
@@ -672,6 +703,9 @@ const SignatureDocuments = () => {
                 </Button>
                 <Button variant={activeTab === "archive" ? "default" : "outline"} className="flex-1 min-w-0 text-[9px] sm:text-xs font-display uppercase tracking-wider px-1.5 gap-1 truncate" onClick={() => setActiveTab("archive")}>
                   <FolderArchive className="h-3 w-3 shrink-0" /> <span className="truncate">Archivo ({archiveDocuments.length})</span>
+                </Button>
+                <Button variant={activeTab === "deleted" ? "default" : "outline"} className="flex-1 min-w-0 text-[9px] sm:text-xs font-display uppercase tracking-wider px-1.5 gap-1 truncate" onClick={() => setActiveTab("deleted")}>
+                  <Archive className="h-3 w-3 shrink-0" /> <span className="truncate">Elim. ({deletedDocuments.length})</span>
                 </Button>
               </div>
 
@@ -682,9 +716,11 @@ const SignatureDocuments = () => {
                   activeDocuments.map((doc) => {
                     const isSender = doc.sender_id === user?.id;
                     const canModify = isSender && doc.status === "pending" && !doc.is_info_only;
-                    const canDelete = isSender;
+                    // Eliminar: el remitente, o cualquier admin del proyecto (DO/DEM). No sobre eliminados.
+                    const canDelete = !doc.deleted_at && (isSender || isProjectAdmin);
                     const sigStatus = getDocSigningStatus(doc);
                     const isInfoDoc = doc.is_info_only;
+                    const isDeleted = !!doc.deleted_at;
 
                     // For info-only docs sent by current user, show view status
                     const viewRecipients = isInfoDoc && isSender ? getViewStatus(doc) : [];
@@ -699,15 +735,26 @@ const SignatureDocuments = () => {
                         <div className="flex items-start justify-between gap-2 min-w-0">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
-                              {isInfoDoc && <FolderArchive className="h-3 w-3 text-muted-foreground shrink-0" />}
-                              <p className="truncate text-sm font-medium">{doc.title}</p>
+                              {isDeleted ? <Archive className="h-3 w-3 text-destructive shrink-0" /> : isInfoDoc && <FolderArchive className="h-3 w-3 text-muted-foreground shrink-0" />}
+                              <p className={`truncate text-sm font-medium ${isDeleted ? "line-through text-muted-foreground" : ""}`}>{doc.title}</p>
                             </div>
                             <p className="truncate text-xs text-muted-foreground mt-0.5">{doc.original_file_name}</p>
                             <p className="text-[10px] text-muted-foreground mt-0.5">
                               {new Date(doc.created_at).toLocaleDateString("es-ES")}
                             </p>
+                            {isDeleted && (
+                              <div className="mt-1.5 p-1.5 rounded border border-destructive/30 bg-destructive/5 space-y-0.5">
+                                <p className="text-[10px] font-display uppercase tracking-wider text-destructive">Eliminado</p>
+                                <p className="text-[10px] text-foreground">
+                                  <span className="text-muted-foreground">Motivo:</span> {doc.deletion_reason || "—"}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  Por {getMemberName(doc.deleted_by || "")} · {doc.deleted_at ? new Date(doc.deleted_at).toLocaleString("es-ES") : ""}
+                                </p>
+                              </div>
+                            )}
                             {/* View status for info-only docs */}
-                            {viewRecipients.length > 0 && (
+                            {!isDeleted && viewRecipients.length > 0 && (
                               <div className="mt-1 space-y-0.5">
                                 {viewRecipients.map(r => (
                                   <p key={r.id} className="text-[10px]">
@@ -725,7 +772,7 @@ const SignatureDocuments = () => {
                                 ))}
                               </div>
                             )}
-                            {!isInfoDoc && sigStatus && sigStatus.total > 1 && (
+                            {!isDeleted && !isInfoDoc && sigStatus && sigStatus.total > 1 && (
                               <p className="text-[10px] mt-1 font-display">
                                 <span className={sigStatus.signed === sigStatus.total ? "text-success" : "text-warning"}>
                                   {sigStatus.signed}/{sigStatus.total} firmados
@@ -734,7 +781,7 @@ const SignatureDocuments = () => {
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            <ShareButton
+                            {!isDeleted && <ShareButton
                               data={{
                                 module: "signature",
                                 projectId: projectId!,
@@ -745,7 +792,7 @@ const SignatureDocuments = () => {
                                   estado: isInfoDoc ? "Solo Lectura" : doc.status === "signed" ? "Firmado" : "Firma Requerida",
                                 },
                               }}
-                            />
+                            />}
                             {canModify && (
                               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setReplaceTarget(doc); }}>
                                 <RefreshCw className="h-3.5 w-3.5" />
@@ -756,7 +803,9 @@ const SignatureDocuments = () => {
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             )}
-                            {isInfoDoc ? (
+                            {isDeleted ? (
+                              <Archive className="h-4 w-4 text-destructive" />
+                            ) : isInfoDoc ? (
                               <FolderArchive className="h-4 w-4 text-muted-foreground" />
                             ) : doc.status === "signed" ? (
                               <CheckCircle2 className="h-4 w-4 text-success" />
@@ -925,23 +974,36 @@ const SignatureDocuments = () => {
         </div>
       </div>
 
-      {/* Delete confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar documento?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se eliminará permanentemente "{deleteTarget?.title}". Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Delete confirmation — requires reason for legal traceability */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteReason(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Eliminar documento</DialogTitle>
+            <DialogDescription>
+              «{deleteTarget?.title}» se moverá a la sub-carpeta <strong>Eliminados</strong>. El archivo, el motivo, tu identidad y la fecha quedarán registrados de forma permanente para garantizar la trazabilidad legal. <strong>No se borra físicamente.</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+              Motivo de la eliminación *
+            </Label>
+            <Textarea
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              placeholder="Ej: Documento subido por error por el constructor; sustituido por el correcto."
+              rows={4}
+              autoFocus
+            />
+            <p className="text-[10px] text-muted-foreground">Mínimo 5 caracteres. Quedará visible en el registro de Eliminados.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteReason(""); }} disabled={deleting}>Cancelar</Button>
+            <Button onClick={handleDelete} disabled={deleting || deleteReason.trim().length < 5} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deleting ? <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> Eliminando...</> : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Replace dialog */}
       <AlertDialog open={!!replaceTarget} onOpenChange={(open) => { if (!open) { setReplaceTarget(null); setReplaceFile(null); } }}>
