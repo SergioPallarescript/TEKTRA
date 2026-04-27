@@ -44,7 +44,7 @@ function toVapidJwk(vapidPublicKey: string, vapidPrivateKey: string): JsonWebKey
 
 async function sendWebPush(
   subscription: { endpoint: string; p256dh: string; auth: string },
-  payload: Record<string, unknown>,
+  payload: Record<string, string | null>,
   vapidPublicKey: string,
   vapidPrivateKey: string,
   vapidSubject: string
@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     console.error("send-push error:", e);
-    return new Response(JSON.stringify({ error: e.message }), {
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
