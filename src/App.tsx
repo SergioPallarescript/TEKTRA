@@ -11,6 +11,7 @@ import PushPermissionModal from "@/components/PushPermissionModal";
 import TektraSplash from "@/components/TektraSplash";
 import TektraLoader from "@/components/TektraLoader";
 import { saveIntendedRoute } from "@/lib/authRedirect";
+import { useNativePush } from "@/hooks/useNativePush";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import ProjectDetail from "./pages/ProjectDetail";
@@ -96,9 +97,16 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return (
     <>
       <PushPermissionModal />
+      <NativePushBridge />
       {children}
     </>
   );
+};
+
+/** Activates native FCM/APNs registration once the user is authenticated. */
+const NativePushBridge = () => {
+  useNativePush();
+  return null;
 };
 
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {

@@ -23,6 +23,133 @@ function bytesToBase64Url(bytes: Uint8Array): string {
     .replace(/=+$/, "");
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ *  FCM HTTP v1 helper — signs an OAuth2 JWT with the service account and
+ *  exchanges it for an access_token, then POSTs the message to the device.
+ *  Caches the access_token in-memory until ~60s before expiry.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+let cachedFcmToken: { token: string; expiresAt: number } | null = null;
+
+function pemToArrayBuffer(pem: string): ArrayBuffer {
+  const b64 = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s+/g, "");
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+
+async function getFcmAccessToken(serviceAccountJson: string): Promise<{ token: string; projectId: string }> {
+  const sa = JSON.parse(serviceAccountJson);
+  const projectId: string = sa.project_id;
+
+  if (cachedFcmToken && cachedFcmToken.expiresAt > Date.now() + 60_000) {
+    return { token: cachedFcmToken.token, projectId };
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: "RS256", typ: "JWT" };
+  const claim = {
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+  };
+
+  const enc = (obj: unknown) =>
+    btoa(JSON.stringify(obj))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+  const unsigned = `${enc(header)}.${enc(claim)}`;
+
+  const key = await crypto.subtle.importKey(
+    "pkcs8",
+    pemToArrayBuffer(sa.private_key),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = new Uint8Array(
+    await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned))
+  );
+  const jwt = `${unsigned}.${bytesToBase64Url(signature)}`;
+
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  if (!tokenRes.ok) {
+    const text = await tokenRes.text();
+    throw new Error(`FCM OAuth failed: ${tokenRes.status} ${text}`);
+  }
+  const tokenData = await tokenRes.json();
+  cachedFcmToken = {
+    token: tokenData.access_token,
+    expiresAt: Date.now() + (tokenData.expires_in ?? 3600) * 1000,
+  };
+  return { token: cachedFcmToken.token, projectId };
+}
+
+async function sendFcmNative(
+  serviceAccountJson: string,
+  deviceToken: string,
+  payload: { title: string; body: string; url?: string; projectId?: string | null; id?: string | null }
+): Promise<{ ok: boolean; status: number; invalidToken: boolean }> {
+  const { token, projectId } = await getFcmAccessToken(serviceAccountJson);
+
+  const body = {
+    message: {
+      token: deviceToken,
+      notification: { title: payload.title, body: payload.body },
+      data: {
+        url: payload.url ?? "/",
+        projectId: payload.projectId ?? "",
+        id: payload.id ?? "",
+      },
+      android: {
+        priority: "HIGH",
+        notification: {
+          sound: "default",
+          channel_id: "tektra_default",
+          notification_priority: "PRIORITY_MAX",
+          default_vibrate_timings: true,
+        },
+      },
+      apns: {
+        headers: { "apns-priority": "10" },
+        payload: {
+          aps: { sound: "default", "content-available": 1, "mutable-content": 1 },
+        },
+      },
+    },
+  };
+
+  const res = await fetch(
+    `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }
+  );
+  const text = await res.text();
+  const invalidToken =
+    res.status === 404 ||
+    res.status === 400 ||
+    /UNREGISTERED|INVALID_ARGUMENT|Requested entity was not found/i.test(text);
+  return { ok: res.ok, status: res.status, invalidToken };
+}
+
 function toVapidJwk(vapidPublicKey: string, vapidPrivateKey: string): JsonWebKey {
   const trimmedPrivateKey = vapidPrivateKey.trim();
   if (trimmedPrivateKey.startsWith("{")) return JSON.parse(trimmedPrivateKey);
@@ -122,17 +249,20 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // Get push subscriptions for all target users
-    const { data: subscriptions } = await supabase
+    // Get web push subscriptions and native device tokens for all targets
+    const [subsRes, tokensRes] = await Promise.all([
+      supabase
       .from("push_subscriptions")
       .select("*")
-      .in("user_id", user_ids);
-
-    if (!subscriptions || subscriptions.length === 0) {
-      return new Response(JSON.stringify({ sent: 0 }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+        .in("user_id", user_ids),
+      supabase
+        .from("native_push_tokens")
+        .select("token")
+        .in("user_id", user_ids)
+        .eq("is_active", true),
+    ]);
+    const subscriptions = subsRes.data ?? [];
+    const nativeTokens: { token: string }[] = tokensRes.data ?? [];
 
     const payload = {
       title,
@@ -144,7 +274,9 @@ Deno.serve(async (req) => {
       id: id || null,
     };
     let sent = 0;
+    let sentNative = 0;
     const staleEndpoints: string[] = [];
+    const staleTokens: string[] = [];
 
     for (const sub of subscriptions) {
       try {
@@ -167,6 +299,35 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Native delivery (FCM HTTP v1) — Android always, iOS once APNs is set up
+    // in the Firebase project. Skips silently if the secret is not configured.
+    const fcmServiceAccount = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON");
+    if (fcmServiceAccount && nativeTokens.length > 0) {
+      try {
+        // Validate the secret is a real JSON before iterating, otherwise we
+        // would log one error per device.
+        JSON.parse(fcmServiceAccount);
+        for (const t of nativeTokens) {
+          try {
+            const res = await sendFcmNative(fcmServiceAccount, t.token, {
+              title,
+              body: message,
+              url,
+              projectId: projectId || null,
+              id: id || null,
+            });
+            if (res.ok) sentNative++;
+            else if (res.invalidToken) staleTokens.push(t.token);
+            else console.warn(`FCM native delivery non-ok: ${res.status}`);
+          } catch (e) {
+            console.error("FCM native push failed:", e);
+          }
+        }
+      } catch (e) {
+        console.error("FCM_SERVICE_ACCOUNT_JSON is not valid JSON — native push skipped:", e);
+      }
+    }
+
     // Clean up stale subscriptions
     if (staleEndpoints.length > 0) {
       await supabase
@@ -174,10 +335,24 @@ Deno.serve(async (req) => {
         .delete()
         .in("endpoint", staleEndpoints);
     }
+    if (staleTokens.length > 0) {
+      await supabase
+        .from("native_push_tokens")
+        .update({ is_active: false })
+        .in("token", staleTokens);
+    }
 
-    return new Response(JSON.stringify({ sent, cleaned: staleEndpoints.length }), {
+    return new Response(
+      JSON.stringify({
+        sent,
+        sentNative,
+        cleaned: staleEndpoints.length,
+        cleanedNative: staleTokens.length,
+      }),
+      {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+      }
+    );
   } catch (e) {
     console.error("send-push error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
