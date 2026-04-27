@@ -1,7 +1,7 @@
 /* Service Worker for Web Push Notifications */
-/* v3 – persistent, role-aware, deep-linked notifications */
+/* v4 – native-like, role-aware, deep-linked notifications */
 
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -38,10 +38,13 @@ self.addEventListener("push", (event) => {
   const senderName = data.senderName || "";
   const rawBody = data.body || data.message || "Nueva notificación";
 
-  // Body format: "[ROL] Nombre: contenido"
+  // Body format: "[ROL] Nombre — contenido"
+  // Avoid duplication if the body already contains the sender name (e.g. "Pedro ha registrado…")
   let body = rawBody;
-  if (senderName && !rawBody.startsWith(senderName)) {
-    body = `${senderName}: ${rawBody}`;
+  const bodyStartsWithName =
+    senderName && rawBody.toLowerCase().startsWith(senderName.toLowerCase());
+  if (senderName && !bodyStartsWithName) {
+    body = `${senderName} — ${rawBody}`;
   }
   if (meta && !body.startsWith(meta.prefix)) {
     body = `${meta.prefix} ${body}`;
@@ -60,8 +63,14 @@ self.addEventListener("push", (event) => {
       tag,
       renotify: true,
       requireInteraction: true,
+      silent: false,
+      lang: "es",
       vibrate: meta?.vibrate || [120, 60, 120],
       timestamp: Date.now(),
+      actions: [
+        { action: "open", title: "Abrir" },
+        { action: "dismiss", title: "Descartar" },
+      ],
       data: {
         url: data.url || "/",
         projectId: data.projectId || null,
@@ -73,6 +82,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  if (event.action === "dismiss") return;
   const url = event.notification.data?.url || "/";
   // Build full URL for deep linking
   const fullUrl = url.startsWith("http") ? url : `${self.location.origin}${url}`;
