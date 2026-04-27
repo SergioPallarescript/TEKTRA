@@ -1557,6 +1557,9 @@ export type Database = {
           certificate_cn: string | null
           certificate_serial: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deletion_reason: string | null
           file_size: number | null
           id: string
           is_info_only: boolean
@@ -1578,6 +1581,9 @@ export type Database = {
           certificate_cn?: string | null
           certificate_serial?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deletion_reason?: string | null
           file_size?: number | null
           id?: string
           is_info_only?: boolean
@@ -1599,6 +1605,9 @@ export type Database = {
           certificate_cn?: string | null
           certificate_serial?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deletion_reason?: string | null
           file_size?: number | null
           id?: string
           is_info_only?: boolean
