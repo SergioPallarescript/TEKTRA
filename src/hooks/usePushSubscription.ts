@@ -29,11 +29,29 @@ export function usePushSubscription() {
 
     if (supported) {
       setPermission(Notification.permission);
-      // Check existing subscription
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.pushManager.getSubscription().then((sub) => {
-          setIsSubscribed(!!sub);
-        });
+      // Check existing subscription. If it was created with an older VAPID key
+      // (e.g. before a key rotation) the push service will reject it, so we
+      // unsubscribe automatically and let the user re-grant when ready.
+      navigator.serviceWorker.ready.then(async (reg) => {
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          setIsSubscribed(false);
+          return;
+        }
+        const currentKey = sub.options?.applicationServerKey
+          ? new Uint8Array(sub.options.applicationServerKey as ArrayBuffer)
+          : null;
+        const expectedKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+        const sameKey =
+          !!currentKey &&
+          currentKey.length === expectedKey.length &&
+          currentKey.every((b, i) => b === expectedKey[i]);
+        if (!sameKey) {
+          try { await sub.unsubscribe(); } catch {}
+          setIsSubscribed(false);
+          return;
+        }
+        setIsSubscribed(true);
       });
     }
   }, []);
