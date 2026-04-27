@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { User, Shield } from "lucide-react";
+import NotificationStatusPanel from "@/components/NotificationStatusPanel";
 
 const roleLabels: Record<string, string> = {
   DO: "Director de Obra (Arquitecto)",
@@ -95,6 +96,10 @@ const Settings = () => {
           <p className="text-xs text-muted-foreground mt-3">
             El rol profesional se asigna durante el registro y no puede modificarse.
           </p>
+        </div>
+
+        <div className="mt-6">
+          <NotificationStatusPanel />
         </div>
       </div>
     </AppLayout>
