@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import LegalGateModal from "@/components/LegalGateModal";
+import PushPermissionModal from "@/components/PushPermissionModal";
 import TektraSplash from "@/components/TektraSplash";
 import TektraLoader from "@/components/TektraLoader";
 import Auth from "./pages/Auth";
@@ -84,7 +85,12 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <PushPermissionModal />
+      {children}
+    </>
+  );
 };
 
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
