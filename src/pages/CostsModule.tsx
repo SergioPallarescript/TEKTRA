@@ -291,15 +291,33 @@ const CostsModule = () => {
 
     const docLabel = DOC_TYPE_LABELS[docType] || docType;
     toast.success(`${docLabel} enviado${autoValidate ? " y validado automáticamente" : ""}`);
-    await notifyProjectMembers({
-      projectId: projectId!,
-      actorId: user.id,
-      title: autoValidate ? `${docLabel} validada por DF: ${title}` : `Nueva ${docLabel}: ${title}`,
-      message: autoValidate
-        ? `"${title}" ha sido creada y validada automáticamente por la Dirección Facultativa. Pendiente de autorización de pago por el Promotor.`
-        : `Se ha registrado ${docLabel === "Certificación" ? "una nueva Certificación" : docLabel === "Partida" ? "una nueva Partida" : "un nuevo Presupuesto"} pendiente de validación: "${title}"`,
-      type: "cost",
-    });
+    if (autoValidate) {
+      // Auto-validated by DO/DEM: notify PRO to authorize payment
+      await notifyProjectMembersByRole({
+        projectId: projectId!,
+        actorId: user.id,
+        roles: ["PRO"],
+        title: `💰 Validación Económica — Autoriza Pago: ${docLabel}`,
+        message: `"${title}" ha sido validada por la Dirección Facultativa. Requiere tu autorización de pago.`,
+        type: "cost",
+      });
+    } else {
+      // Pending technical validation: notify DO + DEM
+      const techTitle = docType === "certificacion"
+        ? `✍️ Certificación pendiente de firma: ${title}`
+        : `📋 ${docLabel} pendiente de validación: ${title}`;
+      const techMessage = docType === "certificacion"
+        ? `Se requiere tu firma con certificado digital para validar la Certificación "${title}". (DO + DEM)`
+        : `Se requiere tu validación para ${docLabel === "Partida" ? "la Partida" : "el Presupuesto"} "${title}".`;
+      await notifyProjectMembersByRole({
+        projectId: projectId!,
+        actorId: user.id,
+        roles: ["DO", "DEM"],
+        title: techTitle,
+        message: techMessage,
+        type: "cost",
+      });
+    }
 
     // Reset form
     setTitle(""); setDescription(""); setAmount(""); setFile(null); setDocType("certificacion");
