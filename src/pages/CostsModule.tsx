@@ -509,6 +509,18 @@ const CostsModule = () => {
 
       signatureRef.current.clear();
       toast.success("Documento firmado");
+      // If technical validation is now complete, notify PRO
+      if (updates.status === "pending_payment") {
+        const dtLabel = DOC_TYPE_LABELS[(selectedClaim as any).doc_type || "certificacion"];
+        await notifyProjectMembersByRole({
+          projectId: projectId!,
+          actorId: user.id,
+          roles: ["PRO"],
+          title: `💰 Autoriza Pago: ${dtLabel}`,
+          message: `"${selectedClaim.title}" ha sido validada técnicamente. Requiere tu autorización de pago.`,
+          type: "cost",
+        });
+      }
       await fetchClaims();
       const { data: refreshed } = await supabase.from("cost_claims").select("*").eq("id", selectedClaim.id).single();
       if (refreshed) setSelectedClaim(refreshed);
@@ -559,6 +571,17 @@ const CostsModule = () => {
     });
 
     toast.success("Documento firmado con certificado digital");
+    if (updates.status === "pending_payment") {
+      const dtLabel = DOC_TYPE_LABELS[dt];
+      await notifyProjectMembersByRole({
+        projectId: projectId!,
+        actorId: user.id,
+        roles: ["PRO"],
+        title: `💰 Autoriza Pago: ${dtLabel}`,
+        message: `"${selectedClaim.title}" ha sido validada técnicamente con certificado digital. Requiere tu autorización de pago.`,
+        type: "cost",
+      });
+    }
     await fetchClaims();
     const { data: refreshed } = await supabase.from("cost_claims").select("*").eq("id", selectedClaim.id).single();
     if (refreshed) setSelectedClaim(refreshed);
