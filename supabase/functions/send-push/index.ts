@@ -140,7 +140,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { user_ids, title, message, url } = await req.json();
+    const { user_ids, title, message, url, projectId, senderName, senderRole, id } =
+      await req.json();
 
     if (!user_ids || !Array.isArray(user_ids) || user_ids.length === 0) {
       return new Response(JSON.stringify({ error: "user_ids required" }), {
@@ -166,7 +167,15 @@ Deno.serve(async (req) => {
       });
     }
 
-    const payload = JSON.stringify({ title, body: message, url });
+    const payload = JSON.stringify({
+      title,
+      body: message,
+      url,
+      projectId: projectId || null,
+      senderName: senderName || null,
+      senderRole: senderRole || null,
+      id: id || null,
+    });
     let sent = 0;
     const staleEndpoints: string[] = [];
 
