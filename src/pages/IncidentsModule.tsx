@@ -27,7 +27,8 @@ import {
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AlertTriangle } from "lucide-react";
-import { useVoiceDictation } from "@/hooks/useVoiceDictation";
+import { useNativeVoiceDictation as useVoiceDictation } from "@/hooks/useNativeVoiceDictation";
+import { pickImage } from "@/lib/nativeMedia";
 
 const severityLabels: Record<string, { label: string; color: string }> = {
   low: { label: "Baja", color: "text-success bg-success/10" },
@@ -398,13 +399,13 @@ const IncidentsModule = () => {
                         <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple className="hidden" onChange={e => { if (e.target.files) setPhotos(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ""; }} />
                         {isMobile ? (
                           <>
-                            <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => cameraInputRef.current?.click()}><Camera className="h-3.5 w-3.5" /> Foto</Button>
-                            <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => galleryInputRef.current?.click()}><Image className="h-3.5 w-3.5" /> Galería</Button>
+                            <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={async () => { const f = await pickImage("camera", cameraInputRef.current); if (f && f.length) setPhotos(prev => [...prev, ...f]); }}><Camera className="h-3.5 w-3.5" /> Foto</Button>
+                             <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={async () => { const f = await pickImage("gallery", galleryInputRef.current); if (f && f.length) setPhotos(prev => [...prev, ...f]); }}><Image className="h-3.5 w-3.5" /> Galería</Button>
                             <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => fileInputRef.current?.click()}><Paperclip className="h-3.5 w-3.5" /> Archivo</Button>
                           </>
                         ) : (
                           <>
-                            <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => galleryInputRef.current?.click()}><Camera className="h-3.5 w-3.5" /> Foto</Button>
+                            <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={async () => { const f = await pickImage("gallery", galleryInputRef.current); if (f && f.length) setPhotos(prev => [...prev, ...f]); }}><Camera className="h-3.5 w-3.5" /> Foto</Button>
                             <Button type="button" variant="outline" size="sm" className="gap-1 text-xs flex-1" onClick={() => fileInputRef.current?.click()}><Paperclip className="h-3.5 w-3.5" /> Archivo</Button>
                           </>
                         )}
