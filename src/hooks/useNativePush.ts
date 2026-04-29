@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import { App as CapApp } from "@capacitor/app";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { TEKTRA_CHANNEL_ID } from "@/hooks/useNativeNotificationChannel";
 
 /**
  * Registers the device with the OS push service (FCM on Android, APNs on iOS)
@@ -74,9 +76,31 @@ export function useNativePush() {
       // open, but we still want the in-app bell to refresh. The realtime
       // subscription on the notifications table already handles UI updates,
       // so we just acknowledge here.
-      const r3 = await PushNotifications.addListener("pushNotificationReceived", (notif) => {
-        console.log("[NativePush] Foreground push:", notif.title);
-      });
+      const r3 = await PushNotifications.addListener(
+        "pushNotificationReceived",
+        async (notif) => {
+          console.log("[NativePush] Foreground push:", notif.title);
+          // Re-emit as a local notification on the high-importance channel so
+          // it appears as a heads-up bubble even when the app is in foreground.
+          if (platform === "android") {
+            try {
+              await LocalNotifications.schedule({
+                notifications: [
+                  {
+                    id: Math.floor(Math.random() * 2_147_483_000),
+                    title: notif.title || "TEKTRA",
+                    body: notif.body || "",
+                    channelId: TEKTRA_CHANNEL_ID,
+                    extra: notif.data || {},
+                  },
+                ],
+              });
+            } catch (e) {
+              console.error("[NativePush] Failed to re-emit as local:", e);
+            }
+          }
+        }
+      );
       removeReceived = () => r3.remove();
 
       // User tapped the notification — deep-link into the app.
