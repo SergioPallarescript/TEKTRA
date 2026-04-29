@@ -35,6 +35,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useNativeVoiceDictation as useVoiceDictation } from "@/hooks/useNativeVoiceDictation";
 import { pickImage } from "@/lib/nativeMedia";
+import { downloadFile } from "@/lib/nativeMedia";
 
 const ORDER_FIELDS = [
   { key: "estado", label: "Estado de la Obra", placeholder: "Describa el estado actual de la obra..." },
