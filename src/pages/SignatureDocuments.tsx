@@ -607,15 +607,16 @@ const SignatureDocuments = () => {
 
   const handleDownload = () => {
     if (!pdfBlobUrl || !selectedDocument) return;
-    const a = document.createElement("a");
-    a.href = pdfBlobUrl;
-    a.download = selectedDocument.signed_file_path ? `firmado_${selectedDocument.original_file_name}` : selectedDocument.original_file_name;
-    a.click();
+    const fileName = selectedDocument.signed_file_path
+      ? `firmado_${selectedDocument.original_file_name}`
+      : selectedDocument.original_file_name;
+    downloadFile(pdfBlobUrl, fileName).catch(() => toast.error("No se pudo descargar"));
   };
 
   const handleOpenExternal = () => {
     if (!pdfBlobUrl) return;
-    window.open(pdfBlobUrl, "_blank");
+    const fileName = selectedDocument?.original_file_name || "documento.pdf";
+    openFile(pdfBlobUrl, fileName).catch(() => toast.error("No se pudo abrir"));
   };
 
   const getDocSigningStatus = (doc: SignatureDocument) => {
