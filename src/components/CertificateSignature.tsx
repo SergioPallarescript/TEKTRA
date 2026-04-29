@@ -25,15 +25,84 @@ export interface CertSignMetadata {
   certificateSerial: string;
 }
 
-// Key for localStorage password store
-const CERT_PASSWORDS_KEY = "tektra_cert_passwords";
+// Persistent store for certificate passwords.
+// We store under localStorage so the password survives across sessions/app restarts,
+// the user only needs to type it the first time the .p12 is used on this device.
+// Values are obfuscated (XOR + base64) using a per-install key derived from the
+// browser; this is NOT cryptographically strong but prevents trivial inspection.
+const CERT_PASSWORDS_KEY = "tektra_cert_passwords_v2";
+const LEGACY_KEYS = ["tektra_cert_passwords"]; // older plaintext stores
 
-// Migration: clear any passwords left in localStorage from previous versions
-try { localStorage.removeItem(CERT_PASSWORDS_KEY); } catch {}
+// Per-install obfuscation key (stable per browser profile).
+function getObfKey(): string {
+  const k = "tektra_cert_obf_key";
+  let v = localStorage.getItem(k);
+  if (!v) {
+    const arr = new Uint8Array(24);
+    crypto.getRandomValues(arr);
+    v = btoa(String.fromCharCode(...arr));
+    localStorage.setItem(k, v);
+  }
+  return v;
+}
+
+function xorEncode(plain: string): string {
+  const key = getObfKey();
+  const out: number[] = [];
+  for (let i = 0; i < plain.length; i++) {
+    out.push(plain.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+  }
+  return btoa(String.fromCharCode(...out));
+}
+
+function xorDecode(encoded: string): string {
+  try {
+    const bin = atob(encoded);
+    const key = getObfKey();
+    let out = "";
+    for (let i = 0; i < bin.length; i++) {
+      out += String.fromCharCode(bin.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return out;
+  } catch {
+    return "";
+  }
+}
+
+// One-time migration: drop any old plaintext stores, and migrate values from
+// sessionStorage (previous version stored them there, so they'd be lost on reload).
+(function migrateOldStores() {
+  try {
+    for (const lk of LEGACY_KEYS) {
+      // If legacy plaintext data exists in localStorage, migrate then remove.
+      const legacyLocal = localStorage.getItem(lk);
+      if (legacyLocal && lk !== CERT_PASSWORDS_KEY) {
+        try {
+          const obj = JSON.parse(legacyLocal);
+          const enc: Record<string, string> = {};
+          for (const k of Object.keys(obj)) enc[k] = xorEncode(obj[k]);
+          localStorage.setItem(CERT_PASSWORDS_KEY, JSON.stringify(enc));
+        } catch {}
+        localStorage.removeItem(lk);
+      }
+      // Same for sessionStorage (previous implementation lived here).
+      const legacySession = sessionStorage.getItem(lk);
+      if (legacySession) {
+        try {
+          const obj = JSON.parse(legacySession);
+          const existing = JSON.parse(localStorage.getItem(CERT_PASSWORDS_KEY) || "{}");
+          for (const k of Object.keys(obj)) existing[k] = xorEncode(obj[k]);
+          localStorage.setItem(CERT_PASSWORDS_KEY, JSON.stringify(existing));
+        } catch {}
+        sessionStorage.removeItem(lk);
+      }
+    }
+  } catch {}
+})();
 
 function getSavedPasswords(): Record<string, string> {
   try {
-    return JSON.parse(sessionStorage.getItem(CERT_PASSWORDS_KEY) || "{}");
+    return JSON.parse(localStorage.getItem(CERT_PASSWORDS_KEY) || "{}");
   } catch {
     return {};
   }
@@ -41,13 +110,22 @@ function getSavedPasswords(): Record<string, string> {
 
 function savePassword(fileName: string, fileSize: number, password: string) {
   const saved = getSavedPasswords();
-  saved[`${fileName}__${fileSize}`] = password;
-  sessionStorage.setItem(CERT_PASSWORDS_KEY, JSON.stringify(saved));
+  saved[`${fileName}__${fileSize}`] = xorEncode(password);
+  localStorage.setItem(CERT_PASSWORDS_KEY, JSON.stringify(saved));
 }
 
 function findSavedPassword(fileName: string, fileSize: number): string | null {
   const saved = getSavedPasswords();
-  return saved[`${fileName}__${fileSize}`] || null;
+  const enc = saved[`${fileName}__${fileSize}`];
+  if (!enc) return null;
+  const dec = xorDecode(enc);
+  return dec || null;
+}
+
+function forgetSavedPassword(fileName: string, fileSize: number) {
+  const saved = getSavedPasswords();
+  delete saved[`${fileName}__${fileSize}`];
+  localStorage.setItem(CERT_PASSWORDS_KEY, JSON.stringify(saved));
 }
 
 export default function CertificateSignature({ disabled, userRole, onSign, originalPdfBytes, noPdfRequired }: CertificateSignatureProps) {
