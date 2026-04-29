@@ -619,10 +619,36 @@ const CostsModule = () => {
 
   const handleDelete = async () => {
     if (!deleteClaim || !user) return;
+    // Recuperar el claim para conocer su título y poder cancelar las
+    // notificaciones pendientes asociadas en el resto de buzones.
+    const { data: claimRow } = await supabase
+      .from("cost_claims")
+      .select("id, title")
+      .eq("id", deleteClaim)
+      .maybeSingle();
+
     await supabase.from("cost_claims").update({
       status: "rejected", rejected_by: user.id,
       rejected_at: new Date().toISOString(), rejection_reason: "Eliminado por el emisor",
     }).eq("id", deleteClaim);
+
+    // Cancelar (marcar como leídas) notificaciones tipo "cost" del proyecto
+    // cuyo mensaje haga referencia a este documento, para que desaparezcan
+    // del contador y del panel de notificaciones de todos los implicados.
+    if (claimRow?.title && projectId) {
+      try {
+        await supabase
+          .from("notifications")
+          .update({ is_read: true, acknowledged_at: new Date().toISOString() })
+          .eq("project_id", projectId)
+          .eq("type", "cost")
+          .eq("is_read", false)
+          .ilike("message", `%${claimRow.title}%`);
+      } catch (notifErr) {
+        console.warn("No se pudieron cancelar notificaciones de coste:", notifErr);
+      }
+    }
+
     toast.success("Registro eliminado");
     if (selectedClaim?.id === deleteClaim) setSelectedClaim(null);
     setDeleteClaim(null); fetchClaims();
