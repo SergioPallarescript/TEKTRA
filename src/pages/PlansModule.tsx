@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { downloadFile } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
@@ -341,9 +342,7 @@ const PlansModule = () => {
   const handleDownload = async (fileUrl: string, fileName: string) => {
     const { data, error } = await supabase.storage.from("plans").download(fileUrl);
     if (error || !data) { toast.error("Error al descargar"); return; }
-    const url = URL.createObjectURL(data);
-    const a = document.createElement("a"); a.href = url; a.download = fileName; a.click();
-    URL.revokeObjectURL(url);
+    await downloadFile(data, fileName);
     if (user && projectId) {
       await supabase.from("audit_logs").insert({
         user_id: user.id, project_id: projectId, action: "plan_opened", details: { file_name: fileName },

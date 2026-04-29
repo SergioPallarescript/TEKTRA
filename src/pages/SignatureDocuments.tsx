@@ -20,6 +20,7 @@ import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import { toast } from "sonner";
 import { notifyUser, pushSignatureRequest } from "@/lib/notifications";
 import ShareButton from "@/components/ShareButton";
+import { downloadFile, openFile } from "@/lib/nativeMedia";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
@@ -588,12 +589,10 @@ const SignatureDocuments = () => {
       geo_location: metadata.geo,
     });
 
-    const downloadUrl = URL.createObjectURL(signedBlob);
-    const a = document.createElement("a");
-    a.href = downloadUrl;
-    a.download = `${selectedDocument.original_file_name.replace(/\.pdf$/i, "")}_FIRMADO.pdf`;
-    a.click();
-    URL.revokeObjectURL(downloadUrl);
+    await downloadFile(
+      signedBlob,
+      `${selectedDocument.original_file_name.replace(/\.pdf$/i, "")}_FIRMADO.pdf`,
+    );
 
     toast.success("Documento firmado con certificado digital");
     await fetchDocuments();
@@ -607,15 +606,16 @@ const SignatureDocuments = () => {
 
   const handleDownload = () => {
     if (!pdfBlobUrl || !selectedDocument) return;
-    const a = document.createElement("a");
-    a.href = pdfBlobUrl;
-    a.download = selectedDocument.signed_file_path ? `firmado_${selectedDocument.original_file_name}` : selectedDocument.original_file_name;
-    a.click();
+    const fileName = selectedDocument.signed_file_path
+      ? `firmado_${selectedDocument.original_file_name}`
+      : selectedDocument.original_file_name;
+    downloadFile(pdfBlobUrl, fileName).catch(() => toast.error("No se pudo descargar"));
   };
 
   const handleOpenExternal = () => {
     if (!pdfBlobUrl) return;
-    window.open(pdfBlobUrl, "_blank");
+    const fileName = selectedDocument?.original_file_name || "documento.pdf";
+    openFile(pdfBlobUrl, fileName).catch(() => toast.error("No se pudo abrir"));
   };
 
   const getDocSigningStatus = (doc: SignatureDocument) => {

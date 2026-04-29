@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { downloadFile } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -153,12 +154,7 @@ const MultiFileSlotManager = ({
   const handleDownload = async (file: CfoFile) => {
     const { data } = await supabase.storage.from("plans").download(file.file_url);
     if (!data) return;
-    const url = URL.createObjectURL(data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.file_name;
-    a.click();
-    URL.revokeObjectURL(url);
+    await downloadFile(data, file.file_name);
   };
 
   const handleDelete = async (file: CfoFile) => {

@@ -35,6 +35,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useNativeVoiceDictation as useVoiceDictation } from "@/hooks/useNativeVoiceDictation";
 import { pickImage } from "@/lib/nativeMedia";
+import { downloadFile } from "@/lib/nativeMedia";
 
 const ORDER_FIELDS = [
   { key: "estado", label: "Estado de la Obra", placeholder: "Describa el estado actual de la obra..." },
@@ -514,10 +515,7 @@ const OrdersModule = () => {
                     const { data, error } = await supabase.functions.invoke("export-orders", { body: { projectId } });
                     if (error) throw error;
                     const blob = new Blob([data.html], { type: "text/html" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url; a.download = data.fileName || "Libro_Ordenes.html"; a.click();
-                    URL.revokeObjectURL(url);
+                    await downloadFile(blob, data.fileName || "Libro_Ordenes.html");
                     toast.success("Libro exportado");
                   } catch { toast.error("Error al exportar"); }
                   finally { setExporting(false); }

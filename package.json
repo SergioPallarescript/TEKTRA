@@ -13,10 +13,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@capacitor-community/file-opener": "^8.0.0",
     "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
     "@capacitor/camera": "^8",
     "@capacitor/core": "^8.3.1",
+    "@capacitor/filesystem": "^8.1.2",
     "@capacitor/local-notifications": "^8.0.2",
     "@capacitor/push-notifications": "^8.0.3",
     "@fontsource/inter": "^5.2.8",

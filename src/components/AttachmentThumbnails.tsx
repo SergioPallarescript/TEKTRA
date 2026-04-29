@@ -2,6 +2,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { FileText, Image as ImageIcon, X } from "lucide-react";
+import { openFile } from "@/lib/nativeMedia";
 
 interface AttachmentThumbnailsProps {
   paths: string[];
@@ -36,8 +37,9 @@ const AttachmentThumbnails = ({ paths }: AttachmentThumbnailsProps) => {
       setPreviewIsImage(true);
       setPreviewUrl(url);
     } else {
-      // Open PDF/doc in new tab
-      window.open(url, "_blank");
+      // Abre con visor del sistema en nativo, pestaña nueva en web
+      const name = path.split("/").pop() || "documento";
+      openFile(url, name).catch(() => window.open(url, "_blank"));
     }
   };
 

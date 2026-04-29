@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { downloadFile } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
@@ -379,9 +380,7 @@ const CFOModule = () => {
   const handleDownloadItem = async (item: any) => {
     const { data } = await supabase.storage.from("plans").download(item.file_url);
     if (!data) return;
-    const url = URL.createObjectURL(data);
-    const a = document.createElement("a"); a.href = url; a.download = item.file_name; a.click();
-    URL.revokeObjectURL(url);
+    await downloadFile(data, item.file_name);
   };
 
   const handleFileUpload = async (itemId: string, file: File) => {
@@ -903,12 +902,7 @@ const CFOModule = () => {
 
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Libro_del_Edificio_${projectName.replace(/\s+/g, "_")}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadFile(blob, `Libro_del_Edificio_${projectName.replace(/\s+/g, "_")}.pdf`);
 
       if (user && projectId) {
         await supabase.from("audit_logs").insert({ user_id: user.id, project_id: projectId, action: "cfo_export_libro", details: { total_pages: total } });

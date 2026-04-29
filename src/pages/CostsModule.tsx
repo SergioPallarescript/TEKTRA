@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist";
 import { supabase } from "@/integrations/supabase/client";
+import { downloadFile, openFile } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
@@ -656,15 +657,14 @@ const CostsModule = () => {
 
   const handleDownload = () => {
     if (!pdfBlobUrl || !selectedClaim) return;
-    const a = document.createElement("a");
-    a.href = pdfBlobUrl;
-    a.download = selectedClaim.file_name || "documento.pdf";
-    a.click();
+    downloadFile(pdfBlobUrl, selectedClaim.file_name || "documento.pdf")
+      .catch(() => toast.error("No se pudo descargar"));
   };
 
   const handleOpenExternal = () => {
     if (!pdfBlobUrl) return;
-    window.open(pdfBlobUrl, "_blank");
+    openFile(pdfBlobUrl, selectedClaim?.file_name || "documento.pdf")
+      .catch(() => toast.error("No se pudo abrir"));
   };
 
   /* ───── Action buttons per claim ───── */

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { downloadFile } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
@@ -376,12 +377,7 @@ const SubcontractingModule = () => {
       const { data, error } = await supabase.functions.invoke("export-subcontracting", { body: { projectId } });
       if (error) throw error;
       const blob = new Blob([data.html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = data.fileName || "Libro_Subcontratacion.html";
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadFile(blob, data.fileName || "Libro_Subcontratacion.html");
       toast.success("Libro exportado correctamente");
     } catch (err: any) {
       toast.error("Error al exportar: " + (err?.message || ""));
@@ -470,16 +466,14 @@ const SubcontractingModule = () => {
                 </div>
               </div>
               <div className="flex flex-wrap gap-3">
-                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => {
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={async () => {
                   // Generate downloadable diligencia HTML
                   const html = generateDiligenciaHtml(book, project, members);
                   const blob = new Blob([html], { type: "text/html" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `Diligencia_Habilitacion_${project?.name?.replace(/\s+/g, "_")}.html`;
-                  a.click();
-                  URL.revokeObjectURL(url);
+                  await downloadFile(
+                    blob,
+                    `Diligencia_Habilitacion_${project?.name?.replace(/\s+/g, "_")}.html`,
+                  );
                 }}>
                   <Download className="h-3.5 w-3.5" />
                   Descargar Diligencia
