@@ -1,11 +1,12 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'app.lovable.4e0d9fc553bd42a89c89255fb9318209',
+  appId: 'com.tektra.app',
   appName: 'TEKTRA',
-  webDir: 'dist',
+  webDir: 'dist', // Asegúrate de que tu carpeta de construcción se llame 'dist'
   server: {
-    url: 'https://4e0d9fc5-53bd-42a8-9c89-255fb9318209.lovableproject.com?forceHideBadge=true',
+    // Hemos eliminado la línea de 'url'
+    androidScheme: 'https',
     cleartext: true,
   },
   plugins: {

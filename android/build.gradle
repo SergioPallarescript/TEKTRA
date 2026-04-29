@@ -1,0 +1,46 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Versión compatible con SDK 35/36
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath 'com.google.gms:google-services:4.4.4'
+        // Plugin de Kotlin alineado
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20"
+    }
+}
+
+apply from: "variables.gradle"
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    configurations.all {
+        resolutionStrategy {
+            eachDependency { DependencyResolveDetails details ->
+                if (details.requested.group == 'org.jetbrains.kotlin') {
+                    // Forzamos 2.2.20 para evitar el error de "Build Tools API Version Mismatch"
+                    details.useVersion "2.2.20"
+                }
+            }
+            // ACTUALIZACIÓN CRÍTICA PARA LA CÁMARA:
+            // Subimos a 1.13.0 para que reconozca 'OnUserLeaveHintProvider'
+            force "androidx.core:core:1.13.0"
+            force "androidx.core:core-ktx:1.13.0"
+
+            // Forzamos appcompat para asegurar la jerarquía de AppCompatActivity
+            force "androidx.appcompat:appcompat:1.7.0"
+        }
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

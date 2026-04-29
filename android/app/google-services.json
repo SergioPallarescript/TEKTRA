@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "535130085362",
+    "project_id": "tektra-app",
+    "storage_bucket": "tektra-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:535130085362:android:e0cb3b266823805dabbd6b",
+        "android_client_info": {
+          "package_name": "com.tektra.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyApm7pKXQQWgmqRT5iKhwRr0D1qtaKmtfY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
