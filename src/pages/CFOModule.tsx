@@ -902,12 +902,7 @@ const CFOModule = () => {
 
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Libro_del_Edificio_${projectName.replace(/\s+/g, "_")}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadFile(blob, `Libro_del_Edificio_${projectName.replace(/\s+/g, "_")}.pdf`);
 
       if (user && projectId) {
         await supabase.from("audit_logs").insert({ user_id: user.id, project_id: projectId, action: "cfo_export_libro", details: { total_pages: total } });

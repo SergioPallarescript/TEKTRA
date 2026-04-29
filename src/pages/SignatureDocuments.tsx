@@ -589,12 +589,10 @@ const SignatureDocuments = () => {
       geo_location: metadata.geo,
     });
 
-    const downloadUrl = URL.createObjectURL(signedBlob);
-    const a = document.createElement("a");
-    a.href = downloadUrl;
-    a.download = `${selectedDocument.original_file_name.replace(/\.pdf$/i, "")}_FIRMADO.pdf`;
-    a.click();
-    URL.revokeObjectURL(downloadUrl);
+    await downloadFile(
+      signedBlob,
+      `${selectedDocument.original_file_name.replace(/\.pdf$/i, "")}_FIRMADO.pdf`,
+    );
 
     toast.success("Documento firmado con certificado digital");
     await fetchDocuments();
