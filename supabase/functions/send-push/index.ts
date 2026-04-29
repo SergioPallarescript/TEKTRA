@@ -117,7 +117,7 @@ async function sendFcmNative(
         priority: "HIGH",
         notification: {
           sound: "default",
-          channel_id: "tektra_default",
+          channel_id: "incidencias-obra",
           notification_priority: "PRIORITY_MAX",
           default_vibrate_timings: true,
         },
