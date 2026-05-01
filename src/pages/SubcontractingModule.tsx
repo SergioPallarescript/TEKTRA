@@ -463,44 +463,8 @@ const SubcontractingModule = () => {
         const buf = new Uint8Array(await res.arrayBuffer());
 
         const ext = (page.file_name.split(".").pop() || "").toLowerCase();
-        if (ext === "pdf") {
-          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
-          const copied = await pdf.copyPages(src, src.getPageIndices());
-          copied.forEach((p) => pdf.addPage(p));
-        } else {
-          let img;
-          try {
-            img = ext === "png"
-              ? await pdf.embedPng(buf)
-              : await pdf.embedJpg(buf);
-          } catch {
-            // Fallback: re-codifica como JPG via canvas
-            const dataUrl = await readFileAsDataUrl(new Blob([buf]));
-            const im = await loadImage(dataUrl);
-            const canvas = document.createElement("canvas");
-            canvas.width = im.naturalWidth;
-            canvas.height = im.naturalHeight;
-            canvas.getContext("2d")!.drawImage(im, 0, 0);
-            const jpgBlob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), "image/jpeg", 0.9));
-            const jpgBuf = new Uint8Array(await jpgBlob.arrayBuffer());
-            img = await pdf.embedJpg(jpgBuf);
-          }
-          // Página A4 vertical, ajusta imagen manteniendo proporción
-          const A4 = { w: 595.28, h: 841.89 };
-          const margin = 24;
-          const maxW = A4.w - margin * 2;
-          const maxH = A4.h - margin * 2;
-          const scale = Math.min(maxW / img.width, maxH / img.height);
-          const w = img.width * scale;
-          const h = img.height * scale;
-          const pdfPage = pdf.addPage([A4.w, A4.h]);
-          pdfPage.drawImage(img, {
-            x: (A4.w - w) / 2,
-            y: (A4.h - h) / 2,
-            width: w,
-            height: h,
-          });
-        }
+        if (ext === "pdf") await appendPdfToA4(pdf, buf);
+        else await appendImageToA4(pdf, buf, page.file_name || "hoja.jpg");
       }
       const bytes = await pdf.save();
       const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
