@@ -273,45 +273,57 @@ const SubcontractingModule = () => {
    * Tras confirmar el nombre de la subcontrata, pedimos el archivo.
    * Funciona en web (input file) y en nativo (cámara/galería con fallback).
    */
-  const pickEntryFileAfterName = async () => {
+  const pickEntryFromCamera = async (mode: "camera" | "gallery") => {
     if (!pendingName.trim()) {
       toast.error("Indica un nombre para la subcontrata");
       return;
     }
-    if (isNative()) {
+    const name = pendingName.trim();
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+      // Permisos
       try {
-        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
-        const photo = await Camera.getPhoto({
-          quality: 85,
-          allowEditing: false,
-          resultType: CameraResultType.Uri,
-          source: CameraSource.Prompt,
-          promptLabelHeader: pendingName.trim(),
-          promptLabelPhoto: "Galería",
-          promptLabelPicture: "Cámara",
-          saveToGallery: false,
-        });
-        const uri = photo.webPath || photo.path;
-        if (!uri) return;
-        const res = await fetch(uri);
-        const blob = await res.blob();
-        const ext = photo.format || "jpg";
-        const file = new File([blob], `${pendingName}-${Date.now()}.${ext}`, {
-          type: blob.type || `image/${ext}`,
-        });
-        const name = pendingName.trim();
-        setNamingOpen(false);
-        setPendingName("");
-        setPendingFiles(null);
-        await handleUploadFiles([file], "entry_sheet", name);
-        return;
-      } catch (err: any) {
-        if (err?.message?.toLowerCase?.().includes("cancel")) return;
-        console.warn("[subcontracting] camera prompt entry", err);
-        // Fallback al input file si el plugin falla
-      }
+        const perms = await Camera.checkPermissions();
+        const needsCam = mode === "camera" && perms.camera !== "granted";
+        const needsPhotos = mode === "gallery" && perms.photos !== "granted";
+        if (needsCam || needsPhotos) {
+          await Camera.requestPermissions({
+            permissions: mode === "camera" ? ["camera"] : ["photos"],
+          });
+        }
+      } catch { /* algunos dispositivos no exponen checkPermissions */ }
+      const photo = await Camera.getPhoto({
+        quality: 85,
+        allowEditing: false,
+        resultType: CameraResultType.Uri,
+        source: mode === "camera" ? CameraSource.Camera : CameraSource.Photos,
+        saveToGallery: false,
+      });
+      const uri = photo.webPath || photo.path;
+      if (!uri) return;
+      const res = await fetch(uri);
+      const blob = await res.blob();
+      const ext = photo.format || "jpg";
+      const file = new File([blob], `${name}-${Date.now()}.${ext}`, {
+        type: blob.type || `image/${ext}`,
+      });
+      setNamingOpen(false);
+      setPendingName("");
+      setPendingFiles(null);
+      await handleUploadFiles([file], "entry_sheet", name);
+    } catch (err: any) {
+      if (err?.message?.toLowerCase?.().includes("cancel")) return;
+      console.warn("[subcontracting] entry capture error", err);
+      toast.error("No se pudo abrir la cámara/galería. Prueba con 'Archivo'.");
     }
-    // Web (o fallback nativo): disparar input file. El nombre persiste en pendingName.
+  };
+
+  const pickEntryFromFiles = () => {
+    if (!pendingName.trim()) {
+      toast.error("Indica un nombre para la subcontrata");
+      return;
+    }
+    // Dispara el input file. El nombre persiste en pendingName y se aplica en su onChange.
     entryFileRef.current?.click();
   };
 
