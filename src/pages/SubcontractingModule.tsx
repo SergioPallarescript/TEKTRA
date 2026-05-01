@@ -346,7 +346,7 @@ const SubcontractingModule = () => {
     if (error || !data) { toast.error("No se pudo abrir el archivo"); return; }
     const res = await fetch(data.signedUrl);
     const blob = await res.blob();
-    await openFile(blob, page.file_name || "hoja");
+    await downloadFile(blob, page.file_name || "hoja");
   };
 
   const handleDeletePage = async () => {
@@ -651,15 +651,29 @@ const SubcontractingModule = () => {
     }
   };
 
-  const openAct = async (act: any) => {
-    if (!act.file_path) return;
-    const { data, error } = await supabase.storage
-      .from("plans")
-      .createSignedUrl(act.file_path, 600);
-    if (error || !data) { toast.error("No se pudo abrir el acta"); return; }
-    const res = await fetch(data.signedUrl);
-    const blob = await res.blob();
-    await openFile(blob, act.file_name || "acta.pdf");
+  const toggleActPreview = async (act: any) => {
+    if (expandedActId === act.id) {
+      setExpandedActId(null);
+      return;
+    }
+    setExpandedActId(act.id);
+    if (actPreviewUrls[act.id]) return;
+    setLoadingActPreviewId(act.id);
+    try {
+      const { data, error } = await supabase.storage
+        .from("plans")
+        .download(act.file_path);
+      if (error || !data) {
+        toast.error("No se pudo cargar la previsualización");
+        return;
+      }
+      const url = URL.createObjectURL(data);
+      setActPreviewUrls((prev) => ({ ...prev, [act.id]: url }));
+    } catch {
+      toast.error("Error al cargar el acta");
+    } finally {
+      setLoadingActPreviewId(null);
+    }
   };
 
   const handleDownloadAct = async (act: any) => {
