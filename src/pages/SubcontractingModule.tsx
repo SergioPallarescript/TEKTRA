@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { downloadFile, openFile, isNative } from "@/lib/nativeMedia";
+import { downloadFile, isNative } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
@@ -78,6 +78,11 @@ const SubcontractingModule = () => {
 
   // Borrado de actas
   const [deleteActTarget, setDeleteActTarget] = useState<any | null>(null);
+
+  // Preview inline de actas
+  const [expandedActId, setExpandedActId] = useState<string | null>(null);
+  const [actPreviewUrls, setActPreviewUrls] = useState<Record<string, string>>({});
+  const [loadingActPreviewId, setLoadingActPreviewId] = useState<string | null>(null);
 
   // Diálogo para nombrar la subcontrata tras subir una ficha
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
@@ -203,11 +208,22 @@ const SubcontractingModule = () => {
   };
 
   /**
-   * En móvil nativo abre el selector del sistema (cámara / galería / archivos)
-   * usando @capacitor/camera con prompt nativo.
-   * En web abre directamente el explorador de archivos del SO.
+   * Para la primera hoja: abre directamente cámara/galería en nativo,
+   * o el explorador en web.
+   *
+   * Para las fichas: SIEMPRE pide primero el nombre de la subcontrata y,
+   * tras confirmarlo, lanza el selector. Así el flujo es idéntico en
+   * web y nativo y evitamos errores silenciosos del plugin de cámara.
    */
   const triggerUpload = async (kind: "first_sheet" | "entry_sheet") => {
+    if (kind === "entry_sheet") {
+      // Pedir nombre primero, el archivo se elige tras "Continuar"
+      setPendingFiles(null);
+      setPendingName("");
+      setNamingOpen(true);
+      return;
+    }
+
     const ref = kind === "first_sheet" ? firstFileRef : entryFileRef;
     if (isNative()) {
       try {
@@ -217,9 +233,7 @@ const SubcontractingModule = () => {
           allowEditing: false,
           resultType: CameraResultType.Uri,
           source: CameraSource.Prompt, // muestra Cámara / Galería / Archivos
-          promptLabelHeader: kind === "first_sheet"
-            ? "Primera hoja"
-            : "Ficha del libro",
+          promptLabelHeader: "Primera hoja",
           promptLabelPhoto: "Galería",
           promptLabelPicture: "Cámara",
           saveToGallery: false,
@@ -232,22 +246,64 @@ const SubcontractingModule = () => {
         const file = new File([blob], `hoja-${Date.now()}.${ext}`, {
           type: blob.type || `image/${ext}`,
         });
-        if (kind === "first_sheet") {
-          await handleUploadFiles([file], "first_sheet");
-        } else {
-          setPendingFiles([file]);
-          setPendingName("");
-          setNamingOpen(true);
-        }
+        await handleUploadFiles([file], "first_sheet");
       } catch (err: any) {
         if (!err?.message?.toLowerCase?.().includes("cancel")) {
           console.warn("[subcontracting] camera prompt", err);
+          // Fallback: si la cámara nativa falla, abrimos el explorador web
+          ref.current?.click();
         }
       }
       return;
     }
     // Web → explorador del SO directamente
     if (ref.current) ref.current.click();
+  };
+
+  /**
+   * Tras confirmar el nombre de la subcontrata, pedimos el archivo.
+   * Funciona en web (input file) y en nativo (cámara/galería con fallback).
+   */
+  const pickEntryFileAfterName = async () => {
+    if (!pendingName.trim()) {
+      toast.error("Indica un nombre para la subcontrata");
+      return;
+    }
+    if (isNative()) {
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+        const photo = await Camera.getPhoto({
+          quality: 85,
+          allowEditing: false,
+          resultType: CameraResultType.Uri,
+          source: CameraSource.Prompt,
+          promptLabelHeader: pendingName.trim(),
+          promptLabelPhoto: "Galería",
+          promptLabelPicture: "Cámara",
+          saveToGallery: false,
+        });
+        const uri = photo.webPath || photo.path;
+        if (!uri) return;
+        const res = await fetch(uri);
+        const blob = await res.blob();
+        const ext = photo.format || "jpg";
+        const file = new File([blob], `${pendingName}-${Date.now()}.${ext}`, {
+          type: blob.type || `image/${ext}`,
+        });
+        const name = pendingName.trim();
+        setNamingOpen(false);
+        setPendingName("");
+        setPendingFiles(null);
+        await handleUploadFiles([file], "entry_sheet", name);
+        return;
+      } catch (err: any) {
+        if (err?.message?.toLowerCase?.().includes("cancel")) return;
+        console.warn("[subcontracting] camera prompt entry", err);
+        // Fallback al input file si el plugin falla
+      }
+    }
+    // Web (o fallback nativo): disparar input file. El nombre persiste en pendingName.
+    entryFileRef.current?.click();
   };
 
   /* ─── Preview / borrado ─────────────────────────────────────── */
