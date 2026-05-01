@@ -188,13 +188,13 @@ const SubcontractingModule = () => {
 
   /* ─── Subida de páginas ─────────────────────────────────────── */
 
-  const uploadOneFile = async (file: File, kind: "first_sheet" | "entry_sheet") => {
+  const uploadOneFile = async (
+    file: File,
+    kind: "first_sheet" | "entry_sheet",
+    displayName?: string,
+  ) => {
     if (!projectId || !user) return;
-    let finalFile = file;
-    if (scanMode && file.type.startsWith("image/")) {
-      try { finalFile = await scanifyImage(file); }
-      catch (e) { console.warn("scanify falló, subo original", e); }
-    }
+    const finalFile = file;
     const ts = Date.now();
     const safeName = finalFile.name.replace(/[^\w.\-]+/g, "_");
     const path = `${projectId}/subcontracting/${ts}_${safeName}`;
@@ -206,11 +206,15 @@ const SubcontractingModule = () => {
     if (upErr) throw upErr;
 
     const nextIndex = (pages[pages.length - 1]?.page_index ?? -1) + 1;
+    const computedDisplay =
+      displayName?.trim() ||
+      (kind === "first_sheet" ? "Primera hoja (datos contratista)" : finalFile.name);
     const { error: insErr } = await supabase.from("subcontracting_pages" as any).insert({
       project_id: projectId,
       page_index: nextIndex,
       file_path: path,
       file_name: finalFile.name,
+      display_name: computedDisplay,
       kind,
       uploaded_by: user.id,
     } as any);
@@ -220,13 +224,14 @@ const SubcontractingModule = () => {
   const handleUploadFiles = async (
     files: FileList | File[] | null,
     kind: "first_sheet" | "entry_sheet",
+    displayName?: string,
   ) => {
     if (!files || (files as any).length === 0) return;
     const arr = Array.from(files as any) as File[];
     const setBusy = kind === "first_sheet" ? setUploadingFirst : setUploadingEntry;
     setBusy(true);
     try {
-      for (const f of arr) await uploadOneFile(f, kind);
+      for (const f of arr) await uploadOneFile(f, kind, displayName);
       toast.success(arr.length === 1 ? "Hoja añadida" : `${arr.length} hojas añadidas`);
       await fetchData();
     } catch (e: any) {
@@ -237,44 +242,95 @@ const SubcontractingModule = () => {
     }
   };
 
-  const triggerSource = async (
-    source: "camera" | "gallery" | "scan",
-    kind: "first_sheet" | "entry_sheet",
-  ) => {
-    setScanMode(source === "scan");
+  /**
+   * En móvil nativo abre el selector del sistema (cámara / galería / archivos)
+   * usando @capacitor/camera con prompt nativo.
+   * En web abre directamente el explorador de archivos del SO.
+   */
+  const triggerUpload = async (kind: "first_sheet" | "entry_sheet") => {
     const ref = kind === "first_sheet" ? firstFileRef : entryFileRef;
     if (isNative()) {
-      const camMode = source === "camera" ? "camera" : "gallery";
-      const files = await pickImage(camMode, ref.current);
-      if (files && files.length) await handleUploadFiles(files, kind);
-    } else {
-      // Web: dispara el input file (la cámara la abre el navegador con capture)
-      if (ref.current) {
-        ref.current.setAttribute(
-          "accept",
-          source === "camera" ? "image/*" : "image/*,application/pdf",
-        );
-        if (source === "camera") ref.current.setAttribute("capture", "environment");
-        else ref.current.removeAttribute("capture");
-        ref.current.click();
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+        const photo = await Camera.getPhoto({
+          quality: 85,
+          allowEditing: false,
+          resultType: CameraResultType.Uri,
+          source: CameraSource.Prompt, // muestra Cámara / Galería / Archivos
+          promptLabelHeader: kind === "first_sheet"
+            ? "Primera hoja"
+            : "Ficha del libro",
+          promptLabelPhoto: "Galería",
+          promptLabelPicture: "Cámara",
+          saveToGallery: false,
+        });
+        const uri = photo.webPath || photo.path;
+        if (!uri) return;
+        const res = await fetch(uri);
+        const blob = await res.blob();
+        const ext = photo.format || "jpg";
+        const file = new File([blob], `hoja-${Date.now()}.${ext}`, {
+          type: blob.type || `image/${ext}`,
+        });
+        if (kind === "first_sheet") {
+          await handleUploadFiles([file], "first_sheet");
+        } else {
+          setPendingFiles([file]);
+          setPendingName("");
+          setNamingOpen(true);
+        }
+      } catch (err: any) {
+        if (!err?.message?.toLowerCase?.().includes("cancel")) {
+          console.warn("[subcontracting] camera prompt", err);
+        }
       }
+      return;
     }
+    // Web → explorador del SO directamente
+    if (ref.current) ref.current.click();
   };
 
   /* ─── Preview / borrado ─────────────────────────────────────── */
 
-  const handlePreview = async (page: any) => {
-    setPreviewPage(page);
-    setPreviewUrl(null);
-    const { data, error } = await supabase.storage
-      .from("plans")
-      .createSignedUrl(page.file_path, 3600);
-    if (error) {
-      toast.error("No se pudo abrir la hoja");
-      setPreviewPage(null);
+  const togglePagePreview = async (page: any) => {
+    if (expandedPageId === page.id) {
+      setExpandedPageId(null);
       return;
     }
-    setPreviewUrl(data.signedUrl);
+    setExpandedPageId(page.id);
+    if (pagePreviewUrls[page.id]) return;
+    setLoadingPreviewId(page.id);
+    try {
+      const { data, error } = await supabase.storage
+        .from("plans")
+        .download(page.file_path);
+      if (error || !data) {
+        toast.error("No se pudo cargar la previsualización");
+        return;
+      }
+      const url = URL.createObjectURL(data);
+      setPagePreviewUrls((prev) => ({ ...prev, [page.id]: url }));
+    } catch {
+      toast.error("Error al cargar archivo");
+    } finally {
+      setLoadingPreviewId(null);
+    }
+  };
+
+  const handleDownloadPage = async (page: any) => {
+    const { data, error } = await supabase.storage.from("plans").download(page.file_path);
+    if (error || !data) { toast.error("Error al descargar"); return; }
+    await downloadFile(data, page.file_name || "hoja");
+  };
+
+  const handleOpenPage = async (page: any) => {
+    const { data, error } = await supabase.storage
+      .from("plans")
+      .createSignedUrl(page.file_path, 600);
+    if (error || !data) { toast.error("No se pudo abrir el archivo"); return; }
+    const res = await fetch(data.signedUrl);
+    const blob = await res.blob();
+    await openFile(blob, page.file_name || "hoja");
   };
 
   const handleDeletePage = async () => {
