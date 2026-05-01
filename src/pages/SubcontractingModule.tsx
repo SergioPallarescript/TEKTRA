@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, FileText, Plus, Download, ClipboardList,
   Trash2, FileSignature, ChevronDown, ChevronUp, Loader2,
+  Camera as CameraIcon, Image as ImageIcon, FolderOpen,
 } from "lucide-react";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import DocumentPreview from "@/components/DocumentPreview";
@@ -98,6 +99,7 @@ const SubcontractingModule = () => {
   const [actSubcontractor, setActSubcontractor] = useState("");
   const [actRepresentative, setActRepresentative] = useState("");
   const [actTask, setActTask] = useState("");
+  const [actCity, setActCity] = useState("");
   const [generatingAct, setGeneratingAct] = useState(false);
 
   const canWrite = isCON || isDEM || isDO || isAdmin;
@@ -143,6 +145,13 @@ const SubcontractingModule = () => {
     const contractor = members.find((m) => m.role === "CON");
     setActWork((v) => v || project?.name || "");
     setActLocation((v) => v || project?.address || "");
+    setActCity((v) => {
+      if (v) return v;
+      const addr = project?.address || "";
+      // Toma la última parte tras la última coma como localidad por defecto
+      const parts = addr.split(",").map((s: string) => s.trim()).filter(Boolean);
+      return parts.length > 1 ? parts[parts.length - 1] : "";
+    });
     setActPromoter(
       (v) => v || promoter?.profiles?.full_name || promoter?.invited_email || "",
     );
@@ -372,7 +381,7 @@ const SubcontractingModule = () => {
 
         const ext = (page.file_name.split(".").pop() || "").toLowerCase();
         if (ext === "pdf") {
-          const src = await PDFDocument.load(buf);
+          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
           const copied = await pdf.copyPages(src, src.getPageIndices());
           copied.forEach((p) => pdf.addPage(p));
         } else {
