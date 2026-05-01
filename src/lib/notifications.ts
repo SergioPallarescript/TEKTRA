@@ -299,3 +299,34 @@ export async function pushSignatureRequest({
     actorId,
   });
 }
+
+/**
+ * Auto-mark a user's unread notifications as read when they open the related item.
+ * Matches by project + (optional) types + title substring contained in the message.
+ */
+export async function markRelatedNotificationsRead({
+  userId,
+  projectId,
+  title,
+  types,
+}: {
+  userId: string;
+  projectId: string;
+  title?: string | null;
+  types?: string[];
+}) {
+  if (!userId || !projectId) return;
+  try {
+    let q: any = supabase
+      .from("notifications")
+      .update({ is_read: true, acknowledged_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("project_id", projectId)
+      .eq("is_read", false);
+    if (types && types.length > 0) q = q.in("type", types);
+    if (title && title.trim().length > 0) q = q.ilike("message", `%${title.trim()}%`);
+    await q;
+  } catch (e) {
+    console.error("markRelatedNotificationsRead failed:", e);
+  }
+}
