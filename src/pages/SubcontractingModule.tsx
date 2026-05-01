@@ -795,7 +795,7 @@ const SubcontractingModule = () => {
         ) : (
           <div className="space-y-8">
             {/* ───── BLOQUE 1: Libro de subcontratas (digitalización) ───── */}
-            <section className="space-y-4">
+            <section className="space-y-4" data-tour="subcontracting-digital">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Digitalización del Libro Físico
@@ -807,6 +807,7 @@ const SubcontractingModule = () => {
                     onClick={handleExportBook}
                     disabled={exporting}
                     className="gap-1.5 text-xs"
+                    data-tour="subcontracting-export"
                   >
                     <Download className="h-3.5 w-3.5" />
                     {exporting ? "Exportando…" : "Exportar libro de subcontratas"}
@@ -911,7 +912,7 @@ const SubcontractingModule = () => {
             </section>
 
             {/* ───── BLOQUE 2: Acta de adhesión al PSS ───── */}
-            <section className="space-y-4">
+            <section className="space-y-4" data-tour="subcontracting-acts">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Actas de Adhesión al Plan de Seguridad
@@ -921,6 +922,7 @@ const SubcontractingModule = () => {
                     size="sm"
                     onClick={() => setShowActDialog(true)}
                     className="gap-1.5 text-xs font-display uppercase tracking-wider"
+                    data-tour="subcontracting-create-act"
                   >
                     <FileSignature className="h-3.5 w-3.5" />
                     Crear acta de adhesión al plan
