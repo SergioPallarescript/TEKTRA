@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { downloadFile, openFile, isNative } from "@/lib/nativeMedia";
+import { downloadFile, isNative } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
@@ -19,7 +19,7 @@ import {
 import { toast } from "sonner";
 import {
   ArrowLeft, FileText, Plus, Download, ClipboardList,
-  Trash2, FileSignature, ChevronDown, ChevronUp, Loader2, FolderOpen,
+  Trash2, FileSignature, ChevronDown, ChevronUp, Loader2,
 } from "lucide-react";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import DocumentPreview from "@/components/DocumentPreview";
@@ -78,6 +78,11 @@ const SubcontractingModule = () => {
 
   // Borrado de actas
   const [deleteActTarget, setDeleteActTarget] = useState<any | null>(null);
+
+  // Preview inline de actas
+  const [expandedActId, setExpandedActId] = useState<string | null>(null);
+  const [actPreviewUrls, setActPreviewUrls] = useState<Record<string, string>>({});
+  const [loadingActPreviewId, setLoadingActPreviewId] = useState<string | null>(null);
 
   // Diálogo para nombrar la subcontrata tras subir una ficha
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
@@ -203,11 +208,22 @@ const SubcontractingModule = () => {
   };
 
   /**
-   * En móvil nativo abre el selector del sistema (cámara / galería / archivos)
-   * usando @capacitor/camera con prompt nativo.
-   * En web abre directamente el explorador de archivos del SO.
+   * Para la primera hoja: abre directamente cámara/galería en nativo,
+   * o el explorador en web.
+   *
+   * Para las fichas: SIEMPRE pide primero el nombre de la subcontrata y,
+   * tras confirmarlo, lanza el selector. Así el flujo es idéntico en
+   * web y nativo y evitamos errores silenciosos del plugin de cámara.
    */
   const triggerUpload = async (kind: "first_sheet" | "entry_sheet") => {
+    if (kind === "entry_sheet") {
+      // Pedir nombre primero, el archivo se elige tras "Continuar"
+      setPendingFiles(null);
+      setPendingName("");
+      setNamingOpen(true);
+      return;
+    }
+
     const ref = kind === "first_sheet" ? firstFileRef : entryFileRef;
     if (isNative()) {
       try {
@@ -217,9 +233,7 @@ const SubcontractingModule = () => {
           allowEditing: false,
           resultType: CameraResultType.Uri,
           source: CameraSource.Prompt, // muestra Cámara / Galería / Archivos
-          promptLabelHeader: kind === "first_sheet"
-            ? "Primera hoja"
-            : "Ficha del libro",
+          promptLabelHeader: "Primera hoja",
           promptLabelPhoto: "Galería",
           promptLabelPicture: "Cámara",
           saveToGallery: false,
@@ -232,22 +246,64 @@ const SubcontractingModule = () => {
         const file = new File([blob], `hoja-${Date.now()}.${ext}`, {
           type: blob.type || `image/${ext}`,
         });
-        if (kind === "first_sheet") {
-          await handleUploadFiles([file], "first_sheet");
-        } else {
-          setPendingFiles([file]);
-          setPendingName("");
-          setNamingOpen(true);
-        }
+        await handleUploadFiles([file], "first_sheet");
       } catch (err: any) {
         if (!err?.message?.toLowerCase?.().includes("cancel")) {
           console.warn("[subcontracting] camera prompt", err);
+          // Fallback: si la cámara nativa falla, abrimos el explorador web
+          ref.current?.click();
         }
       }
       return;
     }
     // Web → explorador del SO directamente
     if (ref.current) ref.current.click();
+  };
+
+  /**
+   * Tras confirmar el nombre de la subcontrata, pedimos el archivo.
+   * Funciona en web (input file) y en nativo (cámara/galería con fallback).
+   */
+  const pickEntryFileAfterName = async () => {
+    if (!pendingName.trim()) {
+      toast.error("Indica un nombre para la subcontrata");
+      return;
+    }
+    if (isNative()) {
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+        const photo = await Camera.getPhoto({
+          quality: 85,
+          allowEditing: false,
+          resultType: CameraResultType.Uri,
+          source: CameraSource.Prompt,
+          promptLabelHeader: pendingName.trim(),
+          promptLabelPhoto: "Galería",
+          promptLabelPicture: "Cámara",
+          saveToGallery: false,
+        });
+        const uri = photo.webPath || photo.path;
+        if (!uri) return;
+        const res = await fetch(uri);
+        const blob = await res.blob();
+        const ext = photo.format || "jpg";
+        const file = new File([blob], `${pendingName}-${Date.now()}.${ext}`, {
+          type: blob.type || `image/${ext}`,
+        });
+        const name = pendingName.trim();
+        setNamingOpen(false);
+        setPendingName("");
+        setPendingFiles(null);
+        await handleUploadFiles([file], "entry_sheet", name);
+        return;
+      } catch (err: any) {
+        if (err?.message?.toLowerCase?.().includes("cancel")) return;
+        console.warn("[subcontracting] camera prompt entry", err);
+        // Fallback al input file si el plugin falla
+      }
+    }
+    // Web (o fallback nativo): disparar input file. El nombre persiste en pendingName.
+    entryFileRef.current?.click();
   };
 
   /* ─── Preview / borrado ─────────────────────────────────────── */
@@ -281,16 +337,6 @@ const SubcontractingModule = () => {
     const { data, error } = await supabase.storage.from("plans").download(page.file_path);
     if (error || !data) { toast.error("Error al descargar"); return; }
     await downloadFile(data, page.file_name || "hoja");
-  };
-
-  const handleOpenPage = async (page: any) => {
-    const { data, error } = await supabase.storage
-      .from("plans")
-      .createSignedUrl(page.file_path, 600);
-    if (error || !data) { toast.error("No se pudo abrir el archivo"); return; }
-    const res = await fetch(data.signedUrl);
-    const blob = await res.blob();
-    await openFile(blob, page.file_name || "hoja");
   };
 
   const handleDeletePage = async () => {
@@ -595,15 +641,29 @@ const SubcontractingModule = () => {
     }
   };
 
-  const openAct = async (act: any) => {
-    if (!act.file_path) return;
-    const { data, error } = await supabase.storage
-      .from("plans")
-      .createSignedUrl(act.file_path, 600);
-    if (error || !data) { toast.error("No se pudo abrir el acta"); return; }
-    const res = await fetch(data.signedUrl);
-    const blob = await res.blob();
-    await openFile(blob, act.file_name || "acta.pdf");
+  const toggleActPreview = async (act: any) => {
+    if (expandedActId === act.id) {
+      setExpandedActId(null);
+      return;
+    }
+    setExpandedActId(act.id);
+    if (actPreviewUrls[act.id]) return;
+    setLoadingActPreviewId(act.id);
+    try {
+      const { data, error } = await supabase.storage
+        .from("plans")
+        .download(act.file_path);
+      if (error || !data) {
+        toast.error("No se pudo cargar la previsualización");
+        return;
+      }
+      const url = URL.createObjectURL(data);
+      setActPreviewUrls((prev) => ({ ...prev, [act.id]: url }));
+    } catch {
+      toast.error("Error al cargar el acta");
+    } finally {
+      setLoadingActPreviewId(null);
+    }
   };
 
   const handleDownloadAct = async (act: any) => {
@@ -690,16 +750,26 @@ const SubcontractingModule = () => {
           ref={entryFileRef}
           type="file"
           accept="image/*,application/pdf"
-          multiple
           className="hidden"
           onChange={(e) => {
-            const files = e.target.files;
+            const filesList = e.target.files;
+            if (!filesList || filesList.length === 0) {
+              if (entryFileRef.current) entryFileRef.current.value = "";
+              return;
+            }
+            // Capturamos la lista ANTES de limpiar el value (FileList se desreferencia)
+            const filesArr = Array.from(filesList);
             if (entryFileRef.current) entryFileRef.current.value = "";
-            if (!files || files.length === 0) return;
-            // Tras seleccionar el archivo, pedimos el nombre de la subcontrata
-            setPendingFiles(Array.from(files));
+            const name = pendingName.trim();
+            if (!name) {
+              toast.error("Indica un nombre para la subcontrata");
+              return;
+            }
+            // Cierra el diálogo de nombre y sube el archivo con ese nombre
+            setNamingOpen(false);
             setPendingName("");
-            setNamingOpen(true);
+            setPendingFiles(null);
+            handleUploadFiles(filesArr, "entry_sheet", name);
           }}
         />
 
@@ -715,7 +785,7 @@ const SubcontractingModule = () => {
         ) : (
           <div className="space-y-8">
             {/* ───── BLOQUE 1: Libro de subcontratas (digitalización) ───── */}
-            <section className="space-y-4">
+            <section className="space-y-4" data-tour="subcontracting-digital">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Digitalización del Libro Físico
@@ -727,6 +797,7 @@ const SubcontractingModule = () => {
                     onClick={handleExportBook}
                     disabled={exporting}
                     className="gap-1.5 text-xs"
+                    data-tour="subcontracting-export"
                   >
                     <Download className="h-3.5 w-3.5" />
                     {exporting ? "Exportando…" : "Exportar libro de subcontratas"}
@@ -788,9 +859,6 @@ const SubcontractingModule = () => {
                               <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDownloadPage(p); }} title="Descargar">
                                 <Download className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleOpenPage(p); }} title="Abrir con">
-                                <FolderOpen className="h-4 w-4" />
-                              </Button>
                               {canWrite && (
                                 <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} title="Eliminar">
                                   <Trash2 className="h-4 w-4 text-destructive" />
@@ -834,7 +902,7 @@ const SubcontractingModule = () => {
             </section>
 
             {/* ───── BLOQUE 2: Acta de adhesión al PSS ───── */}
-            <section className="space-y-4">
+            <section className="space-y-4" data-tour="subcontracting-acts">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Actas de Adhesión al Plan de Seguridad
@@ -844,6 +912,7 @@ const SubcontractingModule = () => {
                     size="sm"
                     onClick={() => setShowActDialog(true)}
                     className="gap-1.5 text-xs font-display uppercase tracking-wider"
+                    data-tour="subcontracting-create-act"
                   >
                     <FileSignature className="h-3.5 w-3.5" />
                     Crear acta de adhesión al plan
@@ -860,35 +929,58 @@ const SubcontractingModule = () => {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {acts.map((a) => (
-                    <div
-                      key={a.id}
-                      className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg hover:shadow-sm transition-all"
-                    >
-                      <FileSignature className="h-5 w-5 text-primary shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate">
-                          {a.subcontractor_name}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {a.subcontractor_task} · {new Date(a.created_at).toLocaleDateString("es-ES")}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" onClick={() => handleDownloadAct(a)} title="Descargar">
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openAct(a)} title="Abrir con">
-                          <FolderOpen className="h-4 w-4" />
-                        </Button>
-                        {canWrite && (
-                          <Button variant="ghost" size="icon" onClick={() => setDeleteActTarget(a)} title="Eliminar">
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                  {acts.map((a) => {
+                    const expanded = expandedActId === a.id;
+                    return (
+                      <div
+                        key={a.id}
+                        className="bg-card border border-border rounded-lg animate-fade-in"
+                      >
+                        <div
+                          className="p-3 flex items-center gap-3 cursor-pointer hover:bg-secondary/30 transition-colors rounded-lg"
+                          onClick={() => toggleActPreview(a)}
+                        >
+                          <FileSignature className="h-5 w-5 text-primary shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold truncate">
+                              {a.subcontractor_name}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {a.subcontractor_task} · {new Date(a.created_at).toLocaleDateString("es-ES")}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDownloadAct(a); }} title="Descargar">
+                              <Download className="h-4 w-4" />
+                            </Button>
+                            {canWrite && (
+                              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setDeleteActTarget(a); }} title="Eliminar">
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                            {expanded
+                              ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                              : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                          </div>
+                        </div>
+                        {expanded && (
+                          <div className="px-4 pb-4 border-t border-border pt-3">
+                            {loadingActPreviewId === a.id ? (
+                              <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" /> Cargando previsualización...
+                              </div>
+                            ) : actPreviewUrls[a.id] ? (
+                              <DocumentPreview url={actPreviewUrls[a.id]} fileName={a.file_name || "acta.pdf"} />
+                            ) : (
+                              <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                                No se pudo cargar la previsualización
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -912,6 +1004,9 @@ const SubcontractingModule = () => {
               onChange={(e) => setPendingName(e.target.value)}
               placeholder="Ej. Estructuras García S.L."
             />
+            <p className="text-[11px] text-muted-foreground pt-1">
+              Tras pulsar “Continuar” podrás seleccionar la foto o PDF de la ficha.
+            </p>
           </div>
           <DialogFooter className="mt-4">
             <Button
@@ -922,24 +1017,13 @@ const SubcontractingModule = () => {
               Cancelar
             </Button>
             <Button
-              onClick={async () => {
-                if (!pendingFiles || !pendingName.trim()) {
-                  toast.error("Indica un nombre");
-                  return;
-                }
-                const files = pendingFiles;
-                const name = pendingName.trim();
-                setNamingOpen(false);
-                await handleUploadFiles(files, "entry_sheet", name);
-                setPendingFiles(null);
-                setPendingName("");
-              }}
+              onClick={pickEntryFileAfterName}
               disabled={uploadingEntry || !pendingName.trim()}
               className="gap-2 font-display text-xs uppercase tracking-wider"
             >
               {uploadingEntry
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
-                : <>Guardar</>}
+                : <>Continuar</>}
             </Button>
           </DialogFooter>
         </DialogContent>
