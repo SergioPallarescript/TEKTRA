@@ -1012,6 +1012,9 @@ const SubcontractingModule = () => {
               onChange={(e) => setPendingName(e.target.value)}
               placeholder="Ej. Estructuras García S.L."
             />
+            <p className="text-[11px] text-muted-foreground pt-1">
+              Tras pulsar “Continuar” podrás seleccionar la foto o PDF de la ficha.
+            </p>
           </div>
           <DialogFooter className="mt-4">
             <Button
@@ -1022,24 +1025,13 @@ const SubcontractingModule = () => {
               Cancelar
             </Button>
             <Button
-              onClick={async () => {
-                if (!pendingFiles || !pendingName.trim()) {
-                  toast.error("Indica un nombre");
-                  return;
-                }
-                const files = pendingFiles;
-                const name = pendingName.trim();
-                setNamingOpen(false);
-                await handleUploadFiles(files, "entry_sheet", name);
-                setPendingFiles(null);
-                setPendingName("");
-              }}
+              onClick={pickEntryFileAfterName}
               disabled={uploadingEntry || !pendingName.trim()}
               className="gap-2 font-display text-xs uppercase tracking-wider"
             >
               {uploadingEntry
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
-                : <>Guardar</>}
+                : <>Continuar</>}
             </Button>
           </DialogFooter>
         </DialogContent>
