@@ -1106,6 +1106,19 @@ const SubcontractingModule = () => {
             </div>
             <div className="space-y-2">
               <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                Localidad *
+              </Label>
+              <Input
+                value={actCity}
+                onChange={(e) => setActCity(e.target.value)}
+                placeholder="Ej. Chipiona"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Aparecerá en la fórmula final del acta: “En {`{Localidad}`}, a {`{fecha actual}`}.”
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
                 Promotor *
               </Label>
               <Input value={actPromoter} onChange={(e) => setActPromoter(e.target.value)} />
