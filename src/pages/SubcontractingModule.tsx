@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, FileText, Plus, Download, ClipboardList,
   Trash2, FileSignature, ChevronDown, ChevronUp, Loader2,
+  Camera as CameraIcon, Image as ImageIcon, FolderOpen,
 } from "lucide-react";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import DocumentPreview from "@/components/DocumentPreview";
@@ -98,6 +99,7 @@ const SubcontractingModule = () => {
   const [actSubcontractor, setActSubcontractor] = useState("");
   const [actRepresentative, setActRepresentative] = useState("");
   const [actTask, setActTask] = useState("");
+  const [actCity, setActCity] = useState("");
   const [generatingAct, setGeneratingAct] = useState(false);
 
   const canWrite = isCON || isDEM || isDO || isAdmin;
@@ -143,6 +145,13 @@ const SubcontractingModule = () => {
     const contractor = members.find((m) => m.role === "CON");
     setActWork((v) => v || project?.name || "");
     setActLocation((v) => v || project?.address || "");
+    setActCity((v) => {
+      if (v) return v;
+      const addr = project?.address || "";
+      // Toma la última parte tras la última coma como localidad por defecto
+      const parts = addr.split(",").map((s: string) => s.trim()).filter(Boolean);
+      return parts.length > 1 ? parts[parts.length - 1] : "";
+    });
     setActPromoter(
       (v) => v || promoter?.profiles?.full_name || promoter?.invited_email || "",
     );
@@ -264,45 +273,57 @@ const SubcontractingModule = () => {
    * Tras confirmar el nombre de la subcontrata, pedimos el archivo.
    * Funciona en web (input file) y en nativo (cámara/galería con fallback).
    */
-  const pickEntryFileAfterName = async () => {
+  const pickEntryFromCamera = async (mode: "camera" | "gallery") => {
     if (!pendingName.trim()) {
       toast.error("Indica un nombre para la subcontrata");
       return;
     }
-    if (isNative()) {
+    const name = pendingName.trim();
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+      // Permisos
       try {
-        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
-        const photo = await Camera.getPhoto({
-          quality: 85,
-          allowEditing: false,
-          resultType: CameraResultType.Uri,
-          source: CameraSource.Prompt,
-          promptLabelHeader: pendingName.trim(),
-          promptLabelPhoto: "Galería",
-          promptLabelPicture: "Cámara",
-          saveToGallery: false,
-        });
-        const uri = photo.webPath || photo.path;
-        if (!uri) return;
-        const res = await fetch(uri);
-        const blob = await res.blob();
-        const ext = photo.format || "jpg";
-        const file = new File([blob], `${pendingName}-${Date.now()}.${ext}`, {
-          type: blob.type || `image/${ext}`,
-        });
-        const name = pendingName.trim();
-        setNamingOpen(false);
-        setPendingName("");
-        setPendingFiles(null);
-        await handleUploadFiles([file], "entry_sheet", name);
-        return;
-      } catch (err: any) {
-        if (err?.message?.toLowerCase?.().includes("cancel")) return;
-        console.warn("[subcontracting] camera prompt entry", err);
-        // Fallback al input file si el plugin falla
-      }
+        const perms = await Camera.checkPermissions();
+        const needsCam = mode === "camera" && perms.camera !== "granted";
+        const needsPhotos = mode === "gallery" && perms.photos !== "granted";
+        if (needsCam || needsPhotos) {
+          await Camera.requestPermissions({
+            permissions: mode === "camera" ? ["camera"] : ["photos"],
+          });
+        }
+      } catch { /* algunos dispositivos no exponen checkPermissions */ }
+      const photo = await Camera.getPhoto({
+        quality: 85,
+        allowEditing: false,
+        resultType: CameraResultType.Uri,
+        source: mode === "camera" ? CameraSource.Camera : CameraSource.Photos,
+        saveToGallery: false,
+      });
+      const uri = photo.webPath || photo.path;
+      if (!uri) return;
+      const res = await fetch(uri);
+      const blob = await res.blob();
+      const ext = photo.format || "jpg";
+      const file = new File([blob], `${name}-${Date.now()}.${ext}`, {
+        type: blob.type || `image/${ext}`,
+      });
+      setNamingOpen(false);
+      setPendingName("");
+      setPendingFiles(null);
+      await handleUploadFiles([file], "entry_sheet", name);
+    } catch (err: any) {
+      if (err?.message?.toLowerCase?.().includes("cancel")) return;
+      console.warn("[subcontracting] entry capture error", err);
+      toast.error("No se pudo abrir la cámara/galería. Prueba con 'Archivo'.");
     }
-    // Web (o fallback nativo): disparar input file. El nombre persiste en pendingName.
+  };
+
+  const pickEntryFromFiles = () => {
+    if (!pendingName.trim()) {
+      toast.error("Indica un nombre para la subcontrata");
+      return;
+    }
+    // Dispara el input file. El nombre persiste en pendingName y se aplica en su onChange.
     entryFileRef.current?.click();
   };
 
@@ -372,7 +393,7 @@ const SubcontractingModule = () => {
 
         const ext = (page.file_name.split(".").pop() || "").toLowerCase();
         if (ext === "pdf") {
-          const src = await PDFDocument.load(buf);
+          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
           const copied = await pdf.copyPages(src, src.getPageIndices());
           copied.forEach((p) => pdf.addPage(p));
         } else {
@@ -428,8 +449,8 @@ const SubcontractingModule = () => {
   const handleGenerateAct = async () => {
     if (!projectId || !user) return;
     if (!actWork.trim() || !actLocation.trim() || !actPromoter.trim() ||
-        !actSubcontractor.trim() || !actTask.trim()) {
-      toast.error("Completa Obra, Ubicación, Promotor, Subcontrata y Tarea");
+        !actSubcontractor.trim() || !actTask.trim() || !actCity.trim()) {
+      toast.error("Completa Obra, Ubicación, Localidad, Promotor, Subcontrata y Tarea");
       return;
     }
     setGeneratingAct(true);
@@ -536,7 +557,7 @@ const SubcontractingModule = () => {
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
       ];
-      const place = (actLocation.split(",")[1] || actLocation.split(",")[0] || "").trim();
+      const place = actCity.trim();
       const dateLine = `En ${place || "________"}, a ${today.getDate()} de ${monthsEs[today.getMonth()]} de ${today.getFullYear()}.`;
       drawWrapped(dateLine, helv, 10, 14);
       y -= 24;
@@ -1016,15 +1037,45 @@ const SubcontractingModule = () => {
             >
               Cancelar
             </Button>
-            <Button
-              onClick={pickEntryFileAfterName}
-              disabled={uploadingEntry || !pendingName.trim()}
-              className="gap-2 font-display text-xs uppercase tracking-wider"
-            >
-              {uploadingEntry
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
-                : <>Continuar</>}
-            </Button>
+            {isNative() ? (
+              <div className="flex flex-wrap gap-2 justify-end w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  onClick={() => pickEntryFromCamera("camera")}
+                  disabled={uploadingEntry || !pendingName.trim()}
+                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                >
+                  <CameraIcon className="h-4 w-4" /> Cámara
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => pickEntryFromCamera("gallery")}
+                  disabled={uploadingEntry || !pendingName.trim()}
+                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                >
+                  <ImageIcon className="h-4 w-4" /> Galería
+                </Button>
+                <Button
+                  onClick={pickEntryFromFiles}
+                  disabled={uploadingEntry || !pendingName.trim()}
+                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                >
+                  {uploadingEntry
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
+                    : <><FolderOpen className="h-4 w-4" /> Archivo</>}
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={pickEntryFromFiles}
+                disabled={uploadingEntry || !pendingName.trim()}
+                className="gap-2 font-display text-xs uppercase tracking-wider"
+              >
+                {uploadingEntry
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
+                  : <>Continuar</>}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1094,6 +1145,19 @@ const SubcontractingModule = () => {
                 Ubicación *
               </Label>
               <Input value={actLocation} onChange={(e) => setActLocation(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                Localidad *
+              </Label>
+              <Input
+                value={actCity}
+                onChange={(e) => setActCity(e.target.value)}
+                placeholder="Ej. Chipiona"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Aparecerá en la fórmula final del acta: “En {`{Localidad}`}, a {`{fecha actual}`}.”
+              </p>
             </div>
             <div className="space-y-2">
               <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
