@@ -1064,7 +1064,7 @@ const SubcontractingModule = () => {
               Tras pulsar “Continuar” podrás seleccionar la foto o PDF de la ficha.
             </p>
           </div>
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-4 gap-2 sm:space-x-0">
             <Button
               variant="outline"
               onClick={() => { setNamingOpen(false); setPendingFiles(null); setPendingName(""); }}
@@ -1073,12 +1073,12 @@ const SubcontractingModule = () => {
               Cancelar
             </Button>
             {isNative() ? (
-              <div className="flex flex-wrap gap-2 justify-end w-full sm:w-auto">
+              <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3">
                 <Button
                   variant="outline"
                   onClick={() => pickEntryFromCamera("camera")}
                   disabled={uploadingEntry || !pendingName.trim()}
-                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                  className="w-full gap-2 font-display text-xs uppercase tracking-wider"
                 >
                   <CameraIcon className="h-4 w-4" /> Cámara
                 </Button>
@@ -1086,14 +1086,14 @@ const SubcontractingModule = () => {
                   variant="outline"
                   onClick={() => pickEntryFromCamera("gallery")}
                   disabled={uploadingEntry || !pendingName.trim()}
-                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                  className="w-full gap-2 font-display text-xs uppercase tracking-wider"
                 >
                   <ImageIcon className="h-4 w-4" /> Galería
                 </Button>
                 <Button
                   onClick={pickEntryFromFiles}
                   disabled={uploadingEntry || !pendingName.trim()}
-                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                  className="w-full gap-2 font-display text-xs uppercase tracking-wider"
                 >
                   {uploadingEntry
                     ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
