@@ -18,7 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import { toast } from "sonner";
-import { notifyUser, pushSignatureRequest } from "@/lib/notifications";
+import { notifyUser, pushSignatureRequest, markRelatedNotificationsRead } from "@/lib/notifications";
 import ShareButton from "@/components/ShareButton";
 import { downloadFile, openFile } from "@/lib/nativeMedia";
 import {
@@ -177,6 +177,17 @@ const SignatureDocuments = () => {
       if (found) setSelectedDocument(found);
     }
   }, [deepLinkItem, documents]);
+
+  // Auto-mark related bell notifications as read when a document is opened
+  useEffect(() => {
+    if (!selectedDocument || !user || !projectId) return;
+    markRelatedNotificationsRead({
+      userId: user.id,
+      projectId,
+      title: selectedDocument.title,
+      types: ["signature", "info"],
+    });
+  }, [selectedDocument?.id, user?.id, projectId]);
 
   const renderPdf = useCallback(async (url: string) => {
     try {

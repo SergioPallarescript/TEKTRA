@@ -27,7 +27,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { notifyProjectMembers, notifyUser, pushNewOrder } from "@/lib/notifications";
+import { notifyProjectMembers, notifyUser, pushNewOrder, markRelatedNotificationsRead } from "@/lib/notifications";
 import ShareButton from "@/components/ShareButton";
 import {
   ArrowLeft, Plus, BookOpen, AlertTriangle, Mic, MicOff, Camera, Image, Paperclip, X, Download, Lock, ShieldCheck, FileSignature, PenLine, Sparkles,
@@ -138,6 +138,16 @@ const OrdersModule = () => {
   }, [projectId]);
 
   useEffect(() => { fetchProject(); fetchOrders(); fetchMembers(); }, [fetchProject, fetchOrders, fetchMembers]);
+
+  // Auto-mark "order" bell notifications as read when entering the orders book
+  useEffect(() => {
+    if (!user || !projectId) return;
+    markRelatedNotificationsRead({
+      userId: user.id,
+      projectId,
+      types: ["order"],
+    });
+  }, [user?.id, projectId]);
 
   // Find the recipient user_id based on dirigidaA role mapping
   const findRecipientUserId = (dirigida: string): string | null => {

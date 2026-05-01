@@ -16,7 +16,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { notifyProjectMembers, pushNewPlan } from "@/lib/notifications";
+import { notifyProjectMembers, pushNewPlan, markRelatedNotificationsRead } from "@/lib/notifications";
 import ShareButton from "@/components/ShareButton";
 import { sanitizeFileName, uploadFileWithFallback } from "@/lib/storage";
 import {
@@ -175,6 +175,17 @@ const PlansModule = () => {
   useEffect(() => {
     if (selectedPlan) fetchVersions(selectedPlan.id);
   }, [selectedPlan, fetchVersions]);
+
+  // Auto-mark related bell notifications as read when a plan is opened
+  useEffect(() => {
+    if (!selectedPlan || !user || !projectId) return;
+    markRelatedNotificationsRead({
+      userId: user.id,
+      projectId,
+      title: selectedPlan.name,
+      types: ["plan"],
+    });
+  }, [selectedPlan?.id, user?.id, projectId]);
 
   const latestVersion = versions[0];
 
