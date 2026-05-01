@@ -339,16 +339,6 @@ const SubcontractingModule = () => {
     await downloadFile(data, page.file_name || "hoja");
   };
 
-  const handleOpenPage = async (page: any) => {
-    const { data, error } = await supabase.storage
-      .from("plans")
-      .createSignedUrl(page.file_path, 600);
-    if (error || !data) { toast.error("No se pudo abrir el archivo"); return; }
-    const res = await fetch(data.signedUrl);
-    const blob = await res.blob();
-    await downloadFile(blob, page.file_name || "hoja");
-  };
-
   const handleDeletePage = async () => {
     if (!deleteTarget) return;
     const { error: stErr } = await supabase.storage.from("plans").remove([deleteTarget.file_path]);
