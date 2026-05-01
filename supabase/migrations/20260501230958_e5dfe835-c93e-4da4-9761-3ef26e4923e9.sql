@@ -1,0 +1,1 @@
+ALTER TABLE public.subcontracting_pages ADD COLUMN IF NOT EXISTS display_name TEXT;
