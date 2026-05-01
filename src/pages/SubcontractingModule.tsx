@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { downloadFile, openFile, pickImage, isNative } from "@/lib/nativeMedia";
+import { downloadFile, openFile, isNative } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
@@ -16,15 +16,13 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import {
-  ArrowLeft, FileText, Plus, Download, ClipboardList, ImageIcon, Camera,
-  ScanLine, Eye, Trash2, FileSignature, ChevronDown, Loader2,
+  ArrowLeft, FileText, Plus, Download, ClipboardList,
+  Trash2, FileSignature, ChevronDown, ChevronUp, Loader2, FolderOpen,
 } from "lucide-react";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import DocumentPreview from "@/components/DocumentPreview";
 
 /* ──────────────────────────────────────────────────────────────────
  * Helpers de imagen / PDF
@@ -47,46 +45,6 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     img.src = src;
   });
 
-/** Convierte a B/N tipo "escaneo": gris + umbral adaptativo simple. */
-const scanifyImage = async (file: File): Promise<File> => {
-  const dataUrl = await readFileAsDataUrl(file);
-  const img = await loadImage(dataUrl);
-  // Limita resolución para tamaño razonable
-  const MAX = 1800;
-  let w = img.naturalWidth;
-  let h = img.naturalHeight;
-  if (Math.max(w, h) > MAX) {
-    const k = MAX / Math.max(w, h);
-    w = Math.round(w * k);
-    h = Math.round(h * k);
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(img, 0, 0, w, h);
-  const imgData = ctx.getImageData(0, 0, w, h);
-  const d = imgData.data;
-  // Normalización + umbral
-  let sum = 0;
-  for (let i = 0; i < d.length; i += 4) {
-    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    sum += g;
-  }
-  const avg = sum / (d.length / 4);
-  const threshold = Math.min(190, Math.max(120, avg + 10));
-  for (let i = 0; i < d.length; i += 4) {
-    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    // suaviza un pelín contraste
-    const adj = g > threshold ? 255 : Math.max(0, g * 0.85);
-    d[i] = d[i + 1] = d[i + 2] = adj;
-  }
-  ctx.putImageData(imgData, 0, 0);
-  const blob: Blob = await new Promise((resolve) =>
-    canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.85),
-  );
-  return new File([blob], file.name.replace(/\.\w+$/, "") + "_scan.jpg", { type: "image/jpeg" });
-};
-
 /* ──────────────────────────────────────────────────────────────────
  * Componente
  * ────────────────────────────────────────────────────────────────── */
@@ -107,16 +65,24 @@ const SubcontractingModule = () => {
   const [uploadingFirst, setUploadingFirst] = useState(false);
   const [uploadingEntry, setUploadingEntry] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [scanMode, setScanMode] = useState(false);
 
   // Inputs ocultos para fallback web
   const firstFileRef = useRef<HTMLInputElement>(null);
   const entryFileRef = useRef<HTMLInputElement>(null);
 
-  // Preview / borrado
-  const [previewPage, setPreviewPage] = useState<any | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Preview inline expandible / borrado
+  const [expandedPageId, setExpandedPageId] = useState<string | null>(null);
+  const [pagePreviewUrls, setPagePreviewUrls] = useState<Record<string, string>>({});
+  const [loadingPreviewId, setLoadingPreviewId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+
+  // Borrado de actas
+  const [deleteActTarget, setDeleteActTarget] = useState<any | null>(null);
+
+  // Diálogo para nombrar la subcontrata tras subir una ficha
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [pendingName, setPendingName] = useState("");
+  const [namingOpen, setNamingOpen] = useState(false);
 
   // Acta de adhesión
   const [showActDialog, setShowActDialog] = useState(false);
@@ -182,13 +148,13 @@ const SubcontractingModule = () => {
 
   /* ─── Subida de páginas ─────────────────────────────────────── */
 
-  const uploadOneFile = async (file: File, kind: "first_sheet" | "entry_sheet") => {
+  const uploadOneFile = async (
+    file: File,
+    kind: "first_sheet" | "entry_sheet",
+    displayName?: string,
+  ) => {
     if (!projectId || !user) return;
-    let finalFile = file;
-    if (scanMode && file.type.startsWith("image/")) {
-      try { finalFile = await scanifyImage(file); }
-      catch (e) { console.warn("scanify falló, subo original", e); }
-    }
+    const finalFile = file;
     const ts = Date.now();
     const safeName = finalFile.name.replace(/[^\w.\-]+/g, "_");
     const path = `${projectId}/subcontracting/${ts}_${safeName}`;
@@ -200,11 +166,15 @@ const SubcontractingModule = () => {
     if (upErr) throw upErr;
 
     const nextIndex = (pages[pages.length - 1]?.page_index ?? -1) + 1;
+    const computedDisplay =
+      displayName?.trim() ||
+      (kind === "first_sheet" ? "Primera hoja (datos contratista)" : finalFile.name);
     const { error: insErr } = await supabase.from("subcontracting_pages" as any).insert({
       project_id: projectId,
       page_index: nextIndex,
       file_path: path,
       file_name: finalFile.name,
+      display_name: computedDisplay,
       kind,
       uploaded_by: user.id,
     } as any);
@@ -214,13 +184,14 @@ const SubcontractingModule = () => {
   const handleUploadFiles = async (
     files: FileList | File[] | null,
     kind: "first_sheet" | "entry_sheet",
+    displayName?: string,
   ) => {
     if (!files || (files as any).length === 0) return;
     const arr = Array.from(files as any) as File[];
     const setBusy = kind === "first_sheet" ? setUploadingFirst : setUploadingEntry;
     setBusy(true);
     try {
-      for (const f of arr) await uploadOneFile(f, kind);
+      for (const f of arr) await uploadOneFile(f, kind, displayName);
       toast.success(arr.length === 1 ? "Hoja añadida" : `${arr.length} hojas añadidas`);
       await fetchData();
     } catch (e: any) {
@@ -231,44 +202,95 @@ const SubcontractingModule = () => {
     }
   };
 
-  const triggerSource = async (
-    source: "camera" | "gallery" | "scan",
-    kind: "first_sheet" | "entry_sheet",
-  ) => {
-    setScanMode(source === "scan");
+  /**
+   * En móvil nativo abre el selector del sistema (cámara / galería / archivos)
+   * usando @capacitor/camera con prompt nativo.
+   * En web abre directamente el explorador de archivos del SO.
+   */
+  const triggerUpload = async (kind: "first_sheet" | "entry_sheet") => {
     const ref = kind === "first_sheet" ? firstFileRef : entryFileRef;
     if (isNative()) {
-      const camMode = source === "camera" ? "camera" : "gallery";
-      const files = await pickImage(camMode, ref.current);
-      if (files && files.length) await handleUploadFiles(files, kind);
-    } else {
-      // Web: dispara el input file (la cámara la abre el navegador con capture)
-      if (ref.current) {
-        ref.current.setAttribute(
-          "accept",
-          source === "camera" ? "image/*" : "image/*,application/pdf",
-        );
-        if (source === "camera") ref.current.setAttribute("capture", "environment");
-        else ref.current.removeAttribute("capture");
-        ref.current.click();
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+        const photo = await Camera.getPhoto({
+          quality: 85,
+          allowEditing: false,
+          resultType: CameraResultType.Uri,
+          source: CameraSource.Prompt, // muestra Cámara / Galería / Archivos
+          promptLabelHeader: kind === "first_sheet"
+            ? "Primera hoja"
+            : "Ficha del libro",
+          promptLabelPhoto: "Galería",
+          promptLabelPicture: "Cámara",
+          saveToGallery: false,
+        });
+        const uri = photo.webPath || photo.path;
+        if (!uri) return;
+        const res = await fetch(uri);
+        const blob = await res.blob();
+        const ext = photo.format || "jpg";
+        const file = new File([blob], `hoja-${Date.now()}.${ext}`, {
+          type: blob.type || `image/${ext}`,
+        });
+        if (kind === "first_sheet") {
+          await handleUploadFiles([file], "first_sheet");
+        } else {
+          setPendingFiles([file]);
+          setPendingName("");
+          setNamingOpen(true);
+        }
+      } catch (err: any) {
+        if (!err?.message?.toLowerCase?.().includes("cancel")) {
+          console.warn("[subcontracting] camera prompt", err);
+        }
       }
+      return;
     }
+    // Web → explorador del SO directamente
+    if (ref.current) ref.current.click();
   };
 
   /* ─── Preview / borrado ─────────────────────────────────────── */
 
-  const handlePreview = async (page: any) => {
-    setPreviewPage(page);
-    setPreviewUrl(null);
-    const { data, error } = await supabase.storage
-      .from("plans")
-      .createSignedUrl(page.file_path, 3600);
-    if (error) {
-      toast.error("No se pudo abrir la hoja");
-      setPreviewPage(null);
+  const togglePagePreview = async (page: any) => {
+    if (expandedPageId === page.id) {
+      setExpandedPageId(null);
       return;
     }
-    setPreviewUrl(data.signedUrl);
+    setExpandedPageId(page.id);
+    if (pagePreviewUrls[page.id]) return;
+    setLoadingPreviewId(page.id);
+    try {
+      const { data, error } = await supabase.storage
+        .from("plans")
+        .download(page.file_path);
+      if (error || !data) {
+        toast.error("No se pudo cargar la previsualización");
+        return;
+      }
+      const url = URL.createObjectURL(data);
+      setPagePreviewUrls((prev) => ({ ...prev, [page.id]: url }));
+    } catch {
+      toast.error("Error al cargar archivo");
+    } finally {
+      setLoadingPreviewId(null);
+    }
+  };
+
+  const handleDownloadPage = async (page: any) => {
+    const { data, error } = await supabase.storage.from("plans").download(page.file_path);
+    if (error || !data) { toast.error("Error al descargar"); return; }
+    await downloadFile(data, page.file_name || "hoja");
+  };
+
+  const handleOpenPage = async (page: any) => {
+    const { data, error } = await supabase.storage
+      .from("plans")
+      .createSignedUrl(page.file_path, 600);
+    if (error || !data) { toast.error("No se pudo abrir el archivo"); return; }
+    const res = await fetch(data.signedUrl);
+    const blob = await res.blob();
+    await openFile(blob, page.file_name || "hoja");
   };
 
   const handleDeletePage = async () => {
@@ -584,37 +606,47 @@ const SubcontractingModule = () => {
     await openFile(blob, act.file_name || "acta.pdf");
   };
 
-  /* ─── Botón compuesto Galería / Cámara / Escaneo ────────────── */
+  const handleDownloadAct = async (act: any) => {
+    const { data, error } = await supabase.storage.from("plans").download(act.file_path);
+    if (error || !data) { toast.error("Error al descargar"); return; }
+    await downloadFile(data, act.file_name || "acta.pdf");
+  };
 
-  const SourceMenu = ({
+  const handleDeleteAct = async () => {
+    if (!deleteActTarget) return;
+    const { error: stErr } = await supabase.storage
+      .from("plans")
+      .remove([deleteActTarget.file_path]);
+    if (stErr) console.warn("storage remove", stErr);
+    const { error } = await supabase
+      .from("subcontracting_adhesion_acts" as any)
+      .delete()
+      .eq("id", deleteActTarget.id);
+    if (error) toast.error("Error al eliminar");
+    else {
+      toast.success("Acta eliminada");
+      setDeleteActTarget(null);
+      fetchData();
+    }
+  };
+
+  /* ─── Botón compuesto de subida ─────────────────────────────── */
+
+  const UploadButton = ({
     kind, busy, label,
   }: {
     kind: "first_sheet" | "entry_sheet"; busy: boolean; label: string;
   }) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="lg"
-          disabled={busy}
-          className="gap-2 font-display text-xs uppercase tracking-wider"
-        >
-          {busy
-            ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
-            : <><Plus className="h-4 w-4" /> {label} <ChevronDown className="h-3 w-3 ml-1" /></>}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuItem onClick={() => triggerSource("gallery", kind)}>
-          <ImageIcon className="h-4 w-4 mr-2" /> Galería
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => triggerSource("camera", kind)}>
-          <Camera className="h-4 w-4 mr-2" /> Cámara
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => triggerSource("scan", kind)}>
-          <ScanLine className="h-4 w-4 mr-2" /> Escanear (B/N)
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button
+      size="lg"
+      disabled={busy}
+      onClick={() => triggerUpload(kind)}
+      className="gap-2 font-display text-xs uppercase tracking-wider"
+    >
+      {busy
+        ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
+        : <><Plus className="h-4 w-4" /> {label}</>}
+    </Button>
   );
 
   /* ─── Render ────────────────────────────────────────────────── */
@@ -661,8 +693,13 @@ const SubcontractingModule = () => {
           multiple
           className="hidden"
           onChange={(e) => {
-            handleUploadFiles(e.target.files, "entry_sheet");
+            const files = e.target.files;
             if (entryFileRef.current) entryFileRef.current.value = "";
+            if (!files || files.length === 0) return;
+            // Tras seleccionar el archivo, pedimos el nombre de la subcontrata
+            setPendingFiles(Array.from(files));
+            setPendingName("");
+            setNamingOpen(true);
           }}
         />
 
@@ -704,7 +741,7 @@ const SubcontractingModule = () => {
                     Sube la primera hoja del Libro de Subcontratación con los datos del contratista.
                   </p>
                   {canWrite ? (
-                    <SourceMenu
+                    <UploadButton
                       kind="first_sheet"
                       busy={uploadingFirst}
                       label="Primera hoja (datos contratista)"
@@ -717,54 +754,75 @@ const SubcontractingModule = () => {
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {pages.map((p, i) => (
-                      <div
-                        key={p.id}
-                        className="group relative border border-border rounded-lg overflow-hidden bg-card hover:shadow-md transition-all"
-                      >
-                        <div className="aspect-[3/4] flex items-center justify-center bg-muted/40 text-muted-foreground">
-                          <FileText className="h-8 w-8" />
-                          <span className="absolute top-1.5 left-1.5 text-[10px] font-display bg-background/90 px-1.5 py-0.5 rounded">
-                            #{i + 1}
-                          </span>
-                          {p.kind === "first_sheet" && (
-                            <span className="absolute top-1.5 right-1.5 text-[9px] font-display uppercase tracking-wider bg-primary/15 text-primary px-1.5 py-0.5 rounded">
-                              1ª hoja
-                            </span>
+                  <div className="space-y-2">
+                    {pages.map((p, i) => {
+                      const label =
+                        p.display_name ||
+                        (p.kind === "first_sheet"
+                          ? "Primera hoja (datos contratista)"
+                          : p.file_name);
+                      const expanded = expandedPageId === p.id;
+                      return (
+                        <div
+                          key={p.id}
+                          className={`bg-card border rounded-lg animate-fade-in ${p.kind === "first_sheet" ? "border-foreground/20" : "border-border"}`}
+                          style={{ animationDelay: `${i * 40}ms` }}
+                        >
+                          <div
+                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-secondary/30 transition-colors rounded-lg gap-3"
+                            onClick={() => togglePagePreview(p)}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="font-display text-xs font-bold px-2 py-1 rounded bg-secondary text-muted-foreground shrink-0">
+                                #{i + 1}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate" title={label}>{label}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {p.kind === "first_sheet" ? "1ª hoja · " : "Ficha · "}
+                                  {new Date(p.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" })}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDownloadPage(p); }} title="Descargar">
+                                <Download className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleOpenPage(p); }} title="Abrir con">
+                                <FolderOpen className="h-4 w-4" />
+                              </Button>
+                              {canWrite && (
+                                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} title="Eliminar">
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              )}
+                              {expanded
+                                ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                            </div>
+                          </div>
+                          {expanded && (
+                            <div className="px-4 pb-4 border-t border-border pt-3">
+                              {loadingPreviewId === p.id ? (
+                                <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" /> Cargando previsualización...
+                                </div>
+                              ) : pagePreviewUrls[p.id] ? (
+                                <DocumentPreview url={pagePreviewUrls[p.id]} fileName={p.file_name} />
+                              ) : (
+                                <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                                  No se pudo cargar la previsualización
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
-                        <div className="p-2 space-y-1">
-                          <p className="text-[10px] truncate text-muted-foreground" title={p.file_name}>
-                            {p.file_name}
-                          </p>
-                          <div className="flex gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="flex-1 h-7 text-[10px] gap-1"
-                              onClick={() => handlePreview(p)}
-                            >
-                              <Eye className="h-3 w-3" /> Ver
-                            </Button>
-                            {canWrite && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 text-[10px] text-destructive hover:text-destructive"
-                                onClick={() => setDeleteTarget(p)}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   {canWrite && (
                     <div className="flex justify-center pt-2">
-                      <SourceMenu
+                      <UploadButton
                         kind="entry_sheet"
                         busy={uploadingEntry}
                         label="Ficha del libro de subcontratación"
@@ -816,15 +874,19 @@ const SubcontractingModule = () => {
                           {a.subcontractor_task} · {new Date(a.created_at).toLocaleDateString("es-ES")}
                         </p>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-xs"
-                        onClick={() => openAct(a)}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        Abrir
-                      </Button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button variant="ghost" size="icon" onClick={() => handleDownloadAct(a)} title="Descargar">
+                          <Download className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openAct(a)} title="Abrir con">
+                          <FolderOpen className="h-4 w-4" />
+                        </Button>
+                        {canWrite && (
+                          <Button variant="ghost" size="icon" onClick={() => setDeleteActTarget(a)} title="Eliminar">
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -834,28 +896,75 @@ const SubcontractingModule = () => {
         )}
       </div>
 
-      {/* Preview dialog */}
-      <Dialog
-        open={!!previewPage}
-        onOpenChange={(o) => { if (!o) { setPreviewPage(null); setPreviewUrl(null); } }}
-      >
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      {/* Diálogo: nombre de la subcontrata para una nueva ficha */}
+      <Dialog open={namingOpen} onOpenChange={(o) => { if (!o) { setNamingOpen(false); setPendingFiles(null); setPendingName(""); } }}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-display text-base truncate">
-              {previewPage?.file_name}
-            </DialogTitle>
+            <DialogTitle className="font-display text-base">Nombre de la subcontrata</DialogTitle>
           </DialogHeader>
-          {!previewUrl ? (
-            <div className="h-64 flex items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : previewPage?.file_name?.toLowerCase().endsWith(".pdf") ? (
-            <iframe src={previewUrl} className="w-full h-[70vh] border rounded" title="preview" />
-          ) : (
-            <img src={previewUrl} alt={previewPage?.file_name} className="w-full h-auto rounded" />
-          )}
+          <div className="space-y-2 mt-2">
+            <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+              Nombre que aparecerá en el listado
+            </Label>
+            <Input
+              autoFocus
+              value={pendingName}
+              onChange={(e) => setPendingName(e.target.value)}
+              placeholder="Ej. Estructuras García S.L."
+            />
+          </div>
+          <DialogFooter className="mt-4">
+            <Button
+              variant="outline"
+              onClick={() => { setNamingOpen(false); setPendingFiles(null); setPendingName(""); }}
+              disabled={uploadingEntry}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!pendingFiles || !pendingName.trim()) {
+                  toast.error("Indica un nombre");
+                  return;
+                }
+                const files = pendingFiles;
+                const name = pendingName.trim();
+                setNamingOpen(false);
+                await handleUploadFiles(files, "entry_sheet", name);
+                setPendingFiles(null);
+                setPendingName("");
+              }}
+              disabled={uploadingEntry || !pendingName.trim()}
+              className="gap-2 font-display text-xs uppercase tracking-wider"
+            >
+              {uploadingEntry
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
+                : <>Guardar</>}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirmación: borrar acta */}
+      <AlertDialog open={!!deleteActTarget} onOpenChange={(o) => { if (!o) setDeleteActTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este acta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará el PDF generado de forma permanente. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteAct}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete confirm */}
       <AlertDialog
