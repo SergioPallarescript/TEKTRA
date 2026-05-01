@@ -760,16 +760,26 @@ const SubcontractingModule = () => {
           ref={entryFileRef}
           type="file"
           accept="image/*,application/pdf"
-          multiple
           className="hidden"
           onChange={(e) => {
-            const files = e.target.files;
+            const filesList = e.target.files;
+            if (!filesList || filesList.length === 0) {
+              if (entryFileRef.current) entryFileRef.current.value = "";
+              return;
+            }
+            // Capturamos la lista ANTES de limpiar el value (FileList se desreferencia)
+            const filesArr = Array.from(filesList);
             if (entryFileRef.current) entryFileRef.current.value = "";
-            if (!files || files.length === 0) return;
-            // Tras seleccionar el archivo, pedimos el nombre de la subcontrata
-            setPendingFiles(Array.from(files));
+            const name = pendingName.trim();
+            if (!name) {
+              toast.error("Indica un nombre para la subcontrata");
+              return;
+            }
+            // Cierra el diálogo de nombre y sube el archivo con ese nombre
+            setNamingOpen(false);
             setPendingName("");
-            setNamingOpen(true);
+            setPendingFiles(null);
+            handleUploadFiles(filesArr, "entry_sheet", name);
           }}
         />
 
