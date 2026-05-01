@@ -105,16 +105,24 @@ const SubcontractingModule = () => {
   const [uploadingFirst, setUploadingFirst] = useState(false);
   const [uploadingEntry, setUploadingEntry] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [scanMode, setScanMode] = useState(false);
 
   // Inputs ocultos para fallback web
   const firstFileRef = useRef<HTMLInputElement>(null);
   const entryFileRef = useRef<HTMLInputElement>(null);
 
-  // Preview / borrado
-  const [previewPage, setPreviewPage] = useState<any | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Preview inline expandible / borrado
+  const [expandedPageId, setExpandedPageId] = useState<string | null>(null);
+  const [pagePreviewUrls, setPagePreviewUrls] = useState<Record<string, string>>({});
+  const [loadingPreviewId, setLoadingPreviewId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+
+  // Borrado de actas
+  const [deleteActTarget, setDeleteActTarget] = useState<any | null>(null);
+
+  // Diálogo para nombrar la subcontrata tras subir una ficha
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [pendingName, setPendingName] = useState("");
+  const [namingOpen, setNamingOpen] = useState(false);
 
   // Acta de adhesión
   const [showActDialog, setShowActDialog] = useState(false);
