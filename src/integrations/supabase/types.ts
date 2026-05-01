@@ -1635,188 +1635,99 @@ export type Database = {
           },
         ]
       }
-      subcontracting_books: {
+      subcontracting_adhesion_acts: {
         Row: {
-          apertura_number: string
+          act_date: string
           contractor_name: string | null
-          contractor_nif: string | null
           created_at: string
-          created_by: string
-          css_name: string | null
-          css_nif: string | null
-          diligencia_generated_at: string | null
-          facultative_direction_name: string | null
-          facultative_direction_nif: string | null
-          habilitacion_cause: string
+          file_name: string | null
+          file_path: string | null
+          generated_by: string
           id: string
-          is_activated: boolean
-          last_annotation_number: string | null
+          location: string
           project_id: string
-          promoter_name: string | null
-          promoter_nif: string | null
-          rea_number: string
-          sealed_file_name: string | null
-          sealed_file_path: string | null
-          site_address: string | null
-          site_locality: string | null
-          updated_at: string
+          promoter_name: string
+          subcontractor_name: string
+          subcontractor_representative: string | null
+          subcontractor_task: string
+          work_name: string
         }
         Insert: {
-          apertura_number: string
+          act_date?: string
           contractor_name?: string | null
-          contractor_nif?: string | null
           created_at?: string
-          created_by: string
-          css_name?: string | null
-          css_nif?: string | null
-          diligencia_generated_at?: string | null
-          facultative_direction_name?: string | null
-          facultative_direction_nif?: string | null
-          habilitacion_cause?: string
+          file_name?: string | null
+          file_path?: string | null
+          generated_by: string
           id?: string
-          is_activated?: boolean
-          last_annotation_number?: string | null
+          location: string
           project_id: string
-          promoter_name?: string | null
-          promoter_nif?: string | null
-          rea_number: string
-          sealed_file_name?: string | null
-          sealed_file_path?: string | null
-          site_address?: string | null
-          site_locality?: string | null
-          updated_at?: string
+          promoter_name: string
+          subcontractor_name: string
+          subcontractor_representative?: string | null
+          subcontractor_task: string
+          work_name: string
         }
         Update: {
-          apertura_number?: string
+          act_date?: string
           contractor_name?: string | null
-          contractor_nif?: string | null
           created_at?: string
-          created_by?: string
-          css_name?: string | null
-          css_nif?: string | null
-          diligencia_generated_at?: string | null
-          facultative_direction_name?: string | null
-          facultative_direction_nif?: string | null
-          habilitacion_cause?: string
+          file_name?: string | null
+          file_path?: string | null
+          generated_by?: string
           id?: string
-          is_activated?: boolean
-          last_annotation_number?: string | null
+          location?: string
           project_id?: string
-          promoter_name?: string | null
-          promoter_nif?: string | null
-          rea_number?: string
-          sealed_file_name?: string | null
-          sealed_file_path?: string | null
-          site_address?: string | null
-          site_locality?: string | null
-          updated_at?: string
+          promoter_name?: string
+          subcontractor_name?: string
+          subcontractor_representative?: string | null
+          subcontractor_task?: string
+          work_name?: string
         }
         Relationships: [
           {
-            foreignKeyName: "subcontracting_books_project_id_fkey"
+            foreignKeyName: "subcontracting_adhesion_acts_project_id_fkey"
             columns: ["project_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
       }
-      subcontracting_entries: {
+      subcontracting_pages: {
         Row: {
-          book_id: string
-          comitente_entry_id: string | null
           created_at: string
-          created_by: string
-          empresa_nif: string
-          empresa_nombre: string
-          entry_number: number
-          fecha_comienzo: string
-          fecha_plan_seguridad: string | null
+          file_name: string
+          file_path: string
           id: string
-          instrucciones_seguridad: string | null
-          is_locked: boolean | null
-          nivel_subcontratacion: number
-          objeto_contrato: string
+          kind: string
+          page_index: number
           project_id: string
-          responsable_dni: string
-          responsable_nombre: string
-          signature_geo: string | null
-          signature_hash: string | null
-          signature_image: string | null
-          signature_type: string | null
-          signed_at: string | null
-          signed_by: string | null
-          updated_at: string
+          uploaded_by: string
         }
         Insert: {
-          book_id: string
-          comitente_entry_id?: string | null
           created_at?: string
-          created_by: string
-          empresa_nif: string
-          empresa_nombre: string
-          entry_number?: number
-          fecha_comienzo: string
-          fecha_plan_seguridad?: string | null
+          file_name: string
+          file_path: string
           id?: string
-          instrucciones_seguridad?: string | null
-          is_locked?: boolean | null
-          nivel_subcontratacion?: number
-          objeto_contrato: string
+          kind?: string
+          page_index?: number
           project_id: string
-          responsable_dni: string
-          responsable_nombre: string
-          signature_geo?: string | null
-          signature_hash?: string | null
-          signature_image?: string | null
-          signature_type?: string | null
-          signed_at?: string | null
-          signed_by?: string | null
-          updated_at?: string
+          uploaded_by: string
         }
         Update: {
-          book_id?: string
-          comitente_entry_id?: string | null
           created_at?: string
-          created_by?: string
-          empresa_nif?: string
-          empresa_nombre?: string
-          entry_number?: number
-          fecha_comienzo?: string
-          fecha_plan_seguridad?: string | null
+          file_name?: string
+          file_path?: string
           id?: string
-          instrucciones_seguridad?: string | null
-          is_locked?: boolean | null
-          nivel_subcontratacion?: number
-          objeto_contrato?: string
+          kind?: string
+          page_index?: number
           project_id?: string
-          responsable_dni?: string
-          responsable_nombre?: string
-          signature_geo?: string | null
-          signature_hash?: string | null
-          signature_image?: string | null
-          signature_type?: string | null
-          signed_at?: string | null
-          signed_by?: string | null
-          updated_at?: string
+          uploaded_by?: string
         }
         Relationships: [
           {
-            foreignKeyName: "subcontracting_entries_book_id_fkey"
-            columns: ["book_id"]
-            isOneToOne: false
-            referencedRelation: "subcontracting_books"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "subcontracting_entries_comitente_entry_id_fkey"
-            columns: ["comitente_entry_id"]
-            isOneToOne: false
-            referencedRelation: "subcontracting_entries"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "subcontracting_entries_project_id_fkey"
+            foreignKeyName: "subcontracting_pages_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"

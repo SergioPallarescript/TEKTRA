@@ -1,799 +1,977 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { downloadFile } from "@/lib/nativeMedia";
+import { downloadFile, openFile, pickImage, isNative } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
-import SignatureCanvas, { type SignatureCanvasHandle } from "@/components/SignatureCanvas";
-import CertificateSignature, { type CertSignMetadata } from "@/components/CertificateSignature";
-import FiscalDataModal from "@/components/FiscalDataModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { toast } from "sonner";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 import {
-  ArrowLeft, FileText, Plus, Upload, Download, Lock, ShieldCheck, FileSignature, CalendarIcon, ClipboardList, AlertTriangle, CheckCircle2, Brain,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
+import {
+  ArrowLeft, FileText, Plus, Download, ClipboardList, ImageIcon, Camera,
+  ScanLine, Eye, Trash2, FileSignature, ChevronDown, Loader2,
 } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { cn } from "@/lib/utils";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
-const HABILITACION_CAUSES = [
-  { value: "nueva_obra", label: "Nueva obra" },
-  { value: "continuacion", label: "Continuación de libro anterior" },
-  { value: "perdida", label: "Pérdida" },
-  { value: "destruccion", label: "Destrucción" },
-];
+/* ──────────────────────────────────────────────────────────────────
+ * Helpers de imagen / PDF
+ * ────────────────────────────────────────────────────────────────── */
 
-const inferLocality = (address?: string | null) => {
-  if (!address) return "";
-  const parts = address.split(",").map((part) => part.trim()).filter(Boolean);
-  return parts[parts.length - 1] || address;
+const readFileAsDataUrl = (file: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+
+const loadImage = (src: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
+    img.src = src;
+  });
+
+/** Convierte a B/N tipo "escaneo": gris + umbral adaptativo simple. */
+const scanifyImage = async (file: File): Promise<File> => {
+  const dataUrl = await readFileAsDataUrl(file);
+  const img = await loadImage(dataUrl);
+  // Limita resolución para tamaño razonable
+  const MAX = 1800;
+  let w = img.naturalWidth;
+  let h = img.naturalHeight;
+  if (Math.max(w, h) > MAX) {
+    const k = MAX / Math.max(w, h);
+    w = Math.round(w * k);
+    h = Math.round(h * k);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, 0, 0, w, h);
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+  // Normalización + umbral
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    sum += g;
+  }
+  const avg = sum / (d.length / 4);
+  const threshold = Math.min(190, Math.max(120, avg + 10));
+  for (let i = 0; i < d.length; i += 4) {
+    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    // suaviza un pelín contraste
+    const adj = g > threshold ? 255 : Math.max(0, g * 0.85);
+    d[i] = d[i + 1] = d[i + 2] = adj;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  const blob: Blob = await new Promise((resolve) =>
+    canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.85),
+  );
+  return new File([blob], file.name.replace(/\.\w+$/, "") + "_scan.jpg", { type: "image/jpeg" });
 };
 
-const getSuggestedMember = (members: any[], role: string) => {
-  const member = members.find((item: any) => item.role === role);
-  if (!member) return { name: "", nif: "" };
-  return {
-    name: member?.profiles?.full_name || member?.invited_email || "",
-    nif: member?.profiles?.dni_cif || "",
-  };
-};
+/* ──────────────────────────────────────────────────────────────────
+ * Componente
+ * ────────────────────────────────────────────────────────────────── */
 
 const SubcontractingModule = () => {
   const { id: projectId } = useParams<{ id: string }>();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const { isCON, isAdmin, isDEM, isDO } = useProjectRole(projectId);
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
 
   const [project, setProject] = useState<any>(null);
-  const [book, setBook] = useState<any>(null);
-  const [entries, setEntries] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState<any[]>([]);
+  const [pages, setPages] = useState<any[]>([]);
+  const [acts, setActs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Diligencia form
-  const [showDiligencia, setShowDiligencia] = useState(false);
-  const [reaNumber, setReaNumber] = useState("");
-  const [aperturaNumber, setAperturaNumber] = useState("");
-  const [habCause, setHabCause] = useState("nueva_obra");
-  const [lastAnnotation, setLastAnnotation] = useState("");
-  const [promoterName, setPromoterName] = useState("");
-  const [promoterNif, setPromoterNif] = useState("");
-  const [contractorName, setContractorName] = useState("");
-  const [contractorNif, setContractorNif] = useState("");
-  const [facultativeDirectionName, setFacultativeDirectionName] = useState("");
-  const [facultativeDirectionNif, setFacultativeDirectionNif] = useState("");
-  const [cssName, setCssName] = useState("");
-  const [cssNif, setCssNif] = useState("");
-  const [siteAddress, setSiteAddress] = useState("");
-  const [siteLocality, setSiteLocality] = useState("");
-  const [submittingDiligencia, setSubmittingDiligencia] = useState(false);
-
-  // Upload sealed
-  const [uploading, setUploading] = useState(false);
-  const sealedInputRef = useRef<HTMLInputElement>(null);
-
-  // New entry form
-  const [showNewEntry, setShowNewEntry] = useState(false);
-  const [empresaNombre, setEmpresaNombre] = useState("");
-  const [empresaNif, setEmpresaNif] = useState("");
-  const [nivelSub, setNivelSub] = useState("1");
-  const [objetoContrato, setObjetoContrato] = useState("");
-  const [fechaComienzo, setFechaComienzo] = useState<Date>();
-  const [responsableNombre, setResponsableNombre] = useState("");
-  const [responsableDni, setResponsableDni] = useState("");
-  const [fechaPlanSeguridad, setFechaPlanSeguridad] = useState<Date>();
-  const [instrucciones, setInstrucciones] = useState("");
-  const [submittingEntry, setSubmittingEntry] = useState(false);
-
-  // Signature
-  const [signatureMethod, setSignatureMethod] = useState<string>(() => localStorage.getItem("tektra_sig_method") || "manual");
-  const sigCanvasRef = useRef<SignatureCanvasHandle>(null);
-  const [showFiscalModal, setShowFiscalModal] = useState(false);
-  const [pendingSubmit, setPendingSubmit] = useState(false);
-
-  // Export
+  // Carga
+  const [uploadingFirst, setUploadingFirst] = useState(false);
+  const [uploadingEntry, setUploadingEntry] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [scanMode, setScanMode] = useState(false);
 
-  const canWrite = isCON;
+  // Inputs ocultos para fallback web
+  const firstFileRef = useRef<HTMLInputElement>(null);
+  const entryFileRef = useRef<HTMLInputElement>(null);
+
+  // Preview / borrado
+  const [previewPage, setPreviewPage] = useState<any | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+
+  // Acta de adhesión
+  const [showActDialog, setShowActDialog] = useState(false);
+  const [actWork, setActWork] = useState("");
+  const [actLocation, setActLocation] = useState("");
+  const [actPromoter, setActPromoter] = useState("");
+  const [actContractor, setActContractor] = useState("");
+  const [actSubcontractor, setActSubcontractor] = useState("");
+  const [actRepresentative, setActRepresentative] = useState("");
+  const [actTask, setActTask] = useState("");
+  const [generatingAct, setGeneratingAct] = useState(false);
+
+  const canWrite = isCON || isDEM || isDO || isAdmin;
+
+  /* ─── Fetch ─────────────────────────────────────────────────── */
 
   const fetchData = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
-    const [{ data: proj }, { data: bookData }, { data: memberData }] = await Promise.all([
-      supabase.from("projects").select("*").eq("id", projectId).single(),
-      supabase.from("subcontracting_books" as any).select("*").eq("project_id", projectId).maybeSingle(),
-      supabase.from("project_members").select("*, profiles:user_id(full_name, role, dni_cif)").eq("project_id", projectId).eq("status", "accepted"),
-    ]);
+    const [{ data: proj }, { data: memberData }, { data: pageData }, { data: actData }] =
+      await Promise.all([
+        supabase.from("projects").select("*").eq("id", projectId).single(),
+        supabase
+          .from("project_members")
+          .select("*, profiles:user_id(full_name, role, dni_cif)")
+          .eq("project_id", projectId)
+          .eq("status", "accepted"),
+        supabase
+          .from("subcontracting_pages" as any)
+          .select("*")
+          .eq("project_id", projectId)
+          .order("page_index", { ascending: true }),
+        supabase
+          .from("subcontracting_adhesion_acts" as any)
+          .select("*")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false }),
+      ]);
     if (proj) setProject(proj);
-    if (bookData) {
-      setBook(bookData);
-      const { data: entryData } = await supabase
-        .from("subcontracting_entries" as any)
-        .select("*")
-        .eq("book_id", (bookData as any).id)
-        .order("entry_number", { ascending: true });
-      setEntries(entryData || []);
-    }
     setMembers(memberData || []);
+    setPages(pageData || []);
+    setActs(actData || []);
     setLoading(false);
   }, [projectId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  /* ─── Acta: prefills ────────────────────────────────────────── */
+
   useEffect(() => {
-    if (!showDiligencia) return;
-    const suggestedPromoter = getSuggestedMember(members, "PRO");
-    const suggestedContractor = getSuggestedMember(members, "CON");
-    const suggestedFacultative = getSuggestedMember(members, "DO").name
-      ? getSuggestedMember(members, "DO")
-      : getSuggestedMember(members, "DEM");
-    const cssMember = members.find((item: any) => item.role === "CSS" || item.secondary_role === "CSS");
+    if (!showActDialog) return;
+    const promoter = members.find((m) => m.role === "PRO");
+    const contractor = members.find((m) => m.role === "CON");
+    setActWork((v) => v || project?.name || "");
+    setActLocation((v) => v || project?.address || "");
+    setActPromoter(
+      (v) => v || promoter?.profiles?.full_name || promoter?.invited_email || "",
+    );
+    setActContractor(
+      (v) => v || contractor?.profiles?.full_name || contractor?.invited_email || "",
+    );
+  }, [showActDialog, project, members]);
 
-    setPromoterName((value) => value || suggestedPromoter.name);
-    setPromoterNif((value) => value || suggestedPromoter.nif);
-    setContractorName((value) => value || suggestedContractor.name);
-    setContractorNif((value) => value || suggestedContractor.nif);
-    setFacultativeDirectionName((value) => value || suggestedFacultative.name);
-    setFacultativeDirectionNif((value) => value || suggestedFacultative.nif);
-    setCssName((value) => value || cssMember?.profiles?.full_name || cssMember?.invited_email || "");
-    setCssNif((value) => value || cssMember?.profiles?.dni_cif || "");
-    setSiteAddress((value) => value || project?.address || "");
-    setSiteLocality((value) => value || inferLocality(project?.address));
-  }, [showDiligencia, members, project]);
+  /* ─── Subida de páginas ─────────────────────────────────────── */
 
-  const getGeoLocation = (): Promise<string> => {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) { resolve("No disponible"); return; }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve(`${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`),
-        () => resolve("No disponible"),
-        { timeout: 5000 }
-      );
-    });
-  };
-
-  const computeHash = async (text: string): Promise<string> => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(text);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
-  };
-
-  // Create diligencia
-  const handleCreateDiligencia = async () => {
+  const uploadOneFile = async (file: File, kind: "first_sheet" | "entry_sheet") => {
     if (!projectId || !user) return;
-    const requiredFields = [
-      promoterName,
-      promoterNif,
-      contractorName,
-      contractorNif,
-      facultativeDirectionName,
-      facultativeDirectionNif,
-      cssName,
-      cssNif,
-      siteAddress,
-      siteLocality,
-      reaNumber,
-      aperturaNumber,
-    ];
-    if (requiredFields.some((field) => !field.trim())) {
-      toast.error("Completa todos los campos obligatorios de la primera hoja");
-      return;
+    let finalFile = file;
+    if (scanMode && file.type.startsWith("image/")) {
+      try { finalFile = await scanifyImage(file); }
+      catch (e) { console.warn("scanify falló, subo original", e); }
     }
-    setSubmittingDiligencia(true);
-    const { error } = await supabase.from("subcontracting_books" as any).insert({
+    const ts = Date.now();
+    const safeName = finalFile.name.replace(/[^\w.\-]+/g, "_");
+    const path = `${projectId}/subcontracting/${ts}_${safeName}`;
+    const { error: upErr } = await supabase.storage.from("plans").upload(path, finalFile, {
+      cacheControl: "3600",
+      contentType: finalFile.type || "image/jpeg",
+      upsert: false,
+    });
+    if (upErr) throw upErr;
+
+    const nextIndex = (pages[pages.length - 1]?.page_index ?? -1) + 1;
+    const { error: insErr } = await supabase.from("subcontracting_pages" as any).insert({
       project_id: projectId,
-      rea_number: reaNumber.trim(),
-      apertura_number: aperturaNumber.trim(),
-      habilitacion_cause: habCause,
-      last_annotation_number: lastAnnotation.trim() || null,
-      promoter_name: promoterName.trim(),
-      promoter_nif: promoterNif.trim(),
-      contractor_name: contractorName.trim(),
-      contractor_nif: contractorNif.trim(),
-      facultative_direction_name: facultativeDirectionName.trim(),
-      facultative_direction_nif: facultativeDirectionNif.trim(),
-      css_name: cssName.trim(),
-      css_nif: cssNif.trim(),
-      site_address: siteAddress.trim(),
-      site_locality: siteLocality.trim(),
-      diligencia_generated_at: new Date().toISOString(),
-      created_by: user.id,
+      page_index: nextIndex,
+      file_path: path,
+      file_name: finalFile.name,
+      kind,
+      uploaded_by: user.id,
     } as any);
-    if (error) {
-      toast.error("Error al crear la diligencia");
-      console.error(error);
-    } else {
-      toast.success("Diligencia de Habilitación generada");
-      setShowDiligencia(false);
-      fetchData();
-    }
-    setSubmittingDiligencia(false);
+    if (insErr) throw insErr;
   };
 
-  // Upload sealed file
-  const handleUploadSealed = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !book) return;
-    setUploading(true);
-    const path = `subcontracting/${projectId}/${Date.now()}_${file.name}`;
-    const { error: uploadErr } = await supabase.storage.from("plans").upload(path, file);
-    if (uploadErr) {
-      toast.error("Error al subir el archivo");
-      setUploading(false);
+  const handleUploadFiles = async (
+    files: FileList | File[] | null,
+    kind: "first_sheet" | "entry_sheet",
+  ) => {
+    if (!files || (files as any).length === 0) return;
+    const arr = Array.from(files as any) as File[];
+    const setBusy = kind === "first_sheet" ? setUploadingFirst : setUploadingEntry;
+    setBusy(true);
+    try {
+      for (const f of arr) await uploadOneFile(f, kind);
+      toast.success(arr.length === 1 ? "Hoja añadida" : `${arr.length} hojas añadidas`);
+      await fetchData();
+    } catch (e: any) {
+      console.error(e);
+      toast.error("Error al subir: " + (e?.message || ""));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const triggerSource = async (
+    source: "camera" | "gallery" | "scan",
+    kind: "first_sheet" | "entry_sheet",
+  ) => {
+    setScanMode(source === "scan");
+    const ref = kind === "first_sheet" ? firstFileRef : entryFileRef;
+    if (isNative()) {
+      const camMode = source === "camera" ? "camera" : "gallery";
+      const files = await pickImage(camMode, ref.current);
+      if (files && files.length) await handleUploadFiles(files, kind);
+    } else {
+      // Web: dispara el input file (la cámara la abre el navegador con capture)
+      if (ref.current) {
+        ref.current.setAttribute(
+          "accept",
+          source === "camera" ? "image/*" : "image/*,application/pdf",
+        );
+        if (source === "camera") ref.current.setAttribute("capture", "environment");
+        else ref.current.removeAttribute("capture");
+        ref.current.click();
+      }
+    }
+  };
+
+  /* ─── Preview / borrado ─────────────────────────────────────── */
+
+  const handlePreview = async (page: any) => {
+    setPreviewPage(page);
+    setPreviewUrl(null);
+    const { data, error } = await supabase.storage
+      .from("plans")
+      .createSignedUrl(page.file_path, 3600);
+    if (error) {
+      toast.error("No se pudo abrir la hoja");
+      setPreviewPage(null);
       return;
     }
+    setPreviewUrl(data.signedUrl);
+  };
+
+  const handleDeletePage = async () => {
+    if (!deleteTarget) return;
+    const { error: stErr } = await supabase.storage.from("plans").remove([deleteTarget.file_path]);
+    if (stErr) console.warn("storage remove", stErr);
     const { error } = await supabase
-      .from("subcontracting_books" as any)
-      .update({ sealed_file_path: path, sealed_file_name: file.name, is_activated: true } as any)
-      .eq("id", book.id);
-    if (error) {
-      toast.error("Error al activar el libro");
-    } else {
-      toast.success("Libro de Subcontratación activado");
+      .from("subcontracting_pages" as any)
+      .delete()
+      .eq("id", deleteTarget.id);
+    if (error) toast.error("Error al eliminar");
+    else {
+      toast.success("Hoja eliminada");
+      setDeleteTarget(null);
       fetchData();
     }
-    setUploading(false);
-    if (sealedInputRef.current) sealedInputRef.current.value = "";
   };
 
-  // Create new entry (manual signature)
-  const handleCreateEntry = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!projectId || !user || !profile || !book) return;
+  /* ─── Exportar libro a PDF ──────────────────────────────────── */
 
-    if (!profile.dni_cif || !profile.fiscal_address) {
-      setShowFiscalModal(true);
-      setPendingSubmit(true);
-      return;
-    }
-
-    if (!empresaNombre.trim() || !empresaNif.trim() || !objetoContrato.trim() || !fechaComienzo || !responsableNombre.trim() || !responsableDni.trim()) {
-      toast.error("Completa todos los campos obligatorios");
-      return;
-    }
-
-    if (signatureMethod === "manual" && sigCanvasRef.current?.isEmpty()) {
-      toast.error("Debes firmar el asiento antes de registrarlo");
-      return;
-    }
-
-    setSubmittingEntry(true);
-    const geo = await getGeoLocation();
-    const hashInput = `${empresaNombre}|${empresaNif}|${objetoContrato}|${new Date().toISOString()}|${user.id}`;
-    const hash = await computeHash(hashInput);
-    const signatureImage = signatureMethod === "manual" && sigCanvasRef.current ? sigCanvasRef.current.toDataUrl() : null;
-
-    const { error } = await supabase.from("subcontracting_entries" as any).insert({
-      book_id: book.id,
-      project_id: projectId,
-      empresa_nombre: empresaNombre.trim(),
-      empresa_nif: empresaNif.trim(),
-      nivel_subcontratacion: parseInt(nivelSub),
-      objeto_contrato: objetoContrato.trim(),
-      fecha_comienzo: format(fechaComienzo, "yyyy-MM-dd"),
-      responsable_nombre: responsableNombre.trim(),
-      responsable_dni: responsableDni.trim(),
-      fecha_plan_seguridad: fechaPlanSeguridad ? format(fechaPlanSeguridad, "yyyy-MM-dd") : null,
-      instrucciones_seguridad: instrucciones.trim() || null,
-      signature_hash: hash,
-      signature_geo: geo,
-      signature_type: signatureMethod,
-      signature_image: signatureImage,
-      signed_by: user.id,
-      signed_at: new Date().toISOString(),
-      is_locked: true,
-      created_by: user.id,
-    } as any);
-
-    if (error) {
-      toast.error("Error al registrar la subcontrata");
-      console.error(error);
-    } else {
-      toast.success("Subcontrata registrada correctamente");
-      resetEntryForm();
-      setShowNewEntry(false);
-      fetchData();
-    }
-    setSubmittingEntry(false);
-  };
-
-  const handleCertSign = async (_bytes: Uint8Array, metadata: CertSignMetadata) => {
-    if (!projectId || !user || !profile || !book) return;
-
-    if (!empresaNombre.trim() || !empresaNif.trim() || !objetoContrato.trim() || !fechaComienzo || !responsableNombre.trim() || !responsableDni.trim()) {
-      toast.error("Completa todos los campos obligatorios");
-      return;
-    }
-
-    setSubmittingEntry(true);
-    const geo = await getGeoLocation();
-
-    const { error } = await supabase.from("subcontracting_entries" as any).insert({
-      book_id: book.id,
-      project_id: projectId,
-      empresa_nombre: empresaNombre.trim(),
-      empresa_nif: empresaNif.trim(),
-      nivel_subcontratacion: parseInt(nivelSub),
-      objeto_contrato: objetoContrato.trim(),
-      fecha_comienzo: format(fechaComienzo!, "yyyy-MM-dd"),
-      responsable_nombre: responsableNombre.trim(),
-      responsable_dni: responsableDni.trim(),
-      fecha_plan_seguridad: fechaPlanSeguridad ? format(fechaPlanSeguridad, "yyyy-MM-dd") : null,
-      instrucciones_seguridad: instrucciones.trim() || null,
-      signature_hash: metadata.validationHash,
-      signature_geo: geo,
-      signature_type: "p12",
-      signed_by: user.id,
-      signed_at: new Date().toISOString(),
-      is_locked: true,
-      created_by: user.id,
-    } as any);
-
-    if (error) {
-      toast.error("Error al registrar la subcontrata");
-      console.error(error);
-    } else {
-      toast.success("Subcontrata registrada con certificado digital");
-      resetEntryForm();
-      setShowNewEntry(false);
-      fetchData();
-    }
-    setSubmittingEntry(false);
-  };
-
-  const resetEntryForm = () => {
-    setEmpresaNombre("");
-    setEmpresaNif("");
-    setNivelSub("1");
-    setObjetoContrato("");
-    setFechaComienzo(undefined);
-    setResponsableNombre("");
-    setResponsableDni("");
-    setFechaPlanSeguridad(undefined);
-    setInstrucciones("");
-  };
-
-  // Export book
-  const handleExport = async () => {
-    if (!book || !project) return;
+  const handleExportBook = async () => {
+    if (pages.length === 0 || !project) return;
     setExporting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("export-subcontracting", { body: { projectId } });
-      if (error) throw error;
-      const blob = new Blob([data.html], { type: "text/html" });
-      await downloadFile(blob, data.fileName || "Libro_Subcontratacion.html");
-      toast.success("Libro exportado correctamente");
-    } catch (err: any) {
-      toast.error("Error al exportar: " + (err?.message || ""));
+      const pdf = await PDFDocument.create();
+      for (const page of pages) {
+        const { data: signed, error: sErr } = await supabase.storage
+          .from("plans")
+          .createSignedUrl(page.file_path, 600);
+        if (sErr || !signed) throw sErr || new Error("URL fallida");
+        const res = await fetch(signed.signedUrl);
+        const buf = new Uint8Array(await res.arrayBuffer());
+
+        const ext = (page.file_name.split(".").pop() || "").toLowerCase();
+        if (ext === "pdf") {
+          const src = await PDFDocument.load(buf);
+          const copied = await pdf.copyPages(src, src.getPageIndices());
+          copied.forEach((p) => pdf.addPage(p));
+        } else {
+          let img;
+          try {
+            img = ext === "png"
+              ? await pdf.embedPng(buf)
+              : await pdf.embedJpg(buf);
+          } catch {
+            // Fallback: re-codifica como JPG via canvas
+            const dataUrl = await readFileAsDataUrl(new Blob([buf]));
+            const im = await loadImage(dataUrl);
+            const canvas = document.createElement("canvas");
+            canvas.width = im.naturalWidth;
+            canvas.height = im.naturalHeight;
+            canvas.getContext("2d")!.drawImage(im, 0, 0);
+            const jpgBlob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), "image/jpeg", 0.9));
+            const jpgBuf = new Uint8Array(await jpgBlob.arrayBuffer());
+            img = await pdf.embedJpg(jpgBuf);
+          }
+          // Página A4 vertical, ajusta imagen manteniendo proporción
+          const A4 = { w: 595.28, h: 841.89 };
+          const margin = 24;
+          const maxW = A4.w - margin * 2;
+          const maxH = A4.h - margin * 2;
+          const scale = Math.min(maxW / img.width, maxH / img.height);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          const pdfPage = pdf.addPage([A4.w, A4.h]);
+          pdfPage.drawImage(img, {
+            x: (A4.w - w) / 2,
+            y: (A4.h - h) / 2,
+            width: w,
+            height: h,
+          });
+        }
+      }
+      const bytes = await pdf.save();
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+      const safe = (project.name || "Proyecto").replace(/\s+/g, "_");
+      await downloadFile(blob, `Libro_Subcontratas_${safe}.pdf`);
+      toast.success("Libro exportado");
+    } catch (e: any) {
+      console.error(e);
+      toast.error("Error al exportar: " + (e?.message || ""));
+    } finally {
+      setExporting(false);
     }
-    setExporting(false);
   };
 
-  const DatePickerField = ({ label, value, onChange, required }: { label: string; value?: Date; onChange: (d: Date | undefined) => void; required?: boolean }) => (
-    <div className="space-y-2">
-      <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">{label} {required && "*"}</Label>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className={cn("w-full justify-start text-left font-normal text-sm", !value && "text-muted-foreground")}>
-            <CalendarIcon className="h-4 w-4 mr-2" />
-            {value ? format(value, "d 'de' MMMM yyyy", { locale: es }) : "Seleccionar fecha"}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar mode="single" selected={value} onSelect={onChange} initialFocus className={cn("p-3 pointer-events-auto")} />
-        </PopoverContent>
-      </Popover>
-    </div>
+  /* ─── Generar acta de adhesión PDF ──────────────────────────── */
+
+  const handleGenerateAct = async () => {
+    if (!projectId || !user) return;
+    if (!actWork.trim() || !actLocation.trim() || !actPromoter.trim() ||
+        !actSubcontractor.trim() || !actTask.trim()) {
+      toast.error("Completa Obra, Ubicación, Promotor, Subcontrata y Tarea");
+      return;
+    }
+    setGeneratingAct(true);
+    try {
+      const pdf = await PDFDocument.create();
+      const page = pdf.addPage([595.28, 841.89]); // A4
+      const helv = await pdf.embedFont(StandardFonts.Helvetica);
+      const helvBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+      const margin = 50;
+      let y = 800;
+      const text = (s: string, opts: { bold?: boolean; size?: number; x?: number; color?: any } = {}) => {
+        const size = opts.size ?? 10;
+        page.drawText(s, {
+          x: opts.x ?? margin,
+          y,
+          size,
+          font: opts.bold ? helvBold : helv,
+          color: opts.color || rgb(0, 0, 0),
+        });
+      };
+      const wrap = (s: string, maxWidth: number, font: any, size: number) => {
+        const words = s.split(/\s+/);
+        const lines: string[] = [];
+        let cur = "";
+        for (const w of words) {
+          const test = cur ? cur + " " + w : w;
+          if (font.widthOfTextAtSize(test, size) > maxWidth) {
+            if (cur) lines.push(cur);
+            cur = w;
+          } else cur = test;
+        }
+        if (cur) lines.push(cur);
+        return lines;
+      };
+      const drawWrapped = (s: string, font: any, size: number, lh = 14) => {
+        const lines = wrap(s, 595.28 - margin * 2, font, size);
+        for (const ln of lines) {
+          page.drawText(ln, { x: margin, y, size, font, color: rgb(0, 0, 0) });
+          y -= lh;
+        }
+      };
+
+      // Título
+      const title = "ACTA DE ADHESIÓN AL PLAN DE SEGURIDAD Y SALUD";
+      const titleSize = 13;
+      const tw = helvBold.widthOfTextAtSize(title, titleSize);
+      page.drawText(title, {
+        x: (595.28 - tw) / 2,
+        y,
+        size: titleSize,
+        font: helvBold,
+        color: rgb(0, 0, 0),
+      });
+      // Subrayado
+      page.drawLine({
+        start: { x: (595.28 - tw) / 2, y: y - 2 },
+        end: { x: (595.28 + tw) / 2, y: y - 2 },
+        thickness: 0.7,
+        color: rgb(0, 0, 0),
+      });
+      y -= 30;
+
+      // Datos de la obra
+      text("DATOS DE LA OBRA", { bold: true, size: 11 }); y -= 18;
+      text("Obra: ", { bold: true });
+      page.drawText(actWork, { x: margin + helvBold.widthOfTextAtSize("Obra: ", 10), y, size: 10, font: helv });
+      y -= 16;
+      text("Ubicación: ", { bold: true });
+      page.drawText(actLocation, { x: margin + helvBold.widthOfTextAtSize("Ubicación: ", 10), y, size: 10, font: helv });
+      y -= 16;
+      text("Promotor: ", { bold: true });
+      page.drawText(actPromoter, { x: margin + helvBold.widthOfTextAtSize("Promotor: ", 10), y, size: 10, font: helv });
+      y -= 26;
+
+      // Cuerpo
+      text("CUERPO DEL ACTA", { bold: true, size: 11 }); y -= 18;
+      const contractorText = actContractor || "EL CONTRATISTA PRINCIPAL";
+      const body1 =
+        `${contractorText}, como contratista principal de la obra referenciada, ha entregado copia ` +
+        `del plan de seguridad y salud redactado para la misma a la empresa subcontratista ` +
+        `${actSubcontractor} en virtud de lo dispuesto en el artículo 15 del Real Decreto 1627/1997, ` +
+        `de 24 de octubre, y en el artículo 7, Capítulo III del Real Decreto 171/2004, de 30 de enero, ` +
+        `que desarrolla el artículo 24 de la Ley 31/1995, de 8 de noviembre, de Prevención de Riesgos ` +
+        `Laborales, en materia de coordinación de actividades empresariales.`;
+      drawWrapped(body1, helv, 10, 14);
+      y -= 6;
+
+      const repText = actRepresentative
+        ? `D./Dña. ${actRepresentative} representante legal de la empresa ${actSubcontractor}`
+        : `El representante legal de la empresa ${actSubcontractor}`;
+      const body2 =
+        `${repText} encargada de las tareas de ${actTask} por el presente asume dicho plan y las ` +
+        `medidas preventivas a adoptar en el mismo especificadas, realizando traslado a sus ` +
+        `trabajadores de su contenido.`;
+      drawWrapped(body2, helv, 10, 14);
+      y -= 6;
+
+      drawWrapped("Y para que conste a los efectos oportunos.", helv, 10, 14);
+      y -= 6;
+
+      const today = new Date();
+      const monthsEs = [
+        "enero", "febrero", "marzo", "abril", "mayo", "junio",
+        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+      ];
+      const place = (actLocation.split(",")[1] || actLocation.split(",")[0] || "").trim();
+      const dateLine = `En ${place || "________"}, a ${today.getDate()} de ${monthsEs[today.getMonth()]} de ${today.getFullYear()}.`;
+      drawWrapped(dateLine, helv, 10, 14);
+      y -= 24;
+
+      // FIRMAS
+      text("FIRMAS", { bold: true, size: 11 }); y -= 18;
+      const boxW = (595.28 - margin * 2 - 20) / 2;
+      const boxH = 110;
+      const boxY = y - boxH;
+      // Caja izquierda
+      page.drawRectangle({
+        x: margin, y: boxY, width: boxW, height: boxH,
+        borderColor: rgb(0, 0, 0), borderWidth: 0.7,
+      });
+      // Caja derecha
+      page.drawRectangle({
+        x: margin + boxW + 20, y: boxY, width: boxW, height: boxH,
+        borderColor: rgb(0, 0, 0), borderWidth: 0.7,
+      });
+      // Encabezados
+      const labelL = "Por el Contratista Principal";
+      const labelR = "Por la Empresa Subcontratista";
+      page.drawText(labelL, {
+        x: margin + (boxW - helvBold.widthOfTextAtSize(labelL, 10)) / 2,
+        y: boxY + boxH - 16, size: 10, font: helvBold,
+      });
+      page.drawText(labelR, {
+        x: margin + boxW + 20 + (boxW - helvBold.widthOfTextAtSize(labelR, 10)) / 2,
+        y: boxY + boxH - 16, size: 10, font: helvBold,
+      });
+      // Nombres
+      const nL = contractorText;
+      const nR = actSubcontractor;
+      page.drawText(nL, {
+        x: margin + (boxW - helv.widthOfTextAtSize(nL, 9)) / 2,
+        y: boxY + boxH - 30, size: 9, font: helv,
+      });
+      page.drawText(nR, {
+        x: margin + boxW + 20 + (boxW - helv.widthOfTextAtSize(nR, 9)) / 2,
+        y: boxY + boxH - 30, size: 9, font: helv,
+      });
+      // Línea de firma
+      page.drawLine({
+        start: { x: margin + 15, y: boxY + 18 },
+        end: { x: margin + boxW - 15, y: boxY + 18 },
+        thickness: 0.5, color: rgb(0.4, 0.4, 0.4),
+      });
+      page.drawLine({
+        start: { x: margin + boxW + 20 + 15, y: boxY + 18 },
+        end: { x: margin + boxW + 20 + boxW - 15, y: boxY + 18 },
+        thickness: 0.5, color: rgb(0.4, 0.4, 0.4),
+      });
+      page.drawText("Firma", {
+        x: margin + (boxW - helv.widthOfTextAtSize("Firma", 8)) / 2,
+        y: boxY + 6, size: 8, font: helv, color: rgb(0.4, 0.4, 0.4),
+      });
+      page.drawText("Firma", {
+        x: margin + boxW + 20 + (boxW - helv.widthOfTextAtSize("Firma", 8)) / 2,
+        y: boxY + 6, size: 8, font: helv, color: rgb(0.4, 0.4, 0.4),
+      });
+
+      const bytes = await pdf.save();
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+      const safe = `${actSubcontractor}`.replace(/[^\w]+/g, "_").slice(0, 60);
+      const fileName = `Acta_Adhesion_PSS_${safe}_${today.getTime()}.pdf`;
+
+      // Subir al bucket
+      const path = `${projectId}/subcontracting/acts/${fileName}`;
+      const { error: upErr } = await supabase.storage.from("plans").upload(path, blob, {
+        cacheControl: "3600", contentType: "application/pdf", upsert: false,
+      });
+      if (upErr) throw upErr;
+
+      const { error: insErr } = await supabase
+        .from("subcontracting_adhesion_acts" as any)
+        .insert({
+          project_id: projectId,
+          work_name: actWork.trim(),
+          location: actLocation.trim(),
+          promoter_name: actPromoter.trim(),
+          contractor_name: actContractor.trim() || null,
+          subcontractor_name: actSubcontractor.trim(),
+          subcontractor_representative: actRepresentative.trim() || null,
+          subcontractor_task: actTask.trim(),
+          file_path: path,
+          file_name: fileName,
+          generated_by: user.id,
+        } as any);
+      if (insErr) throw insErr;
+
+      await downloadFile(blob, fileName);
+      toast.success("Acta generada");
+      setShowActDialog(false);
+      // Reset
+      setActSubcontractor(""); setActRepresentative(""); setActTask("");
+      fetchData();
+    } catch (e: any) {
+      console.error(e);
+      toast.error("Error al generar el acta: " + (e?.message || ""));
+    } finally {
+      setGeneratingAct(false);
+    }
+  };
+
+  const openAct = async (act: any) => {
+    if (!act.file_path) return;
+    const { data, error } = await supabase.storage
+      .from("plans")
+      .createSignedUrl(act.file_path, 600);
+    if (error || !data) { toast.error("No se pudo abrir el acta"); return; }
+    const res = await fetch(data.signedUrl);
+    const blob = await res.blob();
+    await openFile(blob, act.file_name || "acta.pdf");
+  };
+
+  /* ─── Botón compuesto Galería / Cámara / Escaneo ────────────── */
+
+  const SourceMenu = ({
+    kind, busy, label,
+  }: {
+    kind: "first_sheet" | "entry_sheet"; busy: boolean; label: string;
+  }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="lg"
+          disabled={busy}
+          className="gap-2 font-display text-xs uppercase tracking-wider"
+        >
+          {busy
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
+            : <><Plus className="h-4 w-4" /> {label} <ChevronDown className="h-3 w-3 ml-1" /></>}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem onClick={() => triggerSource("gallery", kind)}>
+          <ImageIcon className="h-4 w-4 mr-2" /> Galería
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => triggerSource("camera", kind)}>
+          <Camera className="h-4 w-4 mr-2" /> Cámara
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => triggerSource("scan", kind)}>
+          <ScanLine className="h-4 w-4 mr-2" /> Escanear (B/N)
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
+
+  /* ─── Render ────────────────────────────────────────────────── */
 
   return (
     <AppLayout>
       <div className="max-w-4xl mx-auto py-6 px-4">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6 flex-wrap">
-          <Button variant="ghost" size="icon" onClick={() => navigate(`/project/${projectId}`)} className="shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate(`/project/${projectId}`)}
+            className="shrink-0"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex-1 min-w-0">
             <h1 className="text-xl font-display font-bold tracking-tight truncate flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-primary shrink-0" />
-              Libro de Subcontratación
+              Libro de Subcontratas y Seguridad
             </h1>
-            {project && <p className="text-xs text-muted-foreground truncate">{project.name}</p>}
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            {book?.is_activated && entries.length > 0 && (
-              <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting} className="gap-1.5 text-xs">
-                <Download className="h-3.5 w-3.5" />
-                {exporting ? "Exportando..." : "Exportar Libro"}
-              </Button>
-            )}
-            {book?.is_activated && canWrite && (
-              <Button size="sm" onClick={() => setShowNewEntry(true)} className="gap-1.5 text-xs font-display uppercase tracking-wider">
-                <Plus className="h-3.5 w-3.5" />
-                Nueva Subcontrata
-              </Button>
+            {project && (
+              <p className="text-xs text-muted-foreground truncate">{project.name}</p>
             )}
           </div>
         </div>
 
+        {/* Inputs ocultos (fallback web) */}
+        <input
+          ref={firstFileRef}
+          type="file"
+          accept="image/*,application/pdf"
+          className="hidden"
+          onChange={(e) => {
+            handleUploadFiles(e.target.files, "first_sheet");
+            if (firstFileRef.current) firstFileRef.current.value = "";
+          }}
+        />
+        <input
+          ref={entryFileRef}
+          type="file"
+          accept="image/*,application/pdf"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            handleUploadFiles(e.target.files, "entry_sheet");
+            if (entryFileRef.current) entryFileRef.current.value = "";
+          }}
+        />
+
         {loading ? (
-          <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-24 bg-card border border-border rounded-lg animate-pulse" />)}</div>
-        ) : !book ? (
-          /* No book yet - show creation */
-          <div className="text-center py-16">
-            <FileText className="h-14 w-14 text-muted-foreground/30 mx-auto mb-4" />
-            <h2 className="font-display text-lg font-semibold mb-2">Libro de Subcontratación</h2>
-            <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
-              Genera la Diligencia de Habilitación para iniciar el libro según la Ley 32/2006.
-            </p>
-            {canWrite ? (
-              <Button onClick={() => setShowDiligencia(true)} className="gap-2 font-display text-xs uppercase tracking-wider">
-                <FileText className="h-4 w-4" />
-                Generar Diligencia de Habilitación
-              </Button>
-            ) : (
-              <p className="text-sm text-muted-foreground">Solo el Contratista puede generar la diligencia.</p>
-            )}
-          </div>
-        ) : !book.is_activated ? (
-          /* Book exists but not activated */
-          <div className="space-y-6">
-            <div className="p-6 border border-warning/30 bg-warning/5 rounded-lg space-y-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="font-display font-semibold text-sm">Diligencia pendiente de sello</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Descarga la diligencia, llévala a sellar por la Autoridad Laboral y sube el documento sellado para activar el libro.
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={async () => {
-                  // Generate downloadable diligencia HTML
-                  const html = generateDiligenciaHtml(book, project, members);
-                  const blob = new Blob([html], { type: "text/html" });
-                  await downloadFile(
-                    blob,
-                    `Diligencia_Habilitacion_${project?.name?.replace(/\s+/g, "_")}.html`,
-                  );
-                }}>
-                  <Download className="h-3.5 w-3.5" />
-                  Descargar Diligencia
-                </Button>
-                {canWrite && (
-                  <>
-                    <input ref={sealedInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={handleUploadSealed} />
-                    <Button size="sm" className="gap-1.5 text-xs font-display uppercase tracking-wider" disabled={uploading} onClick={() => sealedInputRef.current?.click()}>
-                      <Upload className="h-3.5 w-3.5" />
-                      {uploading ? "Subiendo..." : "Subir 1ª Hoja HABILITADA"}
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-            {/* Show diligencia data */}
-            <div className="bg-card border border-border rounded-lg p-5">
-              <h3 className="font-display text-sm font-semibold mb-3">Datos de la Diligencia</h3>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                <span className="text-muted-foreground">Nº Inscripción REA:</span>
-                <span className="font-medium">{book.rea_number}</span>
-                <span className="text-muted-foreground">Nº Registro Apertura:</span>
-                <span className="font-medium">{book.apertura_number}</span>
-                <span className="text-muted-foreground">Causa:</span>
-                <span className="font-medium">{HABILITACION_CAUSES.find(c => c.value === book.habilitacion_cause)?.label}</span>
-                <span className="text-muted-foreground">Generada:</span>
-                <span className="font-medium">{new Date(book.diligencia_generated_at).toLocaleDateString("es-ES")}</span>
-              </div>
-            </div>
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="h-24 bg-card border border-border rounded-lg animate-pulse"
+              />
+            ))}
           </div>
         ) : (
-          /* Book activated - show entries */
-          <div className="space-y-4">
-            <div className="bg-card border border-primary/20 rounded-lg p-4 flex items-center gap-3 mb-2">
-              <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-display font-semibold">Libro Activado</p>
-                <p className="text-xs text-muted-foreground">REA: {book.rea_number} — Apertura: {book.apertura_number}</p>
+          <div className="space-y-8">
+            {/* ───── BLOQUE 1: Libro de subcontratas (digitalización) ───── */}
+            <section className="space-y-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  Digitalización del Libro Físico
+                </h2>
+                {pages.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportBook}
+                    disabled={exporting}
+                    className="gap-1.5 text-xs"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {exporting ? "Exportando…" : "Exportar libro de subcontratas"}
+                  </Button>
+                )}
               </div>
-            </div>
 
-            {entries.length === 0 ? (
-              <div className="text-center py-12">
-                <ClipboardList className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">No hay subcontratas registradas</p>
-              </div>
-            ) : (
-              entries.map((entry: any, i: number) => (
-                <div key={entry.id} className="bg-card border border-border rounded-lg p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all animate-fade-in" style={{ animationDelay: `${i * 60}ms` }}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-xs font-display font-bold text-muted-foreground">#{entry.entry_number}</span>
-                        <span className="px-2 py-0.5 text-[10px] font-display uppercase tracking-widest rounded bg-primary/10 text-primary">
-                          Nivel {entry.nivel_subcontratacion}
-                        </span>
-                        {entry.is_locked && (
-                          <span className="flex items-center gap-1 text-[10px] text-primary font-display uppercase tracking-wider">
-                            <Lock className="h-3 w-3" /> Firmado
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm font-semibold">{entry.empresa_nombre}</p>
-                      <p className="text-xs text-muted-foreground">NIF: {entry.empresa_nif}</p>
-                      <p className="text-xs mt-1">{entry.objeto_contrato}</p>
-                      <div className="flex gap-4 text-[10px] text-muted-foreground mt-2 flex-wrap">
-                        <span>Inicio: {new Date(entry.fecha_comienzo).toLocaleDateString("es-ES")}</span>
-                        <span>Resp.: {entry.responsable_nombre}</span>
-                        {entry.fecha_plan_seguridad && <span>PSS: {new Date(entry.fecha_plan_seguridad).toLocaleDateString("es-ES")}</span>}
-                      </div>
-                      {entry.signature_hash && (
-                        <span className="text-[9px] font-mono text-muted-foreground mt-1 block truncate max-w-xs">
-                          Hash: {entry.signature_hash.substring(0, 24)}...
-                        </span>
-                      )}
-                    </div>
-                  </div>
+              {pages.length === 0 ? (
+                <div className="text-center py-12 border border-dashed border-border rounded-lg">
+                  <FileText className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
+                    Sube la primera hoja del Libro de Subcontratación con los datos del contratista.
+                  </p>
+                  {canWrite ? (
+                    <SourceMenu
+                      kind="first_sheet"
+                      busy={uploadingFirst}
+                      label="Primera hoja (datos contratista)"
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Solo Constructor, DEM o DO pueden añadir hojas.
+                    </p>
+                  )}
                 </div>
-              ))
-            )}
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {pages.map((p, i) => (
+                      <div
+                        key={p.id}
+                        className="group relative border border-border rounded-lg overflow-hidden bg-card hover:shadow-md transition-all"
+                      >
+                        <div className="aspect-[3/4] flex items-center justify-center bg-muted/40 text-muted-foreground">
+                          <FileText className="h-8 w-8" />
+                          <span className="absolute top-1.5 left-1.5 text-[10px] font-display bg-background/90 px-1.5 py-0.5 rounded">
+                            #{i + 1}
+                          </span>
+                          {p.kind === "first_sheet" && (
+                            <span className="absolute top-1.5 right-1.5 text-[9px] font-display uppercase tracking-wider bg-primary/15 text-primary px-1.5 py-0.5 rounded">
+                              1ª hoja
+                            </span>
+                          )}
+                        </div>
+                        <div className="p-2 space-y-1">
+                          <p className="text-[10px] truncate text-muted-foreground" title={p.file_name}>
+                            {p.file_name}
+                          </p>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="flex-1 h-7 text-[10px] gap-1"
+                              onClick={() => handlePreview(p)}
+                            >
+                              <Eye className="h-3 w-3" /> Ver
+                            </Button>
+                            {canWrite && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-[10px] text-destructive hover:text-destructive"
+                                onClick={() => setDeleteTarget(p)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {canWrite && (
+                    <div className="flex justify-center pt-2">
+                      <SourceMenu
+                        kind="entry_sheet"
+                        busy={uploadingEntry}
+                        label="Ficha del libro de subcontratación"
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+
+            {/* ───── BLOQUE 2: Acta de adhesión al PSS ───── */}
+            <section className="space-y-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  Actas de Adhesión al Plan de Seguridad
+                </h2>
+                {canWrite && (
+                  <Button
+                    size="sm"
+                    onClick={() => setShowActDialog(true)}
+                    className="gap-1.5 text-xs font-display uppercase tracking-wider"
+                  >
+                    <FileSignature className="h-3.5 w-3.5" />
+                    Crear acta de adhesión al plan
+                  </Button>
+                )}
+              </div>
+
+              {acts.length === 0 ? (
+                <div className="text-center py-8 border border-dashed border-border rounded-lg">
+                  <FileSignature className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Aún no se ha generado ningún acta de adhesión.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {acts.map((a) => (
+                    <div
+                      key={a.id}
+                      className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg hover:shadow-sm transition-all"
+                    >
+                      <FileSignature className="h-5 w-5 text-primary shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">
+                          {a.subcontractor_name}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {a.subcontractor_task} · {new Date(a.created_at).toLocaleDateString("es-ES")}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs"
+                        onClick={() => openAct(a)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Abrir
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         )}
       </div>
 
-      {/* Diligencia dialog */}
-      <Dialog open={showDiligencia} onOpenChange={setShowDiligencia}>
+      {/* Preview dialog */}
+      <Dialog
+        open={!!previewPage}
+        onOpenChange={(o) => { if (!o) { setPreviewPage(null); setPreviewUrl(null); } }}
+      >
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display text-base truncate">
+              {previewPage?.file_name}
+            </DialogTitle>
+          </DialogHeader>
+          {!previewUrl ? (
+            <div className="h-64 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : previewPage?.file_name?.toLowerCase().endsWith(".pdf") ? (
+            <iframe src={previewUrl} className="w-full h-[70vh] border rounded" title="preview" />
+          ) : (
+            <img src={previewUrl} alt={previewPage?.file_name} className="w-full h-auto rounded" />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm */}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar esta hoja?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará la imagen y se reordenarán las páginas restantes. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeletePage}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Acta dialog */}
+      <Dialog open={showActDialog} onOpenChange={setShowActDialog}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display text-base">Diligencia de Habilitación</DialogTitle>
+            <DialogTitle className="font-display text-base">
+              Acta de Adhesión al Plan de Seguridad
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
-             {/* Auto-filled data from project */}
-            {(members.length > 0 || project?.address) && (
-              <div className="bg-muted/30 border border-border rounded-lg p-3 space-y-1.5">
-                <p className="text-[10px] font-display uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                  <Brain className="h-3.5 w-3.5 text-primary" /> Datos sugeridos por Cerebro de Obra
-                </p>
-                <p className="text-xs text-muted-foreground">Revisa y confirma cada dato antes de generar la diligencia. No se crearán campos vacíos.</p>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Promotor *</Label>
-                <Input value={promoterName} onChange={e => setPromoterName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">NIF Promotor *</Label>
-                <Input value={promoterNif} onChange={e => setPromoterNif(e.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Contratista *</Label>
-                <Input value={contractorName} onChange={e => setContractorName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">NIF Contratista *</Label>
-                <Input value={contractorNif} onChange={e => setContractorNif(e.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Dirección Facultativa *</Label>
-                <Input value={facultativeDirectionName} onChange={e => setFacultativeDirectionName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">NIF Dirección Facultativa *</Label>
-                <Input value={facultativeDirectionNif} onChange={e => setFacultativeDirectionNif(e.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Coordinador SyS *</Label>
-                <Input value={cssName} onChange={e => setCssName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">NIF Coordinador SyS *</Label>
-                <Input value={cssNif} onChange={e => setCssNif(e.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Domicilio de la obra *</Label>
-                <Input value={siteAddress} onChange={e => setSiteAddress(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Localidad *</Label>
-                <Input value={siteLocality} onChange={e => setSiteLocality(e.target.value)} />
-              </div>
-            </div>
-
             <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Nº Inscripción REA *</Label>
-              <Input value={reaNumber} onChange={e => setReaNumber(e.target.value)} placeholder="Número de inscripción en el REA" />
-            </div>
-            <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Nº Registro Comunicación Apertura *</Label>
-              <Input value={aperturaNumber} onChange={e => setAperturaNumber(e.target.value)} placeholder="Número de registro de apertura" />
-            </div>
-            <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Causa de habilitación</Label>
-              <Select value={habCause} onValueChange={setHabCause}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {HABILITACION_CAUSES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            {(habCause === "continuacion" || habCause === "perdida" || habCause === "destruccion") && (
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Nº última anotación libro anterior</Label>
-                <Input value={lastAnnotation} onChange={e => setLastAnnotation(e.target.value)} placeholder="Nº de orden" />
-              </div>
-            )}
-            <Button onClick={handleCreateDiligencia} disabled={submittingDiligencia} className="w-full gap-2 font-display text-xs uppercase tracking-wider">
-              <FileText className="h-4 w-4" />
-              {submittingDiligencia ? "Generando..." : "Generar Diligencia"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* New Entry dialog */}
-      <Dialog open={showNewEntry} onOpenChange={setShowNewEntry}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display text-base">Nueva Subcontrata</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreateEntry} className="space-y-4 mt-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Empresa / Autónomo *</Label>
-                <Input value={empresaNombre} onChange={e => setEmpresaNombre(e.target.value)} placeholder="Nombre de la empresa" required />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">NIF *</Label>
-                <Input value={empresaNif} onChange={e => setEmpresaNif(e.target.value)} placeholder="NIF / CIF" required />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Nivel de Subcontratación *</Label>
-              <Select value={nivelSub} onValueChange={setNivelSub}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {[1, 2, 3, 4, 5].map(n => <SelectItem key={n} value={String(n)}>Nivel {n}º</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Objeto del contrato *</Label>
-              <Textarea value={objetoContrato} onChange={e => setObjetoContrato(e.target.value)} placeholder="Descripción de los trabajos subcontratados" rows={3} required />
-            </div>
-
-            <DatePickerField label="Fecha comienzo de trabajos" value={fechaComienzo} onChange={setFechaComienzo} required />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Responsable dirección trabajos *</Label>
-                <Input value={responsableNombre} onChange={e => setResponsableNombre(e.target.value)} placeholder="Nombre completo" required />
-              </div>
-              <div className="space-y-2">
-                <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">DNI Responsable *</Label>
-                <Input value={responsableDni} onChange={e => setResponsableDni(e.target.value)} placeholder="DNI" required />
-              </div>
-            </div>
-
-            <DatePickerField label="Fecha entrega Plan de Seguridad" value={fechaPlanSeguridad} onChange={setFechaPlanSeguridad} />
-
-            <div className="space-y-2">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">Instrucciones de Seguridad</Label>
-              <Textarea value={instrucciones} onChange={e => setInstrucciones(e.target.value)} placeholder="Instrucciones sobre el procedimiento de coordinación..." rows={2} />
-            </div>
-
-            {/* Signature */}
-            <div className="space-y-2 border-t border-border pt-4">
-              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <FileSignature className="h-3.5 w-3.5" /> Firma Obligatoria del Contratista
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                Obra *
               </Label>
-              <Tabs value={signatureMethod} onValueChange={v => { setSignatureMethod(v); localStorage.setItem("tektra_sig_method", v); }}>
-                <TabsList className="w-full">
-                  <TabsTrigger value="manual" className="flex-1 text-xs">Firma Manual</TabsTrigger>
-                  <TabsTrigger value="certificate" className="flex-1 text-xs">Certificado Digital</TabsTrigger>
-                </TabsList>
-                <TabsContent value="manual" className="mt-3">
-                  <SignatureCanvas ref={sigCanvasRef} />
-                  <Button type="submit" disabled={submittingEntry} className="w-full mt-3 font-display text-xs uppercase tracking-wider gap-2">
-                    <ShieldCheck className="h-4 w-4" />
-                    {submittingEntry ? "Registrando..." : "Firmar y Registrar"}
-                  </Button>
-                </TabsContent>
-                <TabsContent value="certificate" className="mt-3">
-                  <CertificateSignature
-                    disabled={submittingEntry}
-                    userRole="CON"
-                    originalPdfBytes={null}
-                    noPdfRequired
-                    onSign={async (_bytes, metadata) => { await handleCertSign(new Uint8Array(), metadata); }}
-                  />
-                </TabsContent>
-              </Tabs>
+              <Input value={actWork} onChange={(e) => setActWork(e.target.value)} />
             </div>
-          </form>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                Ubicación *
+              </Label>
+              <Input value={actLocation} onChange={(e) => setActLocation(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                Promotor *
+              </Label>
+              <Input value={actPromoter} onChange={(e) => setActPromoter(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                Contratista principal
+              </Label>
+              <Input
+                value={actContractor}
+                onChange={(e) => setActContractor(e.target.value)}
+                placeholder="Empresa contratista"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                Empresa subcontratada *
+              </Label>
+              <Input
+                value={actSubcontractor}
+                onChange={(e) => setActSubcontractor(e.target.value)}
+                placeholder="Razón social"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                Representante legal
+              </Label>
+              <Input
+                value={actRepresentative}
+                onChange={(e) => setActRepresentative(e.target.value)}
+                placeholder="Nombre y apellidos"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+                Tarea de subcontrata *
+              </Label>
+              <Textarea
+                value={actTask}
+                onChange={(e) => setActTask(e.target.value)}
+                placeholder="Ej. Cimentación y estructura"
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter className="mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowActDialog(false)}
+              disabled={generatingAct}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleGenerateAct}
+              disabled={generatingAct}
+              className="gap-2 font-display text-xs uppercase tracking-wider"
+            >
+              {generatingAct
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Generando…</>
+                : <><FileSignature className="h-4 w-4" /> Generar PDF</>}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <FiscalDataModal
-        open={showFiscalModal}
-        onComplete={() => { setShowFiscalModal(false); if (pendingSubmit) { setPendingSubmit(false); handleCreateEntry(); } }}
-        onCancel={() => { setShowFiscalModal(false); setPendingSubmit(false); }}
-      />
     </AppLayout>
   );
 };
-
-// Generate the Diligencia HTML document
-function generateDiligenciaHtml(book: any, project: any, members: any[]) {
-  const promotor = members.find((m: any) => m.role === "PRO");
-  const df = members.find((m: any) => m.role === "DO" || m.role === "DEM");
-  const css = members.find((m: any) => m.role === "CSS" || m.secondary_role === "CSS");
-  const con = members.find((m: any) => m.role === "CON");
-
-  const getName = (m: any) => m?.profiles?.full_name || m?.invited_email || "—";
-  const getNif = (m: any) => m?.profiles?.dni_cif || "—";
-
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Diligencia de Habilitación</title>
-<style>
-  body { font-family: 'Times New Roman', serif; max-width: 700px; margin: 0 auto; padding: 40px 30px; color: #111; font-size: 13px; line-height: 1.5; }
-  h1 { text-align: center; font-size: 18px; margin: 0 0 6px; }
-  h2 { text-align: center; font-size: 14px; margin: 20px 0 12px; border-bottom: 1px solid #333; padding-bottom: 4px; }
-  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-  td { padding: 4px 8px; border: 1px solid #999; font-size: 12px; vertical-align: middle; }
-  .label { background: #f5f5f5; font-weight: bold; width: 40%; }
-  .seal-area { border: 2px dashed #999; min-height: 120px; margin: 20px 0; display: flex; align-items: center; justify-content: center; color: #999; font-style: italic; text-align: center; }
-  .footer { text-align: center; margin-top: 40px; font-size: 11px; color: #666; }
-</style></head><body>
-<p style="text-align:center;font-size:11px;color:#666;">COMUNIDAD AUTÓNOMA DE _______________</p>
-<h1>LIBRO DE SUBCONTRATACIÓN</h1>
-<h2>DATOS IDENTIFICATIVOS DE LA OBRA</h2>
-<table>
-  <tr><td class="label">Promotor</td><td>${getName(promotor)}</td><td style="width:100px;">NIF</td><td>${getNif(promotor)}</td></tr>
-  <tr><td class="label">Contratista</td><td>${getName(con)}</td><td>NIF</td><td>${getNif(con)}</td></tr>
-  <tr><td class="label">Dirección Facultativa</td><td>${getName(df)}</td><td>NIF</td><td>${getNif(df)}</td></tr>
-  <tr><td class="label">Coordinador de Seg. y Salud</td><td>${getName(css)}</td><td>NIF</td><td>${getNif(css)}</td></tr>
-  <tr><td class="label">Domicilio de la obra</td><td>${project?.address || "—"}</td><td>Nº Inscripción REA</td><td>${book.rea_number}</td></tr>
-  <tr><td class="label">Nº Registro comunicación apertura</td><td>${book.apertura_number}</td><td>Localidad</td><td>${project?.address || "—"}</td></tr>
-  ${book.last_annotation_number ? `<tr><td class="label">Nº última anotación libro anterior</td><td colspan="3">${book.last_annotation_number}</td></tr>` : ""}
-  <tr><td class="label">Causa de habilitación</td><td colspan="3">${book.habilitacion_cause === "nueva_obra" ? "Nueva obra" : book.habilitacion_cause === "continuacion" ? "Continuación de libro anterior" : book.habilitacion_cause === "perdida" ? "Pérdida" : "Destrucción"}</td></tr>
-</table>
-<h2>DILIGENCIA DE HABILITACIÓN</h2>
-<p>D. ........................................................., en su condición de autoridad laboral competente, como titular de la ......................................................... de la Comunidad Autónoma de referencia.</p>
-<p><strong>CERTIFICO:</strong> que en el día de la fecha he procedido a habilitar, de conformidad con las disposiciones vigentes, este Libro de Subcontratación correspondiente al contratista de la obra de construcción cuyos datos de identificación figuran más arriba, y que consta de 10 hojas numeradas y duplicadas, en la que figura el sello de este organismo.</p>
-<div class="seal-area">SELLO AUTORIDAD LABORAL</div>
-<p style="text-align:right;">En .................... a ...... de .................... de ..........</p>
-<p style="text-align:right;">Fdo.: ..........................................................</p>
-<div class="footer">Generado por TEKTRA — ${new Date().toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}</div>
-</body></html>`;
-}
 
 export default SubcontractingModule;
