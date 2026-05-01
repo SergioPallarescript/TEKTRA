@@ -24,7 +24,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { notifyProjectMembers, notifyProjectMembersByRole, notifyUser, pushCostSubmission } from "@/lib/notifications";
+import { notifyProjectMembers, notifyProjectMembersByRole, notifyUser, pushCostSubmission, markRelatedNotificationsRead } from "@/lib/notifications";
 import ShareButton from "@/components/ShareButton";
 import {
   ArrowLeft, Plus, DollarSign, CheckCircle2, XCircle, Download, ExternalLink,
@@ -151,6 +151,17 @@ const CostsModule = () => {
       if (found) setSelectedClaim(found);
     }
   }, [deepLinkItem, claims]);
+
+  // Auto-mark related bell notifications as read when a claim is opened
+  useEffect(() => {
+    if (!selectedClaim || !user || !projectId) return;
+    markRelatedNotificationsRead({
+      userId: user.id,
+      projectId,
+      title: selectedClaim.title,
+      types: ["cost"],
+    });
+  }, [selectedClaim?.id, user?.id, projectId]);
 
   /* ───── Partida computed values ───── */
   const partidaMedicion = useMemo(() => {
