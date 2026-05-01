@@ -57,6 +57,63 @@ const fitInside = (sourceW: number, sourceH: number, targetW: number, targetH: n
   return { width: sourceW * scale, height: sourceH * scale };
 };
 
+const canvasToBlob = (canvas: HTMLCanvasElement, type = "image/jpeg", quality = 0.92): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("No se pudo procesar la página"))), type, quality);
+  });
+
+const appendImageToA4 = async (pdf: PDFDocument, bytes: Uint8Array, fileName: string) => {
+  const ext = (fileName.split(".").pop() || "").toLowerCase();
+  let img;
+  try {
+    img = ext === "png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+  } catch {
+    const dataUrl = await readFileAsDataUrl(new Blob([bytes]));
+    const im = await loadImage(dataUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = im.naturalWidth;
+    canvas.height = im.naturalHeight;
+    canvas.getContext("2d")!.drawImage(im, 0, 0);
+    const jpgBlob = await canvasToBlob(canvas);
+    img = await pdf.embedJpg(new Uint8Array(await jpgBlob.arrayBuffer()));
+  }
+
+  const pageSize = img.width >= img.height ? A4_LANDSCAPE : A4_PORTRAIT;
+  const margin = 24;
+  const fitted = fitInside(img.width, img.height, pageSize[0] - margin * 2, pageSize[1] - margin * 2);
+  const outPage = pdf.addPage(pageSize);
+  outPage.drawImage(img, {
+    x: (pageSize[0] - fitted.width) / 2,
+    y: (pageSize[1] - fitted.height) / 2,
+    width: fitted.width,
+    height: fitted.height,
+  });
+};
+
+const appendPdfToA4 = async (pdf: PDFDocument, bytes: Uint8Array) => {
+  const src = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+  for (let i = 1; i <= src.numPages; i++) {
+    const srcPage = await src.getPage(i);
+    const viewport = srcPage.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await srcPage.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+    const blob = await canvasToBlob(canvas);
+    const img = await pdf.embedJpg(new Uint8Array(await blob.arrayBuffer()));
+    const pageSize = viewport.width >= viewport.height ? A4_LANDSCAPE : A4_PORTRAIT;
+    const margin = 24;
+    const fitted = fitInside(img.width, img.height, pageSize[0] - margin * 2, pageSize[1] - margin * 2);
+    const outPage = pdf.addPage(pageSize);
+    outPage.drawImage(img, {
+      x: (pageSize[0] - fitted.width) / 2,
+      y: (pageSize[1] - fitted.height) / 2,
+      width: fitted.width,
+      height: fitted.height,
+    });
+  }
+};
+
 /* ──────────────────────────────────────────────────────────────────
  * Componente
  * ────────────────────────────────────────────────────────────────── */
