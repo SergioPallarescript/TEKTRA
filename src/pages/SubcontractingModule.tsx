@@ -16,15 +16,13 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import {
-  ArrowLeft, FileText, Plus, Download, ClipboardList, ImageIcon, Camera,
-  ScanLine, Eye, Trash2, FileSignature, ChevronDown, Loader2,
+  ArrowLeft, FileText, Plus, Download, ClipboardList,
+  Trash2, FileSignature, ChevronDown, ChevronUp, Loader2, FolderOpen,
 } from "lucide-react";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import DocumentPreview from "@/components/DocumentPreview";
 
 /* ──────────────────────────────────────────────────────────────────
  * Helpers de imagen / PDF
