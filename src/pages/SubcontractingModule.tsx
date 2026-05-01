@@ -62,13 +62,16 @@ const canvasToBlob = (canvas: HTMLCanvasElement, type = "image/jpeg", quality = 
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("No se pudo procesar la página"))), type, quality);
   });
 
+const uint8ToArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
+  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+
 const appendImageToA4 = async (pdf: PDFDocument, bytes: Uint8Array, fileName: string) => {
   const ext = (fileName.split(".").pop() || "").toLowerCase();
   let img;
   try {
     img = ext === "png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
   } catch {
-    const dataUrl = await readFileAsDataUrl(new Blob([bytes]));
+    const dataUrl = await readFileAsDataUrl(new Blob([uint8ToArrayBuffer(bytes)]));
     const im = await loadImage(dataUrl);
     const canvas = document.createElement("canvas");
     canvas.width = im.naturalWidth;
