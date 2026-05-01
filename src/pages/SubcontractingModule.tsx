@@ -19,7 +19,7 @@ import {
 import { toast } from "sonner";
 import {
   ArrowLeft, FileText, Plus, Download, ClipboardList,
-  Trash2, FileSignature, ChevronDown, ChevronUp, Loader2, FolderOpen,
+  Trash2, FileSignature, ChevronDown, ChevronUp, Loader2,
 } from "lucide-react";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import DocumentPreview from "@/components/DocumentPreview";
