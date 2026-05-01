@@ -437,8 +437,8 @@ const SubcontractingModule = () => {
   const handleGenerateAct = async () => {
     if (!projectId || !user) return;
     if (!actWork.trim() || !actLocation.trim() || !actPromoter.trim() ||
-        !actSubcontractor.trim() || !actTask.trim()) {
-      toast.error("Completa Obra, Ubicación, Promotor, Subcontrata y Tarea");
+        !actSubcontractor.trim() || !actTask.trim() || !actCity.trim()) {
+      toast.error("Completa Obra, Ubicación, Localidad, Promotor, Subcontrata y Tarea");
       return;
     }
     setGeneratingAct(true);
