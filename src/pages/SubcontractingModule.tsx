@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { downloadFile, openFile, pickImage, isNative } from "@/lib/nativeMedia";
+import { downloadFile, openFile, isNative } from "@/lib/nativeMedia";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjectRole } from "@/hooks/useProjectRole";
 import AppLayout from "@/components/AppLayout";
@@ -44,46 +44,6 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
     img.src = src;
   });
-
-/** Convierte a B/N tipo "escaneo": gris + umbral adaptativo simple. */
-const scanifyImage = async (file: File): Promise<File> => {
-  const dataUrl = await readFileAsDataUrl(file);
-  const img = await loadImage(dataUrl);
-  // Limita resolución para tamaño razonable
-  const MAX = 1800;
-  let w = img.naturalWidth;
-  let h = img.naturalHeight;
-  if (Math.max(w, h) > MAX) {
-    const k = MAX / Math.max(w, h);
-    w = Math.round(w * k);
-    h = Math.round(h * k);
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(img, 0, 0, w, h);
-  const imgData = ctx.getImageData(0, 0, w, h);
-  const d = imgData.data;
-  // Normalización + umbral
-  let sum = 0;
-  for (let i = 0; i < d.length; i += 4) {
-    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    sum += g;
-  }
-  const avg = sum / (d.length / 4);
-  const threshold = Math.min(190, Math.max(120, avg + 10));
-  for (let i = 0; i < d.length; i += 4) {
-    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    // suaviza un pelín contraste
-    const adj = g > threshold ? 255 : Math.max(0, g * 0.85);
-    d[i] = d[i + 1] = d[i + 2] = adj;
-  }
-  ctx.putImageData(imgData, 0, 0);
-  const blob: Blob = await new Promise((resolve) =>
-    canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.85),
-  );
-  return new File([blob], file.name.replace(/\.\w+$/, "") + "_scan.jpg", { type: "image/jpeg" });
-};
 
 /* ──────────────────────────────────────────────────────────────────
  * Componente
