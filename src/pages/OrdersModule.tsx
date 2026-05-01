@@ -139,6 +139,16 @@ const OrdersModule = () => {
 
   useEffect(() => { fetchProject(); fetchOrders(); fetchMembers(); }, [fetchProject, fetchOrders, fetchMembers]);
 
+  // Auto-mark "order" bell notifications as read when entering the orders book
+  useEffect(() => {
+    if (!user || !projectId) return;
+    markRelatedNotificationsRead({
+      userId: user.id,
+      projectId,
+      types: ["order"],
+    });
+  }, [user?.id, projectId]);
+
   // Find the recipient user_id based on dirigidaA role mapping
   const findRecipientUserId = (dirigida: string): string | null => {
     if (dirigida === "TODOS LOS AGENTES") return null;
