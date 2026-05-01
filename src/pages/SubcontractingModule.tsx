@@ -1037,15 +1037,45 @@ const SubcontractingModule = () => {
             >
               Cancelar
             </Button>
-            <Button
-              onClick={pickEntryFileAfterName}
-              disabled={uploadingEntry || !pendingName.trim()}
-              className="gap-2 font-display text-xs uppercase tracking-wider"
-            >
-              {uploadingEntry
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
-                : <>Continuar</>}
-            </Button>
+            {isNative() ? (
+              <div className="flex flex-wrap gap-2 justify-end w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  onClick={() => pickEntryFromCamera("camera")}
+                  disabled={uploadingEntry || !pendingName.trim()}
+                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                >
+                  <CameraIcon className="h-4 w-4" /> Cámara
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => pickEntryFromCamera("gallery")}
+                  disabled={uploadingEntry || !pendingName.trim()}
+                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                >
+                  <ImageIcon className="h-4 w-4" /> Galería
+                </Button>
+                <Button
+                  onClick={pickEntryFromFiles}
+                  disabled={uploadingEntry || !pendingName.trim()}
+                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                >
+                  {uploadingEntry
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
+                    : <><FolderOpen className="h-4 w-4" /> Archivo</>}
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={pickEntryFromFiles}
+                disabled={uploadingEntry || !pendingName.trim()}
+                className="gap-2 font-display text-xs uppercase tracking-wider"
+              >
+                {uploadingEntry
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
+                  : <>Continuar</>}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
