@@ -545,7 +545,7 @@ const SubcontractingModule = () => {
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
       ];
-      const place = (actLocation.split(",")[1] || actLocation.split(",")[0] || "").trim();
+      const place = actCity.trim();
       const dateLine = `En ${place || "________"}, a ${today.getDate()} de ${monthsEs[today.getMonth()]} de ${today.getFullYear()}.`;
       drawWrapped(dateLine, helv, 10, 14);
       y -= 24;
