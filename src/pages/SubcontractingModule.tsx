@@ -343,7 +343,7 @@ const SubcontractingModule = () => {
         }
       }
       const bytes = await pdf.save();
-      const blob = new Blob([bytes], { type: "application/pdf" });
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
       const safe = (project.name || "Proyecto").replace(/\s+/g, "_");
       await downloadFile(blob, `Libro_Subcontratas_${safe}.pdf`);
       toast.success("Libro exportado");
@@ -531,7 +531,7 @@ const SubcontractingModule = () => {
       });
 
       const bytes = await pdf.save();
-      const blob = new Blob([bytes], { type: "application/pdf" });
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
       const safe = `${actSubcontractor}`.replace(/[^\w]+/g, "_").slice(0, 60);
       const fileName = `Acta_Adhesion_PSS_${safe}_${today.getTime()}.pdf`;
 
