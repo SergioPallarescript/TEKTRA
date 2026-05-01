@@ -204,11 +204,11 @@ const ProjectDetail = () => {
             Proyecto
           </p>
         </div>
-        <div className="flex items-end justify-between mb-8">
-          <div>
-            <h1 className="font-display text-3xl font-bold tracking-tighter">{project.name}</h1>
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
+          <div className="min-w-0">
+            <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tighter break-words">{project.name}</h1>
             {project.address && (
-              <p className="text-sm text-muted-foreground mt-1">{project.address}</p>
+              <p className="text-sm text-muted-foreground mt-1 break-words">{project.address}</p>
             )}
           </div>
           {isCreator && (
@@ -217,7 +217,7 @@ const ProjectDetail = () => {
               if (!open) setInviteSuccess(null);
             }}>
               <DialogTrigger asChild>
-                <Button data-tour="invite-agent" variant="outline" className="font-display text-xs uppercase tracking-wider gap-2">
+                <Button data-tour="invite-agent" variant="outline" className="font-display text-xs uppercase tracking-wider gap-2 self-start sm:self-auto shrink-0">
                   <UserPlus className="h-4 w-4" />
                   Invitar Agente
                 </Button>
