@@ -937,35 +937,58 @@ const SubcontractingModule = () => {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {acts.map((a) => (
-                    <div
-                      key={a.id}
-                      className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg hover:shadow-sm transition-all"
-                    >
-                      <FileSignature className="h-5 w-5 text-primary shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate">
-                          {a.subcontractor_name}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {a.subcontractor_task} · {new Date(a.created_at).toLocaleDateString("es-ES")}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" onClick={() => handleDownloadAct(a)} title="Descargar">
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openAct(a)} title="Abrir con">
-                          <FolderOpen className="h-4 w-4" />
-                        </Button>
-                        {canWrite && (
-                          <Button variant="ghost" size="icon" onClick={() => setDeleteActTarget(a)} title="Eliminar">
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                  {acts.map((a) => {
+                    const expanded = expandedActId === a.id;
+                    return (
+                      <div
+                        key={a.id}
+                        className="bg-card border border-border rounded-lg animate-fade-in"
+                      >
+                        <div
+                          className="p-3 flex items-center gap-3 cursor-pointer hover:bg-secondary/30 transition-colors rounded-lg"
+                          onClick={() => toggleActPreview(a)}
+                        >
+                          <FileSignature className="h-5 w-5 text-primary shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold truncate">
+                              {a.subcontractor_name}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {a.subcontractor_task} · {new Date(a.created_at).toLocaleDateString("es-ES")}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDownloadAct(a); }} title="Descargar">
+                              <Download className="h-4 w-4" />
+                            </Button>
+                            {canWrite && (
+                              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setDeleteActTarget(a); }} title="Eliminar">
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                            {expanded
+                              ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                              : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                          </div>
+                        </div>
+                        {expanded && (
+                          <div className="px-4 pb-4 border-t border-border pt-3">
+                            {loadingActPreviewId === a.id ? (
+                              <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" /> Cargando previsualización...
+                              </div>
+                            ) : actPreviewUrls[a.id] ? (
+                              <DocumentPreview url={actPreviewUrls[a.id]} fileName={a.file_name || "acta.pdf"} />
+                            ) : (
+                              <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                                No se pudo cargar la previsualización
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>
