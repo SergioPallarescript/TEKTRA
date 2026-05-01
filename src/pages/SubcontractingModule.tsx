@@ -24,6 +24,9 @@ import {
 } from "lucide-react";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import DocumentPreview from "@/components/DocumentPreview";
+import * as pdfjsLib from "pdfjs-dist";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 /* ──────────────────────────────────────────────────────────────────
  * Helpers de imagen / PDF
@@ -45,6 +48,14 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
     img.src = src;
   });
+
+const A4_PORTRAIT: [number, number] = [595.28, 841.89];
+const A4_LANDSCAPE: [number, number] = [841.89, 595.28];
+
+const fitInside = (sourceW: number, sourceH: number, targetW: number, targetH: number) => {
+  const scale = Math.min(targetW / sourceW, targetH / sourceH);
+  return { width: sourceW * scale, height: sourceH * scale };
+};
 
 /* ──────────────────────────────────────────────────────────────────
  * Componente
