@@ -868,9 +868,6 @@ const SubcontractingModule = () => {
                               <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDownloadPage(p); }} title="Descargar">
                                 <Download className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleOpenPage(p); }} title="Abrir con">
-                                <FolderOpen className="h-4 w-4" />
-                              </Button>
                               {canWrite && (
                                 <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} title="Eliminar">
                                   <Trash2 className="h-4 w-4 text-destructive" />
