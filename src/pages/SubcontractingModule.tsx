@@ -236,6 +236,29 @@ const SubcontractingModule = () => {
 
   /* ─── Subida de páginas ─────────────────────────────────────── */
 
+  /**
+   * Materializa un File en memoria leyendo sus bytes con FileReader.
+   * Necesario en Android cuando el picker devuelve referencias perezosas
+   * (content:// de Google Drive, SAF, etc.) que fallan al pasarlas
+   * directamente a fetch/upload con "Failed to fetch".
+   */
+  const materializeFile = async (file: File): Promise<File> => {
+    try {
+      const buf = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error || new Error("read error"));
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.readAsArrayBuffer(file);
+      });
+      const type = file.type || "application/octet-stream";
+      const name = file.name || `archivo-${Date.now()}`;
+      return new File([buf], name, { type, lastModified: file.lastModified || Date.now() });
+    } catch (err) {
+      console.warn("[subcontracting] materializeFile fallback", err);
+      return file;
+    }
+  };
+
   const uploadOneFile = async (
     file: File,
     kind: "first_sheet" | "entry_sheet",
@@ -279,7 +302,13 @@ const SubcontractingModule = () => {
     const setBusy = kind === "first_sheet" ? setUploadingFirst : setUploadingEntry;
     setBusy(true);
     try {
-      for (const f of arr) await uploadOneFile(f, kind, displayName);
+      // En Android, los archivos seleccionados desde Drive/SAF llegan como
+      // referencias `content://` perezosas. Al subirlos directamente, fetch
+      // interno falla con "Failed to fetch". Materializamos los bytes en
+      // memoria antes de subir para garantizar un Blob real.
+      const normalized: File[] = [];
+      for (const f of arr) normalized.push(await materializeFile(f));
+      for (const f of normalized) await uploadOneFile(f, kind, displayName);
       toast.success(arr.length === 1 ? "Hoja añadida" : `${arr.length} hojas añadidas`);
       await fetchData();
     } catch (e: any) {
