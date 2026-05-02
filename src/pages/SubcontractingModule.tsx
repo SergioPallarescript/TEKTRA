@@ -161,6 +161,9 @@ const SubcontractingModule = () => {
   const [pendingName, setPendingName] = useState("");
   const [namingOpen, setNamingOpen] = useState(false);
 
+  // Diálogo de selección de origen para la primera hoja (solo nativo)
+  const [firstSheetPickerOpen, setFirstSheetPickerOpen] = useState(false);
+
   // Acta de adhesión
   const [showActDialog, setShowActDialog] = useState(false);
   const [actWork, setActWork] = useState("");
