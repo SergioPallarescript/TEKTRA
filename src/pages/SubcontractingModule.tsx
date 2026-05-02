@@ -161,6 +161,9 @@ const SubcontractingModule = () => {
   const [pendingName, setPendingName] = useState("");
   const [namingOpen, setNamingOpen] = useState(false);
 
+  // Diálogo de selección de origen para la primera hoja (solo nativo)
+  const [firstSheetPickerOpen, setFirstSheetPickerOpen] = useState(false);
+
   // Acta de adhesión
   const [showActDialog, setShowActDialog] = useState(false);
   const [actWork, setActWork] = useState("");
@@ -306,38 +309,57 @@ const SubcontractingModule = () => {
 
     const ref = kind === "first_sheet" ? firstFileRef : entryFileRef;
     if (isNative()) {
-      try {
-        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
-        const photo = await Camera.getPhoto({
-          quality: 85,
-          allowEditing: false,
-          resultType: CameraResultType.Uri,
-          source: CameraSource.Prompt, // muestra Cámara / Galería / Archivos
-          promptLabelHeader: "Primera hoja",
-          promptLabelPhoto: "Galería",
-          promptLabelPicture: "Cámara",
-          saveToGallery: false,
-        });
-        const uri = photo.webPath || photo.path;
-        if (!uri) return;
-        const res = await fetch(uri);
-        const blob = await res.blob();
-        const ext = photo.format || "jpg";
-        const file = new File([blob], `hoja-${Date.now()}.${ext}`, {
-          type: blob.type || `image/${ext}`,
-        });
-        await handleUploadFiles([file], "first_sheet");
-      } catch (err: any) {
-        if (!err?.message?.toLowerCase?.().includes("cancel")) {
-          console.warn("[subcontracting] camera prompt", err);
-          // Fallback: si la cámara nativa falla, abrimos el explorador web
-          ref.current?.click();
-        }
-      }
+      // Mostrar selector con 3 opciones: Cámara / Galería / Archivo
+      setFirstSheetPickerOpen(true);
       return;
     }
     // Web → explorador del SO directamente
     if (ref.current) ref.current.click();
+  };
+
+  /**
+   * Captura la primera hoja desde cámara o galería en nativo.
+   */
+  const pickFirstSheetFromCamera = async (mode: "camera" | "gallery") => {
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+      try {
+        const perms = await Camera.checkPermissions();
+        const needsCam = mode === "camera" && perms.camera !== "granted";
+        const needsPhotos = mode === "gallery" && perms.photos !== "granted";
+        if (needsCam || needsPhotos) {
+          await Camera.requestPermissions({
+            permissions: mode === "camera" ? ["camera"] : ["photos"],
+          });
+        }
+      } catch { /* ignore */ }
+      const photo = await Camera.getPhoto({
+        quality: 85,
+        allowEditing: false,
+        resultType: CameraResultType.Uri,
+        source: mode === "camera" ? CameraSource.Camera : CameraSource.Photos,
+        saveToGallery: false,
+      });
+      const uri = photo.webPath || photo.path;
+      if (!uri) return;
+      const res = await fetch(uri);
+      const blob = await res.blob();
+      const ext = photo.format || "jpg";
+      const file = new File([blob], `hoja-${Date.now()}.${ext}`, {
+        type: blob.type || `image/${ext}`,
+      });
+      setFirstSheetPickerOpen(false);
+      await handleUploadFiles([file], "first_sheet");
+    } catch (err: any) {
+      if (err?.message?.toLowerCase?.().includes("cancel")) return;
+      console.warn("[subcontracting] first sheet capture error", err);
+      toast.error("No se pudo abrir la cámara/galería. Prueba con 'Archivo'.");
+    }
+  };
+
+  const pickFirstSheetFromFiles = () => {
+    setFirstSheetPickerOpen(false);
+    firstFileRef.current?.click();
   };
 
   /**
@@ -1112,6 +1134,40 @@ const SubcontractingModule = () => {
               </Button>
             )}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Selector de origen para la primera hoja (solo nativo) */}
+      <Dialog open={firstSheetPickerOpen} onOpenChange={setFirstSheetPickerOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display text-base">Subir primera hoja</DialogTitle>
+          </DialogHeader>
+          <p className="text-[12px] text-muted-foreground">
+            Elige el origen del archivo (foto o PDF).
+          </p>
+          <div className="grid grid-cols-1 gap-2 mt-2">
+            <Button
+              variant="outline"
+              onClick={() => pickFirstSheetFromCamera("camera")}
+              className="w-full gap-2 font-display text-xs uppercase tracking-wider"
+            >
+              <CameraIcon className="h-4 w-4" /> Cámara
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => pickFirstSheetFromCamera("gallery")}
+              className="w-full gap-2 font-display text-xs uppercase tracking-wider"
+            >
+              <ImageIcon className="h-4 w-4" /> Galería
+            </Button>
+            <Button
+              onClick={pickFirstSheetFromFiles}
+              className="w-full gap-2 font-display text-xs uppercase tracking-wider"
+            >
+              <FolderOpen className="h-4 w-4" /> Archivo
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
