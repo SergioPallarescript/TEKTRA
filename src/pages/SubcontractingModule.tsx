@@ -24,6 +24,9 @@ import {
 } from "lucide-react";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import DocumentPreview from "@/components/DocumentPreview";
+import * as pdfjsLib from "pdfjs-dist";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 /* ──────────────────────────────────────────────────────────────────
  * Helpers de imagen / PDF
@@ -45,6 +48,74 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
     img.src = src;
   });
+
+const A4_PORTRAIT: [number, number] = [595.28, 841.89];
+const A4_LANDSCAPE: [number, number] = [841.89, 595.28];
+
+const fitInside = (sourceW: number, sourceH: number, targetW: number, targetH: number) => {
+  const scale = Math.min(targetW / sourceW, targetH / sourceH);
+  return { width: sourceW * scale, height: sourceH * scale };
+};
+
+const canvasToBlob = (canvas: HTMLCanvasElement, type = "image/jpeg", quality = 0.92): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("No se pudo procesar la página"))), type, quality);
+  });
+
+const uint8ToArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
+  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+
+const appendImageToA4 = async (pdf: PDFDocument, bytes: Uint8Array, fileName: string) => {
+  const ext = (fileName.split(".").pop() || "").toLowerCase();
+  let img;
+  try {
+    img = ext === "png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+  } catch {
+    const dataUrl = await readFileAsDataUrl(new Blob([uint8ToArrayBuffer(bytes)]));
+    const im = await loadImage(dataUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = im.naturalWidth;
+    canvas.height = im.naturalHeight;
+    canvas.getContext("2d")!.drawImage(im, 0, 0);
+    const jpgBlob = await canvasToBlob(canvas);
+    img = await pdf.embedJpg(new Uint8Array(await jpgBlob.arrayBuffer()));
+  }
+
+  const pageSize = img.width >= img.height ? A4_LANDSCAPE : A4_PORTRAIT;
+  const margin = 24;
+  const fitted = fitInside(img.width, img.height, pageSize[0] - margin * 2, pageSize[1] - margin * 2);
+  const outPage = pdf.addPage(pageSize);
+  outPage.drawImage(img, {
+    x: (pageSize[0] - fitted.width) / 2,
+    y: (pageSize[1] - fitted.height) / 2,
+    width: fitted.width,
+    height: fitted.height,
+  });
+};
+
+const appendPdfToA4 = async (pdf: PDFDocument, bytes: Uint8Array) => {
+  const src = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+  for (let i = 1; i <= src.numPages; i++) {
+    const srcPage = await src.getPage(i);
+    const viewport = srcPage.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await srcPage.render({ canvasContext: canvas.getContext("2d")!, viewport }).promise;
+    const blob = await canvasToBlob(canvas);
+    const img = await pdf.embedJpg(new Uint8Array(await blob.arrayBuffer()));
+    const pageSize = viewport.width >= viewport.height ? A4_LANDSCAPE : A4_PORTRAIT;
+    const margin = 24;
+    const fitted = fitInside(img.width, img.height, pageSize[0] - margin * 2, pageSize[1] - margin * 2);
+    const outPage = pdf.addPage(pageSize);
+    outPage.drawImage(img, {
+      x: (pageSize[0] - fitted.width) / 2,
+      y: (pageSize[1] - fitted.height) / 2,
+      width: fitted.width,
+      height: fitted.height,
+    });
+  }
+};
 
 /* ──────────────────────────────────────────────────────────────────
  * Componente
@@ -392,44 +463,8 @@ const SubcontractingModule = () => {
         const buf = new Uint8Array(await res.arrayBuffer());
 
         const ext = (page.file_name.split(".").pop() || "").toLowerCase();
-        if (ext === "pdf") {
-          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
-          const copied = await pdf.copyPages(src, src.getPageIndices());
-          copied.forEach((p) => pdf.addPage(p));
-        } else {
-          let img;
-          try {
-            img = ext === "png"
-              ? await pdf.embedPng(buf)
-              : await pdf.embedJpg(buf);
-          } catch {
-            // Fallback: re-codifica como JPG via canvas
-            const dataUrl = await readFileAsDataUrl(new Blob([buf]));
-            const im = await loadImage(dataUrl);
-            const canvas = document.createElement("canvas");
-            canvas.width = im.naturalWidth;
-            canvas.height = im.naturalHeight;
-            canvas.getContext("2d")!.drawImage(im, 0, 0);
-            const jpgBlob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), "image/jpeg", 0.9));
-            const jpgBuf = new Uint8Array(await jpgBlob.arrayBuffer());
-            img = await pdf.embedJpg(jpgBuf);
-          }
-          // Página A4 vertical, ajusta imagen manteniendo proporción
-          const A4 = { w: 595.28, h: 841.89 };
-          const margin = 24;
-          const maxW = A4.w - margin * 2;
-          const maxH = A4.h - margin * 2;
-          const scale = Math.min(maxW / img.width, maxH / img.height);
-          const w = img.width * scale;
-          const h = img.height * scale;
-          const pdfPage = pdf.addPage([A4.w, A4.h]);
-          pdfPage.drawImage(img, {
-            x: (A4.w - w) / 2,
-            y: (A4.h - h) / 2,
-            width: w,
-            height: h,
-          });
-        }
+        if (ext === "pdf") await appendPdfToA4(pdf, buf);
+        else await appendImageToA4(pdf, buf, page.file_name || "hoja.jpg");
       }
       const bytes = await pdf.save();
       const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
@@ -1029,7 +1064,7 @@ const SubcontractingModule = () => {
               Tras pulsar “Continuar” podrás seleccionar la foto o PDF de la ficha.
             </p>
           </div>
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-4 gap-2 sm:space-x-0">
             <Button
               variant="outline"
               onClick={() => { setNamingOpen(false); setPendingFiles(null); setPendingName(""); }}
@@ -1038,12 +1073,12 @@ const SubcontractingModule = () => {
               Cancelar
             </Button>
             {isNative() ? (
-              <div className="flex flex-wrap gap-2 justify-end w-full sm:w-auto">
+              <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3">
                 <Button
                   variant="outline"
                   onClick={() => pickEntryFromCamera("camera")}
                   disabled={uploadingEntry || !pendingName.trim()}
-                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                  className="w-full gap-2 font-display text-xs uppercase tracking-wider"
                 >
                   <CameraIcon className="h-4 w-4" /> Cámara
                 </Button>
@@ -1051,14 +1086,14 @@ const SubcontractingModule = () => {
                   variant="outline"
                   onClick={() => pickEntryFromCamera("gallery")}
                   disabled={uploadingEntry || !pendingName.trim()}
-                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                  className="w-full gap-2 font-display text-xs uppercase tracking-wider"
                 >
                   <ImageIcon className="h-4 w-4" /> Galería
                 </Button>
                 <Button
                   onClick={pickEntryFromFiles}
                   disabled={uploadingEntry || !pendingName.trim()}
-                  className="gap-2 font-display text-xs uppercase tracking-wider"
+                  className="w-full gap-2 font-display text-xs uppercase tracking-wider"
                 >
                   {uploadingEntry
                     ? <><Loader2 className="h-4 w-4 animate-spin" /> Subiendo…</>
