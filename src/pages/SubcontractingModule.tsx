@@ -309,38 +309,57 @@ const SubcontractingModule = () => {
 
     const ref = kind === "first_sheet" ? firstFileRef : entryFileRef;
     if (isNative()) {
-      try {
-        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
-        const photo = await Camera.getPhoto({
-          quality: 85,
-          allowEditing: false,
-          resultType: CameraResultType.Uri,
-          source: CameraSource.Prompt, // muestra Cámara / Galería / Archivos
-          promptLabelHeader: "Primera hoja",
-          promptLabelPhoto: "Galería",
-          promptLabelPicture: "Cámara",
-          saveToGallery: false,
-        });
-        const uri = photo.webPath || photo.path;
-        if (!uri) return;
-        const res = await fetch(uri);
-        const blob = await res.blob();
-        const ext = photo.format || "jpg";
-        const file = new File([blob], `hoja-${Date.now()}.${ext}`, {
-          type: blob.type || `image/${ext}`,
-        });
-        await handleUploadFiles([file], "first_sheet");
-      } catch (err: any) {
-        if (!err?.message?.toLowerCase?.().includes("cancel")) {
-          console.warn("[subcontracting] camera prompt", err);
-          // Fallback: si la cámara nativa falla, abrimos el explorador web
-          ref.current?.click();
-        }
-      }
+      // Mostrar selector con 3 opciones: Cámara / Galería / Archivo
+      setFirstSheetPickerOpen(true);
       return;
     }
     // Web → explorador del SO directamente
     if (ref.current) ref.current.click();
+  };
+
+  /**
+   * Captura la primera hoja desde cámara o galería en nativo.
+   */
+  const pickFirstSheetFromCamera = async (mode: "camera" | "gallery") => {
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+      try {
+        const perms = await Camera.checkPermissions();
+        const needsCam = mode === "camera" && perms.camera !== "granted";
+        const needsPhotos = mode === "gallery" && perms.photos !== "granted";
+        if (needsCam || needsPhotos) {
+          await Camera.requestPermissions({
+            permissions: mode === "camera" ? ["camera"] : ["photos"],
+          });
+        }
+      } catch { /* ignore */ }
+      const photo = await Camera.getPhoto({
+        quality: 85,
+        allowEditing: false,
+        resultType: CameraResultType.Uri,
+        source: mode === "camera" ? CameraSource.Camera : CameraSource.Photos,
+        saveToGallery: false,
+      });
+      const uri = photo.webPath || photo.path;
+      if (!uri) return;
+      const res = await fetch(uri);
+      const blob = await res.blob();
+      const ext = photo.format || "jpg";
+      const file = new File([blob], `hoja-${Date.now()}.${ext}`, {
+        type: blob.type || `image/${ext}`,
+      });
+      setFirstSheetPickerOpen(false);
+      await handleUploadFiles([file], "first_sheet");
+    } catch (err: any) {
+      if (err?.message?.toLowerCase?.().includes("cancel")) return;
+      console.warn("[subcontracting] first sheet capture error", err);
+      toast.error("No se pudo abrir la cámara/galería. Prueba con 'Archivo'.");
+    }
+  };
+
+  const pickFirstSheetFromFiles = () => {
+    setFirstSheetPickerOpen(false);
+    firstFileRef.current?.click();
   };
 
   /**
