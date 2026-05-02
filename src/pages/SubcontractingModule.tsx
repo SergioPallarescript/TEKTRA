@@ -1137,6 +1137,40 @@ const SubcontractingModule = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Selector de origen para la primera hoja (solo nativo) */}
+      <Dialog open={firstSheetPickerOpen} onOpenChange={setFirstSheetPickerOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display text-base">Subir primera hoja</DialogTitle>
+          </DialogHeader>
+          <p className="text-[12px] text-muted-foreground">
+            Elige el origen del archivo (foto o PDF).
+          </p>
+          <div className="grid grid-cols-1 gap-2 mt-2">
+            <Button
+              variant="outline"
+              onClick={() => pickFirstSheetFromCamera("camera")}
+              className="w-full gap-2 font-display text-xs uppercase tracking-wider"
+            >
+              <CameraIcon className="h-4 w-4" /> Cámara
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => pickFirstSheetFromCamera("gallery")}
+              className="w-full gap-2 font-display text-xs uppercase tracking-wider"
+            >
+              <ImageIcon className="h-4 w-4" /> Galería
+            </Button>
+            <Button
+              onClick={pickFirstSheetFromFiles}
+              className="w-full gap-2 font-display text-xs uppercase tracking-wider"
+            >
+              <FolderOpen className="h-4 w-4" /> Archivo
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Confirmación: borrar acta */}
       <AlertDialog open={!!deleteActTarget} onOpenChange={(o) => { if (!o) setDeleteActTarget(null); }}>
         <AlertDialogContent>
