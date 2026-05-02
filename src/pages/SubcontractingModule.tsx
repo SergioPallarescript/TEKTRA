@@ -783,7 +783,7 @@ const SubcontractingModule = () => {
           <div className="flex-1 min-w-0">
             <h1 className="text-base sm:text-xl font-display font-bold tracking-tight flex items-center gap-2 min-w-0">
               <ClipboardList className="h-5 w-5 text-primary shrink-0" />
-              <span className="truncate min-w-0">Libro de Subcontratas y Seguridad</span>
+              <span className="truncate min-w-0">Libro de Subcontratación</span>
             </h1>
             {project && (
               <p className="text-xs text-muted-foreground truncate">{project.name}</p>
