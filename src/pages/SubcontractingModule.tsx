@@ -279,7 +279,13 @@ const SubcontractingModule = () => {
     const setBusy = kind === "first_sheet" ? setUploadingFirst : setUploadingEntry;
     setBusy(true);
     try {
-      for (const f of arr) await uploadOneFile(f, kind, displayName);
+      // En Android, los archivos seleccionados desde Drive/SAF llegan como
+      // referencias `content://` perezosas. Al subirlos directamente, fetch
+      // interno falla con "Failed to fetch". Materializamos los bytes en
+      // memoria antes de subir para garantizar un Blob real.
+      const normalized: File[] = [];
+      for (const f of arr) normalized.push(await materializeFile(f));
+      for (const f of normalized) await uploadOneFile(f, kind, displayName);
       toast.success(arr.length === 1 ? "Hoja añadida" : `${arr.length} hojas añadidas`);
       await fetchData();
     } catch (e: any) {
